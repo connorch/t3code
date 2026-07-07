@@ -1,12 +1,14 @@
 import {
   ArchiveIcon,
   ArrowUpDownIcon,
+  ChevronDownIcon,
   ChevronRightIcon,
   CloudIcon,
   ContainerIcon,
   FolderPlusIcon,
   Globe2Icon,
   LoaderIcon,
+  PlusIcon,
   SearchIcon,
   SettingsIcon,
   SquarePenIcon,
@@ -125,6 +127,7 @@ import {
 } from "../threadRoutes";
 import { stackedThreadToast, toastManager } from "./ui/toast";
 import { formatRelativeTimeLabel } from "../timestampFormat";
+import { formatWorktreePathForDisplay } from "../worktreeCleanup";
 import { SettingsSidebarNav } from "./settings/SettingsSidebarNav";
 import { Kbd } from "./ui/kbd";
 import {
@@ -199,6 +202,7 @@ import {
   sortProjectsForSidebar,
   useThreadJumpHintVisibility,
   ThreadStatusPill,
+  buildSidebarWorktreeThreadGroups,
 } from "./Sidebar.logic";
 import { sortThreads } from "../lib/threadSort";
 import { SidebarUpdatePill } from "./sidebar/SidebarUpdatePill";
@@ -931,6 +935,13 @@ interface SidebarProjectThreadListProps {
   openPrLink: (event: React.MouseEvent<HTMLElement>, prUrl: string) => void;
   expandThreadListForProject: (projectKey: string) => void;
   collapseThreadListForProject: (projectKey: string) => void;
+  collapsedWorktreeGroups: ReadonlySet<string>;
+  toggleWorktreeGroup: (collapseKey: string) => void;
+  createThreadInWorkspace: (input: {
+    thread: SidebarThreadSummary;
+    branch: string | null;
+    worktreePath: string | null;
+  }) => void;
 }
 
 const SidebarProjectThreadList = memo(function SidebarProjectThreadList(
@@ -971,14 +982,27 @@ const SidebarProjectThreadList = memo(function SidebarProjectThreadList(
     openPrLink,
     expandThreadListForProject,
     collapseThreadListForProject,
+    collapsedWorktreeGroups,
+    toggleWorktreeGroup,
+    createThreadInWorkspace,
   } = props;
   const showMoreButtonRender = useMemo(() => <button type="button" />, []);
   const showLessButtonRender = useMemo(() => <button type="button" />, []);
+  const worktreeGroups = useMemo(
+    () =>
+      buildSidebarWorktreeThreadGroups({
+        projectKey,
+        projectCwd,
+        threads: renderedThreads,
+        formatPathForDisplay: formatWorktreePathForDisplay,
+      }),
+    [projectCwd, projectKey, renderedThreads],
+  );
 
   return (
     <SidebarMenuSub
       ref={attachThreadListAutoAnimateRef}
-      className="mx-0.5 my-0 w-full translate-x-0 gap-0.5 overflow-hidden px-1 py-0 sm:mx-1 sm:px-1.5"
+      className="mx-0.5 my-0 w-full translate-x-0 gap-0.5 overflow-hidden py-0 sm:mx-1 px-0!"
     >
       {shouldShowThreadPanel && showEmptyThreadState ? (
         <SidebarMenuSubItem className="w-full" data-thread-selection-safe>
@@ -991,36 +1015,119 @@ const SidebarProjectThreadList = memo(function SidebarProjectThreadList(
         </SidebarMenuSubItem>
       ) : null}
       {shouldShowThreadPanel &&
-        renderedThreads.map((thread) => {
-          const threadKey = scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id));
+        worktreeGroups.map((group) => {
+          const isCollapsed = collapsedWorktreeGroups.has(group.collapseKey);
+          const sourceThread = group.threads[0] ?? null;
+          const branch = sourceThread?.branch?.trim() || null;
+          const worktreePath = sourceThread?.worktreePath?.trim() || null;
+          const groupButtonRender = <button type="button" />;
+          const handleCreateThreadInWorkspaceClick = (
+            event: React.MouseEvent<HTMLButtonElement>,
+          ) => {
+            event.preventDefault();
+            event.stopPropagation();
+            if (!sourceThread) {
+              return;
+            }
+            createThreadInWorkspace({
+              thread: sourceThread,
+              branch,
+              worktreePath,
+            });
+          };
           return (
-            <SidebarThreadRow
-              key={threadKey}
-              thread={thread}
-              projectCwd={projectCwd}
-              orderedProjectThreadKeys={orderedProjectThreadKeys}
-              isActive={activeRouteThreadKey === threadKey}
-              jumpLabel={threadJumpLabelByKey.get(threadKey) ?? null}
-              appSettingsConfirmThreadArchive={appSettingsConfirmThreadArchive}
-              renamingThreadKey={renamingThreadKey}
-              renamingTitle={renamingTitle}
-              setRenamingTitle={setRenamingTitle}
-              startThreadRename={startThreadRename}
-              renamingInputRef={renamingInputRef}
-              renamingCommittedRef={renamingCommittedRef}
-              confirmingArchiveThreadKey={confirmingArchiveThreadKey}
-              setConfirmingArchiveThreadKey={setConfirmingArchiveThreadKey}
-              confirmArchiveButtonRefs={confirmArchiveButtonRefs}
-              handleThreadClick={handleThreadClick}
-              navigateToThread={navigateToThread}
-              handleMultiSelectContextMenu={handleMultiSelectContextMenu}
-              handleThreadContextMenu={handleThreadContextMenu}
-              clearSelection={clearSelection}
-              commitRename={commitRename}
-              cancelRename={cancelRename}
-              attemptArchiveThread={attemptArchiveThread}
-              openPrLink={openPrLink}
-            />
+            <SidebarMenuSubItem
+              key={group.collapseKey}
+              className="my-0.5 overflow-hidden rounded-sm border-l-2 rounded-l-none px-1 sm:px-1.5"
+              data-thread-selection-safe
+              style={{ borderLeftColor: group.color.border }}
+            >
+              <div className="group/worktree-header relative">
+                <SidebarMenuSubButton
+                  render={groupButtonRender}
+                  data-thread-selection-safe
+                  size="sm"
+                  className="h-6 w-full translate-x-0 justify-start gap-1.5 rounded-sm px-1.5 pr-7 text-left text-[10px] font-medium text-muted-foreground/70 hover:text-foreground"
+                  style={{ backgroundColor: group.color.surface }}
+                  aria-expanded={!isCollapsed}
+                  onClick={() => {
+                    toggleWorktreeGroup(group.collapseKey);
+                  }}
+                  title={group.path ?? group.label}
+                >
+                  {isCollapsed ? (
+                    <ChevronRightIcon className="size-3 shrink-0" />
+                  ) : (
+                    <ChevronDownIcon className="size-3 shrink-0" />
+                  )}
+                  <span
+                    aria-hidden="true"
+                    className="size-1.5 shrink-0 rounded-full"
+                    style={{ backgroundColor: group.color.swatch }}
+                  />
+                  <span className="min-w-0 flex-1 truncate">{group.label}</span>
+                  <span className="shrink-0 tabular-nums text-muted-foreground/50 group-hover/worktree-header:opacity-0 group-focus-within/worktree-header:opacity-0">
+                    {group.threads.length}
+                  </span>
+                </SidebarMenuSubButton>
+                {sourceThread ? (
+                  <Tooltip>
+                    <TooltipTrigger
+                      render={
+                        <button
+                          type="button"
+                          aria-label={`New thread in ${group.label}`}
+                          data-thread-selection-safe
+                          className="pointer-events-none absolute top-1/2 right-0.5 inline-flex size-5 -translate-y-1/2 cursor-pointer items-center justify-center rounded-md text-muted-foreground/60 opacity-0 transition-opacity duration-150 hover:bg-sidebar-accent hover:text-foreground focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring group-hover/worktree-header:pointer-events-auto group-hover/worktree-header:opacity-100 group-focus-within/worktree-header:pointer-events-auto group-focus-within/worktree-header:opacity-100"
+                          onClick={handleCreateThreadInWorkspaceClick}
+                        >
+                          <PlusIcon className="size-3.5" />
+                        </button>
+                      }
+                    />
+                    <TooltipPopup side="top">New thread in workspace</TooltipPopup>
+                  </Tooltip>
+                ) : null}
+              </div>
+              {!isCollapsed && group.threads.length > 0 && (
+                <ul className="mt-0.5 flex min-w-0 flex-col gap-0.5">
+                  {group.threads.map((thread) => {
+                    const threadKey = scopedThreadKey(
+                      scopeThreadRef(thread.environmentId, thread.id),
+                    );
+                    return (
+                      <SidebarThreadRow
+                        key={threadKey}
+                        thread={thread}
+                        projectCwd={projectCwd}
+                        orderedProjectThreadKeys={orderedProjectThreadKeys}
+                        isActive={activeRouteThreadKey === threadKey}
+                        jumpLabel={threadJumpLabelByKey.get(threadKey) ?? null}
+                        appSettingsConfirmThreadArchive={appSettingsConfirmThreadArchive}
+                        renamingThreadKey={renamingThreadKey}
+                        renamingTitle={renamingTitle}
+                        setRenamingTitle={setRenamingTitle}
+                        startThreadRename={startThreadRename}
+                        renamingInputRef={renamingInputRef}
+                        renamingCommittedRef={renamingCommittedRef}
+                        confirmingArchiveThreadKey={confirmingArchiveThreadKey}
+                        setConfirmingArchiveThreadKey={setConfirmingArchiveThreadKey}
+                        confirmArchiveButtonRefs={confirmArchiveButtonRefs}
+                        handleThreadClick={handleThreadClick}
+                        navigateToThread={navigateToThread}
+                        handleMultiSelectContextMenu={handleMultiSelectContextMenu}
+                        handleThreadContextMenu={handleThreadContextMenu}
+                        clearSelection={clearSelection}
+                        commitRename={commitRename}
+                        cancelRename={cancelRename}
+                        attemptArchiveThread={attemptArchiveThread}
+                        openPrLink={openPrLink}
+                      />
+                    );
+                  })}
+                </ul>
+              )}
+            </SidebarMenuSubItem>
           );
         })}
 
@@ -1073,6 +1180,8 @@ interface SidebarProjectItemProps {
   attachThreadListAutoAnimateRef: (node: HTMLElement | null) => void;
   expandThreadListForProject: (projectKey: string) => void;
   collapseThreadListForProject: (projectKey: string) => void;
+  collapsedWorktreeGroups: ReadonlySet<string>;
+  toggleWorktreeGroup: (collapseKey: string) => void;
   dragInProgressRef: React.RefObject<boolean>;
   suppressProjectClickAfterDragRef: React.RefObject<boolean>;
   suppressProjectClickForContextMenuRef: React.RefObject<boolean>;
@@ -1093,6 +1202,8 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
     attachThreadListAutoAnimateRef,
     expandThreadListForProject,
     collapseThreadListForProject,
+    collapsedWorktreeGroups,
+    toggleWorktreeGroup,
     dragInProgressRef,
     suppressProjectClickAfterDragRef,
     suppressProjectClickForContextMenuRef,
@@ -1907,6 +2018,38 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
     [handleNewThread, isMobile, router, serverConfigs, setOpenMobile],
   );
 
+  const createThreadInWorkspace = useCallback(
+    (input: {
+      thread: SidebarThreadSummary;
+      branch: string | null;
+      worktreePath: string | null;
+    }) => {
+      if (isMobile) {
+        setOpenMobile(false);
+      }
+      void (async () => {
+        const result = await settlePromise(() =>
+          handleNewThread(scopeProjectRef(input.thread.environmentId, input.thread.projectId), {
+            branch: input.branch,
+            worktreePath: input.worktreePath,
+            envMode: input.worktreePath ? "worktree" : "local",
+          }),
+        );
+        if (result._tag === "Failure") {
+          const error = squashAtomCommandFailure(result);
+          toastManager.add(
+            stackedThreadToast({
+              type: "error",
+              title: "Could not create thread",
+              description: error instanceof Error ? error.message : "An error occurred.",
+            }),
+          );
+        }
+      })();
+    },
+    [handleNewThread, isMobile, setOpenMobile],
+  );
+
   const handleCreateThreadClick = useCallback(
     (event: React.MouseEvent<HTMLButtonElement>) => {
       event.preventDefault();
@@ -2340,6 +2483,9 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
         openPrLink={openPrLink}
         expandThreadListForProject={expandThreadListForProject}
         collapseThreadListForProject={collapseThreadListForProject}
+        collapsedWorktreeGroups={collapsedWorktreeGroups}
+        toggleWorktreeGroup={toggleWorktreeGroup}
+        createThreadInWorkspace={createThreadInWorkspace}
       />
 
       <Dialog
@@ -2854,6 +3000,7 @@ interface SidebarProjectsContentProps {
   deleteThread: ReturnType<typeof useThreadActions>["deleteThread"];
   sortedProjects: readonly SidebarProjectSnapshot[];
   expandedThreadListsByProject: ReadonlySet<string>;
+  collapsedWorktreeGroups: ReadonlySet<string>;
   activeRouteProjectKey: string | null;
   routeThreadKey: string | null;
   newThreadShortcutLabel: string | null;
@@ -2862,6 +3009,7 @@ interface SidebarProjectsContentProps {
   attachThreadListAutoAnimateRef: (node: HTMLElement | null) => void;
   expandThreadListForProject: (projectKey: string) => void;
   collapseThreadListForProject: (projectKey: string) => void;
+  toggleWorktreeGroup: (collapseKey: string) => void;
   dragInProgressRef: React.RefObject<boolean>;
   suppressProjectClickAfterDragRef: React.RefObject<boolean>;
   suppressProjectClickForContextMenuRef: React.RefObject<boolean>;
@@ -2895,6 +3043,7 @@ const SidebarProjectsContent = memo(function SidebarProjectsContent(
     deleteThread,
     sortedProjects,
     expandedThreadListsByProject,
+    collapsedWorktreeGroups,
     activeRouteProjectKey,
     routeThreadKey,
     newThreadShortcutLabel,
@@ -2903,6 +3052,7 @@ const SidebarProjectsContent = memo(function SidebarProjectsContent(
     attachThreadListAutoAnimateRef,
     expandThreadListForProject,
     collapseThreadListForProject,
+    toggleWorktreeGroup,
     dragInProgressRef,
     suppressProjectClickAfterDragRef,
     suppressProjectClickForContextMenuRef,
@@ -3050,6 +3200,8 @@ const SidebarProjectsContent = memo(function SidebarProjectsContent(
                         attachThreadListAutoAnimateRef={attachThreadListAutoAnimateRef}
                         expandThreadListForProject={expandThreadListForProject}
                         collapseThreadListForProject={collapseThreadListForProject}
+                        collapsedWorktreeGroups={collapsedWorktreeGroups}
+                        toggleWorktreeGroup={toggleWorktreeGroup}
                         dragInProgressRef={dragInProgressRef}
                         suppressProjectClickAfterDragRef={suppressProjectClickAfterDragRef}
                         suppressProjectClickForContextMenuRef={
@@ -3082,6 +3234,8 @@ const SidebarProjectsContent = memo(function SidebarProjectsContent(
                 attachThreadListAutoAnimateRef={attachThreadListAutoAnimateRef}
                 expandThreadListForProject={expandThreadListForProject}
                 collapseThreadListForProject={collapseThreadListForProject}
+                collapsedWorktreeGroups={collapsedWorktreeGroups}
+                toggleWorktreeGroup={toggleWorktreeGroup}
                 dragInProgressRef={dragInProgressRef}
                 suppressProjectClickAfterDragRef={suppressProjectClickAfterDragRef}
                 suppressProjectClickForContextMenuRef={suppressProjectClickForContextMenuRef}
@@ -3135,6 +3289,9 @@ export default function Sidebar() {
   const [expandedThreadListsByProject, setExpandedThreadListsByProject] = useState<
     ReadonlySet<string>
   >(() => new Set());
+  const [collapsedWorktreeGroups, setCollapsedWorktreeGroups] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
   const { showThreadJumpHints, updateThreadJumpHintsVisibility } = useThreadJumpHintVisibility();
   const dragInProgressRef = useRef(false);
   const suppressProjectClickAfterDragRef = useRef(false);
@@ -3162,6 +3319,17 @@ export default function Sidebar() {
       ),
     [environments],
   );
+  const toggleWorktreeGroup = useCallback((collapseKey: string) => {
+    setCollapsedWorktreeGroups((current) => {
+      const next = new Set(current);
+      if (next.has(collapseKey)) {
+        next.delete(collapseKey);
+      } else {
+        next.add(collapseKey);
+      }
+      return next;
+    });
+  }, []);
   const orderedProjects = useMemo(() => {
     return orderItemsByPreferredIds({
       items: projects,
@@ -3434,14 +3602,24 @@ export default function Sidebar() {
             ? projectThreads
             : projectThreads.slice(0, sidebarThreadPreviewCount);
         const renderedThreads = pinnedCollapsedThread ? [pinnedCollapsedThread] : previewThreads;
-        return renderedThreads.map((thread) =>
-          scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)),
+        return buildSidebarWorktreeThreadGroups({
+          projectKey: project.projectKey,
+          projectCwd: project.workspaceRoot,
+          threads: renderedThreads,
+          formatPathForDisplay: formatWorktreePathForDisplay,
+        }).flatMap((group) =>
+          collapsedWorktreeGroups.has(group.collapseKey)
+            ? []
+            : group.threads.map((thread) =>
+                scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)),
+              ),
         );
       }),
     [
       sidebarThreadSortOrder,
       sidebarThreadPreviewCount,
       expandedThreadListsByProject,
+      collapsedWorktreeGroups,
       projectExpandedById,
       routeThreadKey,
       sortedProjects,
@@ -3727,6 +3905,7 @@ export default function Sidebar() {
             deleteThread={deleteThread}
             sortedProjects={sortedProjects}
             expandedThreadListsByProject={expandedThreadListsByProject}
+            collapsedWorktreeGroups={collapsedWorktreeGroups}
             activeRouteProjectKey={activeRouteProjectKey}
             routeThreadKey={routeThreadKey}
             newThreadShortcutLabel={newThreadShortcutLabel}
@@ -3735,6 +3914,7 @@ export default function Sidebar() {
             attachThreadListAutoAnimateRef={attachThreadListAutoAnimateRef}
             expandThreadListForProject={expandThreadListForProject}
             collapseThreadListForProject={collapseThreadListForProject}
+            toggleWorktreeGroup={toggleWorktreeGroup}
             dragInProgressRef={dragInProgressRef}
             suppressProjectClickAfterDragRef={suppressProjectClickAfterDragRef}
             suppressProjectClickForContextMenuRef={suppressProjectClickForContextMenuRef}

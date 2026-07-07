@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import {
+  buildSidebarWorktreeThreadGroups,
   createThreadJumpHintVisibilityController,
   getSidebarThreadIdsToPrewarm,
   getVisibleSidebarThreadIds,
@@ -688,6 +689,92 @@ describe("resolveThreadRowClassName", () => {
     const className = resolveThreadRowClassName({ isActive: true, isSelected: false });
     expect(className).toContain("bg-accent/85");
     expect(className).toContain("hover:bg-accent");
+  });
+});
+
+describe("buildSidebarWorktreeThreadGroups", () => {
+  it("groups threads by explicit worktree path and preserves first-seen group order", () => {
+    const groups = buildSidebarWorktreeThreadGroups({
+      projectKey: "project-a",
+      projectCwd: "/repo/main",
+      formatPathForDisplay: (path) => path.split("/").at(-1) ?? path,
+      threads: [
+        makeThread({
+          id: ThreadId.make("thread-1"),
+          branch: "feature/alpha",
+          worktreePath: "/repo/worktrees/feature-a",
+        }),
+        makeThread({
+          id: ThreadId.make("thread-2"),
+          branch: "feature/beta",
+          worktreePath: "/repo/worktrees/feature-b",
+        }),
+        makeThread({
+          id: ThreadId.make("thread-3"),
+          branch: "feature/alpha",
+          worktreePath: "/repo/worktrees/feature-a",
+        }),
+      ],
+    });
+
+    expect(groups.map((group) => group.label)).toEqual(["feature/alpha", "feature/beta"]);
+    expect(groups.map((group) => group.threads.map((thread) => thread.id))).toEqual([
+      [ThreadId.make("thread-1"), ThreadId.make("thread-3")],
+      [ThreadId.make("thread-2")],
+    ]);
+  });
+
+  it("falls back to the worktree path segment when a worktree thread has no branch", () => {
+    const groups = buildSidebarWorktreeThreadGroups({
+      projectKey: "project-a",
+      projectCwd: "/repo/main",
+      formatPathForDisplay: (path) => path.split("/").at(-1) ?? path,
+      threads: [
+        makeThread({
+          id: ThreadId.make("thread-1"),
+          branch: null,
+          worktreePath: "/repo/worktrees/feature-a",
+        }),
+      ],
+    });
+
+    expect(groups[0]?.label).toBe("feature-a");
+  });
+
+  it("uses the project cwd as a main worktree group for threads without an explicit worktree", () => {
+    const groups = buildSidebarWorktreeThreadGroups({
+      projectKey: "project-a",
+      projectCwd: "/repo/main",
+      formatPathForDisplay: (path) => path,
+      threads: [makeThread({ id: ThreadId.make("thread-1"), worktreePath: null })],
+    });
+
+    expect(groups).toHaveLength(1);
+    expect(groups[0]).toMatchObject({
+      key: "/repo/main",
+      collapseKey: "project-a::/repo/main",
+      label: "Main worktree",
+      path: "/repo/main",
+    });
+  });
+
+  it("assigns the same stable color to the same worktree key across projects", () => {
+    const first = buildSidebarWorktreeThreadGroups({
+      projectKey: "project-a",
+      projectCwd: "/repo/main",
+      formatPathForDisplay: (path) => path,
+      threads: [makeThread({ worktreePath: "/repo/worktrees/feature-a" })],
+    });
+    const second = buildSidebarWorktreeThreadGroups({
+      projectKey: "project-b",
+      projectCwd: "/repo/main",
+      formatPathForDisplay: (path) => path,
+      threads: [makeThread({ worktreePath: "/repo/worktrees/feature-a" })],
+    });
+
+    expect(first[0]?.color).toEqual(second[0]?.color);
+    expect(first[0]?.collapseKey).toBe("project-a::/repo/worktrees/feature-a");
+    expect(second[0]?.collapseKey).toBe("project-b::/repo/worktrees/feature-a");
   });
 });
 

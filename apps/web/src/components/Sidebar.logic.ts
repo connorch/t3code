@@ -39,6 +39,21 @@ export interface ThreadStatusPill {
   pulse: boolean;
 }
 
+export interface SidebarWorktreeColor {
+  border: string;
+  surface: string;
+  swatch: string;
+}
+
+export interface SidebarWorktreeThreadGroup<T> {
+  key: string;
+  collapseKey: string;
+  label: string;
+  path: string | null;
+  color: SidebarWorktreeColor;
+  threads: T[];
+}
+
 const THREAD_STATUS_PRIORITY: Record<ThreadStatusPill["label"], number> = {
   "Pending Approval": 5,
   "Awaiting Input": 4,
@@ -47,6 +62,81 @@ const THREAD_STATUS_PRIORITY: Record<ThreadStatusPill["label"], number> = {
   "Plan Ready": 2,
   Completed: 1,
 };
+
+const SIDEBAR_WORKTREE_COLORS: readonly SidebarWorktreeColor[] = [
+  { border: "hsl(188 78% 38%)", surface: "hsl(188 78% 38% / 0.08)", swatch: "hsl(188 78% 38%)" },
+  { border: "hsl(142 65% 36%)", surface: "hsl(142 65% 36% / 0.08)", swatch: "hsl(142 65% 36%)" },
+  { border: "hsl(32 84% 45%)", surface: "hsl(32 84% 45% / 0.09)", swatch: "hsl(32 84% 45%)" },
+  { border: "hsl(348 72% 50%)", surface: "hsl(348 72% 50% / 0.08)", swatch: "hsl(348 72% 50%)" },
+  { border: "hsl(215 78% 48%)", surface: "hsl(215 78% 48% / 0.08)", swatch: "hsl(215 78% 48%)" },
+  { border: "hsl(54 82% 38%)", surface: "hsl(54 82% 38% / 0.1)", swatch: "hsl(54 82% 38%)" },
+  { border: "hsl(172 72% 32%)", surface: "hsl(172 72% 32% / 0.08)", swatch: "hsl(172 72% 32%)" },
+  { border: "hsl(265 55% 55%)", surface: "hsl(265 55% 55% / 0.08)", swatch: "hsl(265 55% 55%)" },
+];
+
+function sidebarWorktreeHash(value: string): number {
+  let hash = 0;
+  for (let index = 0; index < value.length; index += 1) {
+    hash = (hash * 31 + value.charCodeAt(index)) >>> 0;
+  }
+  return hash;
+}
+
+export function resolveSidebarWorktreeColor(value: string): SidebarWorktreeColor {
+  return SIDEBAR_WORKTREE_COLORS[sidebarWorktreeHash(value) % SIDEBAR_WORKTREE_COLORS.length]!;
+}
+
+export function sidebarWorktreeCollapseKey(input: {
+  projectKey: string;
+  worktreeKey: string;
+}): string {
+  return `${input.projectKey}::${input.worktreeKey}`;
+}
+
+export function buildSidebarWorktreeThreadGroups<
+  T extends Pick<SidebarThreadSummary, "branch" | "worktreePath">,
+>(input: {
+  projectKey: string;
+  projectCwd: string | null;
+  threads: readonly T[];
+  formatPathForDisplay: (path: string) => string;
+}): SidebarWorktreeThreadGroup<T>[] {
+  const projectCwd = input.projectCwd?.trim() || null;
+  const groups = new Map<string, SidebarWorktreeThreadGroup<T>>();
+
+  for (const thread of input.threads) {
+    const explicitWorktreePath = thread.worktreePath?.trim() || null;
+    const path = explicitWorktreePath ?? projectCwd;
+    const worktreeKey = path ?? "__unknown_worktree__";
+    const existing = groups.get(worktreeKey);
+    if (existing) {
+      existing.threads.push(thread);
+      continue;
+    }
+
+    const branchLabel = thread.branch?.trim() || null;
+    const label =
+      path === null
+        ? "Workspace"
+        : explicitWorktreePath === null && path === projectCwd
+          ? "Main worktree"
+          : (branchLabel ?? input.formatPathForDisplay(path));
+
+    groups.set(worktreeKey, {
+      key: worktreeKey,
+      collapseKey: sidebarWorktreeCollapseKey({
+        projectKey: input.projectKey,
+        worktreeKey,
+      }),
+      label,
+      path,
+      color: resolveSidebarWorktreeColor(worktreeKey),
+      threads: [thread],
+    });
+  }
+
+  return [...groups.values()];
+}
 
 type ThreadStatusInput = Pick<
   SidebarThreadSummary,
