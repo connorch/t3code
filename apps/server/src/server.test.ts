@@ -101,6 +101,7 @@ import * as GitVcsDriver from "./vcs/GitVcsDriver.ts";
 import * as VcsDriver from "./vcs/VcsDriver.ts";
 import * as VcsStatusBroadcaster from "./vcs/VcsStatusBroadcaster.ts";
 import * as VcsDriverRegistry from "./vcs/VcsDriverRegistry.ts";
+import * as VcsProcess from "./vcs/VcsProcess.ts";
 import * as VcsProvisioningService from "./vcs/VcsProvisioningService.ts";
 import * as GitWorkflowService from "./git/GitWorkflowService.ts";
 import * as ReviewService from "./review/ReviewService.ts";
@@ -4443,17 +4444,19 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
     }).pipe(Effect.provide(NodeHttpServer.layerTest), TestClock.withLive),
   );
 
-  it.effect("routes websocket rpc projects.searchEntries excludes gitignored files", () =>
+  it.effect("routes websocket rpc projects.searchEntries includes gitignored files", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
       const workspaceDir = yield* fs.makeTempDirectoryScoped({
         prefix: "t3-ws-project-search-gitignored-",
       });
-      yield* fs.writeFileString(path.join(workspaceDir, ".gitignore"), ".venv/\n");
-      yield* fs.makeDirectory(path.join(workspaceDir, ".venv", "lib"), { recursive: true });
+      yield* fs.writeFileString(path.join(workspaceDir, ".gitignore"), "ignored-artifacts/\n");
+      yield* fs.makeDirectory(path.join(workspaceDir, "ignored-artifacts", "lib"), {
+        recursive: true,
+      });
       yield* fs.writeFileString(
-        path.join(workspaceDir, ".venv", "lib", "ignored-search-target.ts"),
+        path.join(workspaceDir, "ignored-artifacts", "lib", "ignored-search-target.ts"),
         "export const ignored = true;",
       );
       yield* fs.makeDirectory(path.join(workspaceDir, "src"), { recursive: true });
@@ -4461,6 +4464,13 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
         path.join(workspaceDir, "src", "tracked.ts"),
         "export const ok = 1;",
       );
+      const vcsProcess = yield* VcsProcess.VcsProcess;
+      yield* vcsProcess.run({
+        operation: "server.test.git-init",
+        command: "git",
+        args: ["init"],
+        cwd: workspaceDir,
+      });
 
       yield* buildAppUnderTest({
         layers: {
@@ -4478,7 +4488,9 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
               }),
             filterIgnoredPaths: (_cwd, relativePaths) =>
               Effect.succeed(
-                relativePaths.filter((relativePath) => !relativePath.startsWith(".venv/")),
+                relativePaths.filter(
+                  (relativePath) => !relativePath.startsWith("ignored-artifacts/"),
+                ),
               ),
           },
         },
@@ -4495,9 +4507,18 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
         ),
       );
 
-      assert.equal(response.entries.length, 0);
+      assert.isTrue(
+        response.entries.some(
+          (entry) =>
+            entry.path === "ignored-artifacts/lib/ignored-search-target.ts" &&
+            entry.ignored === true,
+        ),
+      );
       assert.equal(response.truncated, false);
-    }).pipe(Effect.provide(NodeHttpServer.layerTest), TestClock.withLive),
+    }).pipe(
+      Effect.provide(Layer.merge(VcsProcess.layer, NodeHttpServer.layerTest)),
+      TestClock.withLive,
+    ),
   );
 
   it.effect("preserves structured workspace rpc failures", () =>
