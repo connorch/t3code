@@ -11,8 +11,10 @@ import {
   persistState,
   reorderProjects,
   resolveProjectExpanded,
+  resolveProjectHidden,
   setDefaultAdvertisedEndpointKey,
   setProjectExpanded,
+  setProjectHidden,
   setThreadChangedFilesExpanded,
   type UiState,
 } from "./uiStateStore";
@@ -20,6 +22,7 @@ import {
 function makeUiState(overrides: Partial<UiState> = {}): UiState {
   return {
     projectExpandedById: {},
+    hiddenProjectIds: [],
     projectOrder: [],
     threadLastVisitedAtById: {},
     threadChangedFilesExpandedById: {},
@@ -79,6 +82,23 @@ describe("uiStateStore pure functions", () => {
       "environment-b:/repo": false,
     });
     expect(setProjectExpanded(next, keys, false)).toBe(next);
+  });
+
+  it("sets hidden state for every stable key belonging to a logical project", () => {
+    const initialState = makeUiState();
+    const keys = ["logical", "environment-a:/repo", "environment-b:/repo"];
+
+    const hidden = setProjectHidden(initialState, keys, true);
+
+    expect(hidden.hiddenProjectIds).toEqual(keys);
+    expect(resolveProjectHidden(hidden.hiddenProjectIds, ["missing", "environment-a:/repo"])).toBe(
+      true,
+    );
+    expect(setProjectHidden(hidden, keys, true)).toBe(hidden);
+
+    const visible = setProjectHidden(hidden, ["logical", "environment-a:/repo"], false);
+    expect(visible.hiddenProjectIds).toEqual(["environment-b:/repo"]);
+    expect(resolveProjectHidden(visible.hiddenProjectIds, keys)).toBe(true);
   });
 
   it("reorders from the current atom-derived project order", () => {
@@ -150,6 +170,7 @@ describe("parsePersistedState", () => {
         invalid: "no" as unknown as boolean,
       },
       projectOrder: ["physical-b", "", "physical-a", "physical-b"],
+      hiddenProjectIds: ["logical", "", "logical", "physical-a"],
       threadLastVisitedAtById: {
         "environment:thread-1": "2026-02-25T12:35:00.000Z",
         invalid: "not-a-date",
@@ -167,6 +188,7 @@ describe("parsePersistedState", () => {
       projectExpandedById: {
         logical: false,
       },
+      hiddenProjectIds: ["logical", "physical-a"],
       projectOrder: ["physical-b", "physical-a"],
       threadLastVisitedAtById: {
         "environment:thread-1": "2026-02-25T12:35:00.000Z",
@@ -252,6 +274,7 @@ describe("uiStateStore persistence", () => {
         logical: false,
       },
       projectOrder: ["physical-b", "physical-a"],
+      hiddenProjectIds: ["logical"],
       threadLastVisitedAtById: {
         "environment:thread-1": "2026-02-25T12:35:00.000Z",
       },
@@ -273,6 +296,7 @@ describe("uiStateStore persistence", () => {
       projectExpandedById: {
         logical: false,
       },
+      hiddenProjectIds: ["logical"],
       projectOrder: ["physical-b", "physical-a"],
       threadLastVisitedAtById: {
         "environment:thread-1": "2026-02-25T12:35:00.000Z",

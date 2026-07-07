@@ -5,6 +5,8 @@ import {
   ChevronRightIcon,
   CloudIcon,
   ContainerIcon,
+  EyeIcon,
+  EyeOffIcon,
   FolderPlusIcon,
   Globe2Icon,
   LoaderIcon,
@@ -96,6 +98,7 @@ import { useAtomCommand } from "../state/use-atom-command";
 import { previewEnvironment } from "../state/preview";
 import {
   legacyProjectCwdPreferenceKey,
+  resolveProjectHidden,
   resolveProjectExpanded,
   useUiStateStore,
 } from "../uiStateStore";
@@ -1170,6 +1173,7 @@ const SidebarProjectThreadList = memo(function SidebarProjectThreadList(
 
 interface SidebarProjectItemProps {
   project: SidebarProjectSnapshot;
+  isProjectHidden: boolean;
   isThreadListExpanded: boolean;
   activeRouteThreadKey: string | null;
   newThreadShortcutLabel: string | null;
@@ -1187,11 +1191,13 @@ interface SidebarProjectItemProps {
   suppressProjectClickForContextMenuRef: React.RefObject<boolean>;
   isManualProjectSorting: boolean;
   dragHandleProps: SortableProjectHandleProps | null;
+  onProjectHiddenChange: (projectIds: readonly string[], hidden: boolean) => void;
 }
 
 const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjectItemProps) {
   const {
     project,
+    isProjectHidden,
     isThreadListExpanded,
     activeRouteThreadKey,
     newThreadShortcutLabel,
@@ -1209,6 +1215,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
     suppressProjectClickForContextMenuRef,
     isManualProjectSorting,
     dragHandleProps,
+    onProjectHiddenChange,
   } = props;
   const threadSortOrder = useClientSettings<SidebarThreadSortOrder>(
     (settings) => settings.sidebarThreadSortOrder,
@@ -2104,6 +2111,19 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
     [createThreadForProjectMember, project.groupedProjectCount, project.memberProjects],
   );
 
+  const handleToggleProjectHiddenClick = useCallback(
+    (event: React.MouseEvent<HTMLButtonElement>) => {
+      event.preventDefault();
+      event.stopPropagation();
+      onProjectHiddenChange(projectPreferenceKeys, !isProjectHidden);
+    },
+    [isProjectHidden, onProjectHiddenChange, projectPreferenceKeys],
+  );
+
+  const stopProjectActionPointerDown = useCallback((event: React.PointerEvent) => {
+    event.stopPropagation();
+  }, []);
+
   const attemptArchiveThread = useCallback(
     async (threadRef: ScopedThreadRef) => {
       const result = await archiveThread(threadRef);
@@ -2346,9 +2366,9 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
         <SidebarMenuButton
           ref={isManualProjectSorting ? dragHandleProps?.setActivatorNodeRef : undefined}
           size="sm"
-          className={`gap-2 px-2 py-1.5 pr-8 text-left hover:bg-accent group-hover/project-header:bg-accent group-hover/project-header:text-sidebar-accent-foreground max-sm:pr-14 ${
+          className={`gap-2 px-2 py-1.5 pr-14 text-left hover:bg-accent group-hover/project-header:bg-accent group-hover/project-header:text-sidebar-accent-foreground max-sm:pr-20 ${
             isManualProjectSorting ? "cursor-grab active:cursor-grabbing" : "cursor-pointer"
-          }`}
+          } ${isProjectHidden ? "opacity-60" : ""}`}
           {...(isManualProjectSorting && dragHandleProps ? dragHandleProps.attributes : {})}
           {...(isManualProjectSorting && dragHandleProps ? dragHandleProps.listeners : {})}
           onPointerDownCapture={handleProjectButtonPointerDownCapture}
@@ -2409,7 +2429,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
                       ? "Local sandbox project"
                       : "Remote project"
                   }
-                  className="pointer-events-none absolute top-1 right-1.5 inline-flex size-5 items-center justify-center rounded-md text-muted-foreground/60 transition-opacity duration-150 max-sm:right-7 group-hover/project-header:opacity-0 group-focus-within/project-header:opacity-0 max-sm:group-hover/project-header:opacity-100 max-sm:group-focus-within/project-header:opacity-100"
+                  className="pointer-events-none absolute top-1 right-1.5 inline-flex size-5 items-center justify-center rounded-md text-muted-foreground/60 transition-opacity duration-150 max-sm:right-12 group-hover/project-header:opacity-0 group-focus-within/project-header:opacity-0 max-sm:group-hover/project-header:opacity-100 max-sm:group-focus-within/project-header:opacity-100"
                 />
               }
             >
@@ -2429,12 +2449,42 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
         <Tooltip>
           <TooltipTrigger
             render={
+              <div className="pointer-events-none absolute top-[calc(50%+1px)] right-6 -translate-y-1/2 opacity-0 transition-opacity duration-150 max-sm:pointer-events-auto max-sm:opacity-100 group-hover/project-header:pointer-events-auto group-hover/project-header:opacity-100 group-focus-within/project-header:pointer-events-auto group-focus-within/project-header:opacity-100">
+                <button
+                  type="button"
+                  aria-label={
+                    isProjectHidden
+                      ? `Unhide ${project.displayName}`
+                      : `Hide ${project.displayName}`
+                  }
+                  data-testid="project-hide-button"
+                  className={SIDEBAR_ICON_ACTION_BUTTON_CLASS}
+                  onPointerDown={stopProjectActionPointerDown}
+                  onClick={handleToggleProjectHiddenClick}
+                >
+                  {isProjectHidden ? (
+                    <EyeIcon className="size-3.5" />
+                  ) : (
+                    <EyeOffIcon className="size-3.5" />
+                  )}
+                </button>
+              </div>
+            }
+          />
+          <TooltipPopup side="top">
+            {isProjectHidden ? "Unhide project" : "Hide project"}
+          </TooltipPopup>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger
+            render={
               <div className="pointer-events-none absolute top-[calc(50%+1px)] right-0.5 -translate-y-1/2 opacity-0 transition-opacity duration-150 max-sm:pointer-events-auto max-sm:opacity-100 group-hover/project-header:pointer-events-auto group-hover/project-header:opacity-100 group-focus-within/project-header:pointer-events-auto group-focus-within/project-header:opacity-100">
                 <button
                   type="button"
                   aria-label={`Create new thread in ${project.displayName}`}
                   data-testid="new-thread-button"
                   className={SIDEBAR_ICON_ACTION_BUTTON_CLASS}
+                  onPointerDown={stopProjectActionPointerDown}
                   onClick={handleCreateThreadClick}
                 >
                   <SquarePenIcon className="size-3.5" />
@@ -2999,6 +3049,9 @@ interface SidebarProjectsContentProps {
   archiveThread: ReturnType<typeof useThreadActions>["archiveThread"];
   deleteThread: ReturnType<typeof useThreadActions>["deleteThread"];
   sortedProjects: readonly SidebarProjectSnapshot[];
+  hiddenProjectIds: readonly string[];
+  hiddenProjectCount: number;
+  hiddenProjectsVisible: boolean;
   expandedThreadListsByProject: ReadonlySet<string>;
   collapsedWorktreeGroups: ReadonlySet<string>;
   activeRouteProjectKey: string | null;
@@ -3015,6 +3068,8 @@ interface SidebarProjectsContentProps {
   suppressProjectClickForContextMenuRef: React.RefObject<boolean>;
   attachProjectListAutoAnimateRef: (node: HTMLElement | null) => void;
   projectsLength: number;
+  onProjectHiddenChange: (projectIds: readonly string[], hidden: boolean) => void;
+  onToggleHiddenProjectsVisible: () => void;
 }
 
 const SidebarProjectsContent = memo(function SidebarProjectsContent(
@@ -3042,6 +3097,9 @@ const SidebarProjectsContent = memo(function SidebarProjectsContent(
     archiveThread,
     deleteThread,
     sortedProjects,
+    hiddenProjectIds,
+    hiddenProjectCount,
+    hiddenProjectsVisible,
     expandedThreadListsByProject,
     collapsedWorktreeGroups,
     activeRouteProjectKey,
@@ -3058,6 +3116,8 @@ const SidebarProjectsContent = memo(function SidebarProjectsContent(
     suppressProjectClickForContextMenuRef,
     attachProjectListAutoAnimateRef,
     projectsLength,
+    onProjectHiddenChange,
+    onToggleHiddenProjectsVisible,
   } = props;
 
   const handleProjectSortOrderChange = useCallback(
@@ -3188,6 +3248,10 @@ const SidebarProjectsContent = memo(function SidebarProjectsContent(
                     {(dragHandleProps) => (
                       <SidebarProjectItem
                         project={project}
+                        isProjectHidden={resolveProjectHidden(
+                          hiddenProjectIds,
+                          projectExpansionPreferenceKeys(project),
+                        )}
                         isThreadListExpanded={expandedThreadListsByProject.has(project.projectKey)}
                         activeRouteThreadKey={
                           activeRouteProjectKey === project.projectKey ? routeThreadKey : null
@@ -3209,6 +3273,7 @@ const SidebarProjectsContent = memo(function SidebarProjectsContent(
                         }
                         isManualProjectSorting={isManualProjectSorting}
                         dragHandleProps={dragHandleProps}
+                        onProjectHiddenChange={onProjectHiddenChange}
                       />
                     )}
                   </SortableProjectItem>
@@ -3222,6 +3287,10 @@ const SidebarProjectsContent = memo(function SidebarProjectsContent(
               <SidebarProjectListRow
                 key={project.projectKey}
                 project={project}
+                isProjectHidden={resolveProjectHidden(
+                  hiddenProjectIds,
+                  projectExpansionPreferenceKeys(project),
+                )}
                 isThreadListExpanded={expandedThreadListsByProject.has(project.projectKey)}
                 activeRouteThreadKey={
                   activeRouteProjectKey === project.projectKey ? routeThreadKey : null
@@ -3241,8 +3310,34 @@ const SidebarProjectsContent = memo(function SidebarProjectsContent(
                 suppressProjectClickForContextMenuRef={suppressProjectClickForContextMenuRef}
                 isManualProjectSorting={isManualProjectSorting}
                 dragHandleProps={null}
+                onProjectHiddenChange={onProjectHiddenChange}
               />
             ))}
+          </SidebarMenu>
+        )}
+
+        {hiddenProjectCount > 0 && (
+          <SidebarMenu className="mt-1">
+            <SidebarMenuItem>
+              <SidebarMenuButton
+                size="sm"
+                className="gap-2 px-2 py-1.5 text-muted-foreground/70 hover:bg-accent hover:text-foreground"
+                data-testid="toggle-hidden-projects"
+                onClick={onToggleHiddenProjectsVisible}
+              >
+                {hiddenProjectsVisible ? (
+                  <EyeOffIcon className="size-3.5" />
+                ) : (
+                  <EyeIcon className="size-3.5" />
+                )}
+                <span className="min-w-0 flex-1 truncate text-left text-xs">
+                  {hiddenProjectsVisible ? "Hide hidden projects" : "Show hidden projects"}
+                </span>
+                <span className="shrink-0 rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                  {hiddenProjectCount}
+                </span>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
           </SidebarMenu>
         )}
 
@@ -3260,7 +3355,9 @@ export default function Sidebar() {
   const projects = useProjects();
   const sidebarThreads = useThreadShells();
   const projectExpandedById = useUiStateStore((store) => store.projectExpandedById);
+  const hiddenProjectIds = useUiStateStore((store) => store.hiddenProjectIds);
   const projectOrder = useUiStateStore((store) => store.projectOrder);
+  const setProjectHidden = useUiStateStore((store) => store.setProjectHidden);
   const reorderProjects = useUiStateStore((store) => store.reorderProjects);
   const navigate = useNavigate();
   const pathname = useLocation({ select: (loc) => loc.pathname });
@@ -3292,6 +3389,7 @@ export default function Sidebar() {
   const [collapsedWorktreeGroups, setCollapsedWorktreeGroups] = useState<ReadonlySet<string>>(
     () => new Set(),
   );
+  const [hiddenProjectsVisible, setHiddenProjectsVisible] = useState(false);
   const { showThreadJumpHints, updateThreadJumpHintsVisibility } = useThreadJumpHintVisibility();
   const dragInProgressRef = useRef(false);
   const suppressProjectClickAfterDragRef = useRef(false);
@@ -3568,10 +3666,27 @@ export default function Sidebar() {
     sidebarProjects,
     visibleThreads,
   ]);
+  const hiddenProjectCount = useMemo(
+    () =>
+      sortedProjects.filter((project) =>
+        resolveProjectHidden(hiddenProjectIds, projectExpansionPreferenceKeys(project)),
+      ).length,
+    [hiddenProjectIds, sortedProjects],
+  );
+  const displayedProjects = useMemo(
+    () =>
+      hiddenProjectsVisible
+        ? sortedProjects
+        : sortedProjects.filter(
+            (project) =>
+              !resolveProjectHidden(hiddenProjectIds, projectExpansionPreferenceKeys(project)),
+          ),
+    [hiddenProjectIds, hiddenProjectsVisible, sortedProjects],
+  );
   const isManualProjectSorting = sidebarProjectSortOrder === "manual";
   const visibleSidebarThreadKeys = useMemo(
     () =>
-      sortedProjects.flatMap((project) => {
+      displayedProjects.flatMap((project) => {
         const projectThreads = sortThreads(
           (threadsByProjectKey.get(project.projectKey) ?? []).filter(
             (thread) => thread.archivedAt === null,
@@ -3620,9 +3735,9 @@ export default function Sidebar() {
       sidebarThreadPreviewCount,
       expandedThreadListsByProject,
       collapsedWorktreeGroups,
+      displayedProjects,
       projectExpandedById,
       routeThreadKey,
-      sortedProjects,
       threadsByProjectKey,
     ],
   );
@@ -3871,6 +3986,20 @@ export default function Sidebar() {
     });
   }, []);
 
+  const handleProjectHiddenChange = useCallback(
+    (projectIds: readonly string[], hidden: boolean) => {
+      setProjectHidden(projectIds, hidden);
+      if (hidden) {
+        setHiddenProjectsVisible(false);
+      }
+    },
+    [setProjectHidden],
+  );
+
+  const toggleHiddenProjectsVisible = useCallback(() => {
+    setHiddenProjectsVisible((current) => !current);
+  }, []);
+
   return (
     <>
       {prewarmedSidebarThreadRefs.map((threadRef) => (
@@ -3903,7 +4032,10 @@ export default function Sidebar() {
             handleNewThread={handleNewThread}
             archiveThread={archiveThread}
             deleteThread={deleteThread}
-            sortedProjects={sortedProjects}
+            sortedProjects={displayedProjects}
+            hiddenProjectIds={hiddenProjectIds}
+            hiddenProjectCount={hiddenProjectCount}
+            hiddenProjectsVisible={hiddenProjectsVisible}
             expandedThreadListsByProject={expandedThreadListsByProject}
             collapsedWorktreeGroups={collapsedWorktreeGroups}
             activeRouteProjectKey={activeRouteProjectKey}
@@ -3920,6 +4052,8 @@ export default function Sidebar() {
             suppressProjectClickForContextMenuRef={suppressProjectClickForContextMenuRef}
             attachProjectListAutoAnimateRef={attachProjectListAutoAnimateRef}
             projectsLength={projects.length}
+            onProjectHiddenChange={handleProjectHiddenChange}
+            onToggleHiddenProjectsVisible={toggleHiddenProjectsVisible}
           />
 
           <SidebarSeparator />

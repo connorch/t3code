@@ -18,6 +18,7 @@ const LEGACY_PERSISTED_STATE_KEYS = [
 
 export interface PersistedUiState {
   projectExpandedById?: Record<string, boolean>;
+  hiddenProjectIds?: string[];
   projectOrder?: string[];
   threadLastVisitedAtById?: Record<string, string>;
   collapsedProjectCwds?: string[];
@@ -29,6 +30,7 @@ export interface PersistedUiState {
 
 export interface UiProjectState {
   projectExpandedById: Record<string, boolean>;
+  hiddenProjectIds: string[];
   projectOrder: string[];
 }
 
@@ -45,6 +47,7 @@ export interface UiState extends UiProjectState, UiThreadState, UiEndpointState 
 
 const initialState: UiState = {
   projectExpandedById: {},
+  hiddenProjectIds: [],
   projectOrder: [],
   threadLastVisitedAtById: {},
   threadChangedFilesExpandedById: {},
@@ -122,6 +125,7 @@ export function parsePersistedState(parsed: PersistedUiState): UiState {
 
   return {
     projectExpandedById,
+    hiddenProjectIds: sanitizeStringArray(parsed.hiddenProjectIds),
     projectOrder,
     threadLastVisitedAtById: sanitizeTimestampRecord(parsed.threadLastVisitedAtById),
     threadChangedFilesExpandedById: sanitizePersistedThreadChangedFilesExpanded(
@@ -207,6 +211,7 @@ export function persistState(state: UiState): void {
       PERSISTED_STATE_KEY,
       JSON.stringify({
         projectExpandedById,
+        hiddenProjectIds: state.hiddenProjectIds,
         projectOrder: state.projectOrder,
         threadLastVisitedAtById: state.threadLastVisitedAtById,
         defaultAdvertisedEndpointKey: state.defaultAdvertisedEndpointKey,
@@ -347,6 +352,14 @@ export function resolveProjectExpanded(
   return projectExpandedById[LEGACY_PROJECT_EXPANSION_DEFAULT_KEY] ?? true;
 }
 
+export function resolveProjectHidden(
+  hiddenProjectIds: readonly string[],
+  preferenceKeys: readonly string[],
+): boolean {
+  const hiddenProjectIdSet = new Set(hiddenProjectIds);
+  return preferenceKeys.some((projectId) => hiddenProjectIdSet.has(projectId));
+}
+
 export function setProjectExpanded(
   state: UiState,
   projectIds: string | readonly string[],
@@ -364,6 +377,40 @@ export function setProjectExpanded(
   return {
     ...state,
     projectExpandedById,
+  };
+}
+
+export function setProjectHidden(
+  state: UiState,
+  projectIds: string | readonly string[],
+  hidden: boolean,
+): UiState {
+  const ids = typeof projectIds === "string" ? [projectIds] : projectIds;
+  const nextIds = sanitizeStringArray(ids);
+  if (nextIds.length === 0) {
+    return state;
+  }
+
+  const hiddenProjectIds = new Set(state.hiddenProjectIds);
+  let changed = false;
+  for (const projectId of nextIds) {
+    if (hidden) {
+      if (!hiddenProjectIds.has(projectId)) {
+        hiddenProjectIds.add(projectId);
+        changed = true;
+      }
+    } else if (hiddenProjectIds.delete(projectId)) {
+      changed = true;
+    }
+  }
+
+  if (!changed) {
+    return state;
+  }
+
+  return {
+    ...state,
+    hiddenProjectIds: [...hiddenProjectIds],
   };
 }
 
@@ -417,6 +464,7 @@ interface UiStateStore extends UiState {
   setThreadChangedFilesExpanded: (threadId: string, turnId: string, expanded: boolean) => void;
   setDefaultAdvertisedEndpointKey: (key: string | null) => void;
   setProjectExpanded: (projectIds: string | readonly string[], expanded: boolean) => void;
+  setProjectHidden: (projectIds: string | readonly string[], hidden: boolean) => void;
   reorderProjects: (
     currentProjectOrder: readonly string[],
     draggedProjectIds: readonly string[],
@@ -436,6 +484,8 @@ export const useUiStateStore = create<UiStateStore>((set) => ({
     set((state) => setDefaultAdvertisedEndpointKey(state, key)),
   setProjectExpanded: (projectIds, expanded) =>
     set((state) => setProjectExpanded(state, projectIds, expanded)),
+  setProjectHidden: (projectIds, hidden) =>
+    set((state) => setProjectHidden(state, projectIds, hidden)),
   reorderProjects: (currentProjectOrder, draggedProjectIds, targetProjectIds) =>
     set((state) =>
       reorderProjects(state, currentProjectOrder, draggedProjectIds, targetProjectIds),
