@@ -186,6 +186,23 @@ it.layer(TestLayer, { excludeTestServices: true })("WorkspaceEntries", (it) => {
       }),
     );
 
+    it.effect("ranks searchable gitignored files with regular file matches", () =>
+      Effect.gen(function* () {
+        const cwd = yield* makeTempDir({
+          prefix: "t3code-workspace-gitignored-ranking-",
+          git: true,
+        });
+        yield* writeTextFile(cwd, ".gitignore", ".env\n");
+        yield* writeTextFile(cwd, ".env", "SECRET=1\n");
+        yield* writeTextFile(cwd, "src/environment.ts", "export {};");
+
+        const result = yield* searchWorkspaceEntries({ cwd, query: ".en", limit: 5 });
+
+        expect(result.entries[0]).toEqual({ path: ".env", kind: "file", ignored: true });
+        expect(result.entries.some((entry) => entry.path === "src/environment.ts")).toBe(true);
+      }),
+    );
+
     it.effect("tracks truncation without sorting every fuzzy match", () =>
       Effect.gen(function* () {
         const cwd = yield* makeTempDir({ prefix: "t3code-workspace-fuzzy-limit-" });
@@ -266,11 +283,31 @@ it.layer(TestLayer, { excludeTestServices: true })("WorkspaceEntries", (it) => {
         yield* writeTextFile(
           cwd,
           ".gitignore",
-          "node_modules/\n.venv/\ndist/\ndist-electron/\n.electron-runtime/\nignored.txt\n",
+          [
+            "node_modules/",
+            "bower_components/",
+            "dist/",
+            "build/",
+            "out/",
+            ".output/",
+            ".svelte-kit/",
+            ".vite/",
+            ".venv/",
+            "dist-electron/",
+            ".electron-runtime/",
+            "ignored.txt",
+            "",
+          ].join("\n"),
         );
         yield* writeTextFile(cwd, "node_modules/pkg/index.js", "module.exports = {};");
+        yield* writeTextFile(cwd, "bower_components/pkg/index.js", "");
         yield* writeTextFile(cwd, ".venv/lib/python.py", "");
         yield* writeTextFile(cwd, "dist/bundle.js", "");
+        yield* writeTextFile(cwd, "build/bundle.js", "");
+        yield* writeTextFile(cwd, "out/page.js", "");
+        yield* writeTextFile(cwd, ".output/server/index.mjs", "");
+        yield* writeTextFile(cwd, ".svelte-kit/generated/client.js", "");
+        yield* writeTextFile(cwd, ".vite/deps/react.js", "");
         yield* writeTextFile(cwd, "dist-electron/main.cjs", "");
         yield* writeTextFile(cwd, ".electron-runtime/T3 Code.app/Contents/Info.plist", "");
         yield* writeTextFile(cwd, "ignored.txt", "");
@@ -279,8 +316,16 @@ it.layer(TestLayer, { excludeTestServices: true })("WorkspaceEntries", (it) => {
         const result = yield* searchWorkspaceEntries({ cwd, query: "", limit: 100 });
 
         expect(result.entries.some((entry) => entry.path.startsWith("node_modules/"))).toBe(false);
+        expect(result.entries.some((entry) => entry.path.startsWith("bower_components/"))).toBe(
+          false,
+        );
         expect(result.entries.some((entry) => entry.path.startsWith(".venv/"))).toBe(false);
         expect(result.entries.some((entry) => entry.path.startsWith("dist/"))).toBe(false);
+        expect(result.entries.some((entry) => entry.path.startsWith("build/"))).toBe(false);
+        expect(result.entries.some((entry) => entry.path.startsWith("out/"))).toBe(false);
+        expect(result.entries.some((entry) => entry.path.startsWith(".output/"))).toBe(false);
+        expect(result.entries.some((entry) => entry.path.startsWith(".svelte-kit/"))).toBe(false);
+        expect(result.entries.some((entry) => entry.path.startsWith(".vite/"))).toBe(false);
         expect(result.entries.some((entry) => entry.path.startsWith("dist-electron/"))).toBe(false);
         expect(result.entries.some((entry) => entry.path.startsWith(".electron-runtime/"))).toBe(
           false,

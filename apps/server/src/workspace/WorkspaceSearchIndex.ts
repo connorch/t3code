@@ -28,15 +28,22 @@ const JUNK_IGNORED_DIRECTORY_NAMES = new Set([
   ".git",
   ".next",
   ".nuxt",
+  ".output",
   ".parcel-cache",
+  ".svelte-kit",
   ".turbo",
   ".venv",
+  ".vite",
   ".vendor",
+  "bower_components",
   "build",
   "coverage",
   "dist",
   "dist-electron",
+  "jspm_packages",
   "node_modules",
+  "out",
+  "output",
   "target",
   "venv",
 ]);
@@ -265,6 +272,86 @@ function pathMatchesQuery(path: string, query: string): boolean {
   return false;
 }
 
+function basenameOf(input: string): string {
+  const separatorIndex = input.lastIndexOf("/");
+  return separatorIndex === -1 ? input : input.slice(separatorIndex + 1);
+}
+
+function stripLeadingDots(input: string): string {
+  return input.replace(/^\.+/, "");
+}
+
+function fuzzyDistance(value: string, query: string): number | null {
+  let queryIndex = 0;
+  let firstMatchIndex = -1;
+  let previousMatchIndex = -1;
+  let gapCount = 0;
+
+  for (let valueIndex = 0; valueIndex < value.length && queryIndex < query.length; valueIndex++) {
+    if (value[valueIndex] !== query[queryIndex]) continue;
+    if (firstMatchIndex === -1) {
+      firstMatchIndex = valueIndex;
+    } else if (previousMatchIndex !== -1) {
+      gapCount += valueIndex - previousMatchIndex - 1;
+    }
+    previousMatchIndex = valueIndex;
+    queryIndex += 1;
+  }
+
+  return queryIndex === query.length ? firstMatchIndex + gapCount : null;
+}
+
+function queryMatchScore(value: string, query: string, baseScore: number): number | null {
+  if (value === query) return baseScore;
+  if (value.startsWith(query)) return baseScore + 10;
+
+  const includesIndex = value.indexOf(query);
+  if (includesIndex !== -1) {
+    const previous = includesIndex === 0 ? "" : value[includesIndex - 1];
+    const boundaryBonus =
+      includesIndex === 0 ||
+      previous === "/" ||
+      previous === "-" ||
+      previous === "_" ||
+      previous === "."
+        ? 20
+        : 30;
+    return baseScore + boundaryBonus + includesIndex;
+  }
+
+  const distance = fuzzyDistance(value, query);
+  return distance === null ? null : baseScore + 100 + distance;
+}
+
+function scoreProjectEntryPath(entry: ProjectEntry, query: string): number {
+  if (query.length === 0) {
+    return entry.kind === "directory" ? 0 : 1;
+  }
+
+  const path = entry.path.toLowerCase();
+  const basename = basenameOf(path);
+  const basenameWithoutDots = stripLeadingDots(basename);
+  const pathWithoutDots = stripLeadingDots(path);
+  const scores = [
+    queryMatchScore(basename, query, 0),
+    basenameWithoutDots === basename ? null : queryMatchScore(basenameWithoutDots, query, 0),
+    queryMatchScore(path, query, 40),
+    pathWithoutDots === path ? null : queryMatchScore(pathWithoutDots, query, 40),
+  ].filter((score): score is number => score !== null);
+
+  return scores.length === 0 ? Number.POSITIVE_INFINITY : Math.min(...scores);
+}
+
+function rankSearchEntries(entries: ReadonlyArray<ProjectEntry>, query: string): ProjectEntry[] {
+  return entries.toSorted((left, right) => {
+    const scoreDelta = scoreProjectEntryPath(left, query) - scoreProjectEntryPath(right, query);
+    if (scoreDelta !== 0) return scoreDelta;
+    const kindDelta = left.kind === right.kind ? 0 : left.kind === "file" ? -1 : 1;
+    if (kindDelta !== 0) return kindDelta;
+    return left.path.localeCompare(right.path);
+  });
+}
+
 const scanGitIgnoredEntries = Effect.fn("WorkspaceSearchIndex.scanGitIgnoredEntries")(function* (
   cwd: string,
 ) {
@@ -446,10 +533,14 @@ export const make = Effect.fn("WorkspaceSearchIndex.make")(function* (cwd: strin
     const ignoredEntries = (yield* getIgnoredEntries())
       .filter((entry) => pathMatchesQuery(entry.path, query))
       .filter((entry) => entry.kind === "file");
-    const entries = mergeProjectEntries(mapped.entries, ignoredEntries).slice(0, limit);
+    const rankedEntries = rankSearchEntries(
+      mergeProjectEntries(mapped.entries, ignoredEntries),
+      query,
+    );
+    const entries = rankedEntries.slice(0, limit);
     return {
       entries,
-      truncated: mapped.truncated || entries.length < mapped.entries.length + ignoredEntries.length,
+      truncated: mapped.truncated || entries.length < rankedEntries.length,
     };
   });
 
