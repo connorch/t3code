@@ -237,6 +237,38 @@ function paginateBranches(input: {
   };
 }
 
+interface WorktreeListEntry {
+  readonly path: string;
+  readonly locked: boolean;
+}
+
+function parseWorktreeListEntries(stdout: string): WorktreeListEntry[] {
+  const entries: WorktreeListEntry[] = [];
+  let currentPath: string | null = null;
+  let currentLocked = false;
+
+  const flush = () => {
+    if (currentPath !== null) {
+      entries.push({ path: currentPath, locked: currentLocked });
+    }
+    currentPath = null;
+    currentLocked = false;
+  };
+
+  for (const field of stdout.split("\0")) {
+    if (field === "") {
+      flush();
+    } else if (field.startsWith("worktree ")) {
+      currentPath = field.slice("worktree ".length);
+    } else if (field === "locked" || field.startsWith("locked ")) {
+      currentLocked = true;
+    }
+  }
+  flush();
+
+  return entries;
+}
+
 function parseWorktreeBranchPaths(stdout: string): ReadonlyMap<string, string> {
   const worktreePaths = new Map<string, string>();
   let currentPath: string | null = null;
@@ -2867,15 +2899,111 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
   const removeWorktree: GitVcsDriver.GitVcsDriver["Service"]["removeWorktree"] = Effect.fn(
     "removeWorktree",
   )(function* (input) {
-    const args = ["worktree", "remove"];
-    if (input.force) {
-      args.push("--force");
-    }
-    args.push(input.path);
-    yield* executeGit("GitVcsDriver.removeWorktree", input.cwd, args, {
+    const operation = "GitVcsDriver.removeWorktree";
+    const removeArgs = input.force
+      ? ["worktree", "remove", "--force", input.path]
+      : ["worktree", "remove", input.path];
+    const runGitRemove = executeGit(operation, input.cwd, removeArgs, {
       timeoutMs: 15_000,
       fallbackErrorDetail: "git worktree remove failed",
+    }).pipe(Effect.asVoid);
+
+    if (!input.force) {
+      // Without --force git refuses dirty worktrees before deleting anything,
+      // so the command finishes well within the timeout.
+      return yield* runGitRemove;
+    }
+
+    // `git worktree remove --force` deletes the worktree's files itself, which
+    // can take minutes for a tree with node_modules installed and gets killed
+    // mid-delete by the command timeout. Instead, rename the directory aside
+    // (instant), drop the registration with `git worktree prune`, and delete
+    // the renamed directory in a detached fiber.
+    const listResult = yield* executeGit(
+      operation,
+      input.cwd,
+      ["worktree", "list", "--porcelain", "-z"],
+      { timeoutMs: 15_000, fallbackErrorDetail: "git worktree list failed" },
+    );
+    const resolveOnDiskPath = (candidate: string) => {
+      const normalized = path.normalize(path.resolve(input.cwd, candidate));
+      return Effect.map(
+        fileSystem.realPath(normalized).pipe(
+          // If the directory itself is gone, resolving the parent still
+          // normalizes symlinked prefixes (e.g. /var -> /private/var).
+          Effect.catch(() =>
+            Effect.map(fileSystem.realPath(path.dirname(normalized)), (parent) =>
+              path.join(parent, path.basename(normalized)),
+            ),
+          ),
+          Effect.orElseSucceed(() => normalized),
+        ),
+        (real) => ({ normalized, real }),
+      );
+    };
+    const target = yield* resolveOnDiskPath(input.path);
+    const entries = parseWorktreeListEntries(listResult.stdout);
+    let matched: (WorktreeListEntry & { isMain: boolean; onDiskPath: string }) | null = null;
+    for (const [index, entry] of entries.entries()) {
+      const entryPath = yield* resolveOnDiskPath(entry.path);
+      if (entryPath.normalized === target.normalized || entryPath.real === target.real) {
+        matched = { ...entry, isMain: index === 0, onDiskPath: entryPath.real };
+        break;
+      }
+    }
+    if (matched === null) {
+      // Not a worktree git knows about - let git report its usual error.
+      return yield* runGitRemove;
+    }
+
+    const failure = (detail: string, cause?: unknown) =>
+      new GitCommandError({
+        ...gitCommandContext({ operation, cwd: input.cwd, args: removeArgs }),
+        detail,
+        ...(cause === undefined ? {} : { cause }),
+      });
+    if (matched.isMain) {
+      return yield* failure("Refusing to remove the main working tree.");
+    }
+    if (matched.locked) {
+      return yield* failure("Cannot remove a locked working tree; unlock it first.");
+    }
+
+    // The directory may already be gone (e.g. a previous removal was
+    // interrupted); pruning alone clears the stale registration then.
+    const worktreeDirExists = yield* fileSystem
+      .exists(matched.onDiskPath)
+      .pipe(Effect.orElseSucceed(() => false));
+    let trashPath: string | null = null;
+    if (worktreeDirExists) {
+      const suffix = yield* crypto.randomUUIDv4.pipe(
+        Effect.mapError((cause) =>
+          failure("Could not generate a scratch name for worktree removal.", cause),
+        ),
+      );
+      trashPath = path.join(
+        path.dirname(matched.onDiskPath),
+        `.${path.basename(matched.onDiskPath)}.removing-${suffix.slice(0, 8)}`,
+      );
+      yield* fileSystem
+        .rename(matched.onDiskPath, trashPath)
+        .pipe(
+          Effect.mapError((cause) =>
+            failure("Could not move the worktree directory aside for deletion.", cause),
+          ),
+        );
+    }
+
+    yield* executeGit(operation, input.cwd, ["worktree", "prune"], {
+      timeoutMs: 15_000,
+      fallbackErrorDetail: "git worktree prune failed",
     });
+
+    if (trashPath !== null) {
+      yield* fileSystem
+        .remove(trashPath, { recursive: true, force: true })
+        .pipe(Effect.ignoreCause({ log: true }), Effect.forkDetach);
+    }
   });
 
   const renameBranch: GitVcsDriver.GitVcsDriver["Service"]["renameBranch"] = Effect.fn(
