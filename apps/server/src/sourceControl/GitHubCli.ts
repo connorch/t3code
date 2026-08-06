@@ -244,6 +244,11 @@ export class GitHubCli extends Context.Service<
       readonly reference: string;
       readonly force?: boolean;
     }) => Effect.Effect<void, GitHubCliError>;
+
+    readonly enableAutoMergePullRequest: (input: {
+      readonly cwd: string;
+      readonly reference: string;
+    }) => Effect.Effect<void, GitHubCliError>;
   }
 >()("t3/sourceControl/GitHubCli") {}
 
@@ -450,6 +455,32 @@ export const make = Effect.gen(function* () {
         cwd: input.cwd,
         args: ["pr", "checkout", input.reference, ...(input.force ? ["--force"] : [])],
       }).pipe(Effect.asVoid),
+    enableAutoMergePullRequest: (input) =>
+      // `gh pr merge --auto` refuses to run non-interactively without an
+      // explicit strategy, so pick one the repository actually allows.
+      execute({
+        cwd: input.cwd,
+        args: [
+          "repo",
+          "view",
+          "--json",
+          "squashMergeAllowed,mergeCommitAllowed,rebaseMergeAllowed",
+          "--jq",
+          'if .squashMergeAllowed then "squash" elif .mergeCommitAllowed then "merge" else "rebase" end',
+        ],
+      }).pipe(
+        Effect.map((result) => {
+          const method = result.stdout.trim();
+          return method === "merge" || method === "rebase" ? method : "squash";
+        }),
+        Effect.flatMap((method) =>
+          execute({
+            cwd: input.cwd,
+            args: ["pr", "merge", input.reference, "--auto", `--${method}`],
+          }),
+        ),
+        Effect.asVoid,
+      ),
   });
 });
 

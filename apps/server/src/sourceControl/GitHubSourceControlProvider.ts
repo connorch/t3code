@@ -295,6 +295,23 @@ export const make = Effect.gen(function* () {
             }),
         ),
       ),
+    enableChangeRequestAutomerge: (input) =>
+      github.enableAutoMergePullRequest(input).pipe(
+        Effect.mapError(
+          (error) =>
+            new SourceControlProviderError({
+              provider: "github",
+              operation: "enableChangeRequestAutomerge",
+              command: error.command,
+              cwd: input.cwd,
+              reference: SourceControlProvider.transportSafeSourceControlErrorValue(
+                input.reference,
+              ),
+              detail: error.detail,
+              cause: error,
+            }),
+        ),
+      ),
   });
 });
 

@@ -1607,6 +1607,16 @@ const makeWsRpcLayer = (
               "rpc.aggregate": "source-control",
             },
           ),
+        [WS_METHODS.sourceControlEnableAutomerge]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.sourceControlEnableAutomerge,
+            sourceControlRepositories
+              .enableAutomerge(input)
+              .pipe(Effect.tap(() => refreshGitStatus(input.cwd))),
+            {
+              "rpc.aggregate": "source-control",
+            },
+          ),
         [WS_METHODS.projectsSearchEntries]: (input) =>
           observeRpcEffect(
             WS_METHODS.projectsSearchEntries,
