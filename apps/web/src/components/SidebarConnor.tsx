@@ -34,6 +34,7 @@ import {
   CircleAlertIcon,
   CircleDashedIcon,
   CircleHelpIcon,
+  EyeOffIcon,
   FolderPlusIcon,
   GitBranchIcon,
   MessageSquareIcon,
@@ -68,6 +69,7 @@ import { readLocalApi } from "../localApi";
 import {
   legacyProjectCwdPreferenceKey,
   resolveProjectExpanded,
+  resolveProjectHidden,
   useUiStateStore,
 } from "../uiStateStore";
 import { useThreadActions } from "../hooks/useThreadActions";
@@ -117,7 +119,15 @@ import { ProjectFavicon } from "./ProjectFavicon";
 import { stackedThreadToast, toastManager } from "./ui/toast";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
-import { Menu, MenuGroup, MenuPopup, MenuRadioGroup, MenuRadioItem, MenuTrigger } from "./ui/menu";
+import {
+  Menu,
+  MenuCheckboxItem,
+  MenuGroup,
+  MenuPopup,
+  MenuRadioGroup,
+  MenuRadioItem,
+  MenuTrigger,
+} from "./ui/menu";
 import { SidebarContent, SidebarGroup, SidebarMenuButton } from "./ui/sidebar";
 import { useSidebar } from "./ui/sidebar";
 import { SidebarChromeFooter, SidebarChromeHeader } from "./sidebar/SidebarChrome";
@@ -229,8 +239,11 @@ function projectExpansionPreferenceKeys(project: SidebarProjectSnapshot): string
 function ConnorSortMenu(props: {
   projectSortOrder: SidebarProjectSortOrder;
   threadSortOrder: SidebarThreadSortOrder;
+  showHiddenProjects: boolean;
+  hiddenProjectCount: number;
   onProjectSortOrderChange: (sortOrder: SidebarProjectSortOrder) => void;
   onThreadSortOrderChange: (sortOrder: SidebarThreadSortOrder) => void;
+  onShowHiddenProjectsChange: (show: boolean) => void;
 }) {
   return (
     <Menu>
@@ -285,6 +298,20 @@ function ConnorSortMenu(props: {
               </MenuRadioItem>
             ))}
           </MenuRadioGroup>
+        </MenuGroup>
+        <MenuGroup>
+          <div className="px-2 pt-2 pb-1 font-medium text-muted-foreground sm:text-xs">Filter</div>
+          <MenuCheckboxItem
+            variant="switch"
+            closeOnClick={false}
+            checked={props.showHiddenProjects}
+            onCheckedChange={(checked) => props.onShowHiddenProjectsChange(checked === true)}
+            className="min-h-7 py-1 sm:text-xs"
+          >
+            {props.hiddenProjectCount > 0
+              ? `Show hidden projects (${props.hiddenProjectCount})`
+              : "Show hidden projects"}
+          </MenuCheckboxItem>
         </MenuGroup>
       </MenuPopup>
     </Menu>
@@ -842,10 +869,13 @@ function ConnorProjectHeader(props: {
   project: SidebarProjectSnapshot;
   expanded: boolean;
   containsActive: boolean;
+  /** True when the project is marked hidden but the filter is showing it. */
+  hidden: boolean;
   dragHandleProps: ConnorProjectDragHandleProps | null;
   suppressClickAfterDragRef: React.RefObject<boolean>;
   onToggle: (project: SidebarProjectSnapshot) => void;
   onNewThreadInProject: (project: SidebarProjectSnapshot) => void;
+  onContextMenu: (project: SidebarProjectSnapshot, position: { x: number; y: number }) => void;
 }) {
   const { project, dragHandleProps } = props;
   return (
@@ -880,6 +910,11 @@ function ConnorProjectHeader(props: {
         event.preventDefault();
         props.onToggle(project);
       }}
+      onContextMenu={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        props.onContextMenu(project, { x: event.clientX, y: event.clientY });
+      }}
     >
       <ChevronRightIcon
         aria-hidden
@@ -891,18 +926,27 @@ function ConnorProjectHeader(props: {
       <ProjectFavicon
         environmentId={project.environmentId}
         cwd={project.workspaceRoot}
-        className="size-4 shrink-0"
+        className={cn("size-4 shrink-0", props.hidden && "opacity-50 grayscale")}
       />
       <span
         className={cn(
           "min-w-0 flex-1 truncate text-sm font-medium",
-          props.containsActive || props.expanded
-            ? "text-sidebar-foreground"
-            : "text-sidebar-foreground/80",
+          props.hidden
+            ? "text-sidebar-muted-foreground/70"
+            : props.containsActive || props.expanded
+              ? "text-sidebar-foreground"
+              : "text-sidebar-foreground/80",
         )}
       >
         {project.displayName}
       </span>
+      {props.hidden ? (
+        <EyeOffIcon
+          role="img"
+          aria-label="Hidden project"
+          className="size-3 shrink-0 text-sidebar-muted-foreground/60"
+        />
+      ) : null}
       <button
         type="button"
         aria-label={`New thread in ${project.displayName}`}
@@ -995,6 +1039,10 @@ export default function SidebarConnor({ variant }: { variant: ConnorVariant }) {
   const projectExpandedById = useUiStateStore((state) => state.projectExpandedById);
   const setProjectExpanded = useUiStateStore((state) => state.setProjectExpanded);
   const reorderProjects = useUiStateStore((state) => state.reorderProjects);
+  const projectHiddenById = useUiStateStore((state) => state.projectHiddenById);
+  const connorShowHiddenProjects = useUiStateStore((state) => state.connorShowHiddenProjects);
+  const setProjectHidden = useUiStateStore((state) => state.setProjectHidden);
+  const setConnorShowHiddenProjects = useUiStateStore((state) => state.setConnorShowHiddenProjects);
   const { environments } = useEnvironments();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
 
@@ -1108,7 +1156,12 @@ export default function SidebarConnor({ variant }: { variant: ConnorVariant }) {
   // themselves keep static creation order.
   const projectSections = useMemo(() => {
     if (variant !== "connor-1") return null;
-    return projectGroups.map((project) => {
+    return projectGroups.flatMap((project) => {
+      const preferenceKeys = projectExpansionPreferenceKeys(project);
+      // Hidden projects leave the list entirely unless the filter shows
+      // them; then they render dimmed with an unhide affordance.
+      const hidden = resolveProjectHidden(projectHiddenById, preferenceKeys);
+      if (hidden && !connorShowHiddenProjects) return [];
       const memberKeys = new Set(
         project.memberProjectRefs.map((ref) => `${ref.environmentId}:${ref.projectId}`),
       );
@@ -1116,33 +1169,41 @@ export default function SidebarConnor({ variant }: { variant: ConnorVariant }) {
         memberKeys.has(`${thread.environmentId}:${thread.projectId}`),
       );
       const partition = partitionThreadsForConnorSidebar(projectThreads);
-      return {
-        project,
-        expanded: resolveProjectExpanded(
-          projectExpandedById,
-          projectExpansionPreferenceKeys(project),
-        ),
-        containsActive:
-          routeThreadKey !== null &&
-          projectThreads.some(
-            (thread) =>
-              scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)) === routeThreadKey,
-          ),
-        ungroupedThreads: sortThreads(partition.ungroupedThreads, sidebarThreadSortOrder),
-        worktreeGroups: partition.worktreeGroups.map((group) => ({
-          group,
-          displayThreads: sortThreads(group.threads, sidebarThreadSortOrder),
-        })),
-      };
+      return [
+        {
+          project,
+          hidden,
+          expanded: resolveProjectExpanded(projectExpandedById, preferenceKeys),
+          containsActive:
+            routeThreadKey !== null &&
+            projectThreads.some(
+              (thread) =>
+                scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)) === routeThreadKey,
+            ),
+          ungroupedThreads: sortThreads(partition.ungroupedThreads, sidebarThreadSortOrder),
+          worktreeGroups: partition.worktreeGroups.map((group) => ({
+            group,
+            displayThreads: sortThreads(group.threads, sidebarThreadSortOrder),
+          })),
+        },
+      ];
     });
   }, [
+    connorShowHiddenProjects,
     projectExpandedById,
     projectGroups,
+    projectHiddenById,
     routeThreadKey,
     sidebarThreadSortOrder,
     threads,
     variant,
   ]);
+  const hiddenProjectCount = useMemo(() => {
+    if (variant !== "connor-1") return 0;
+    return projectGroups.filter((project) =>
+      resolveProjectHidden(projectHiddenById, projectExpansionPreferenceKeys(project)),
+    ).length;
+  }, [projectGroups, projectHiddenById, variant]);
 
   // Remember the last thread viewed per worktree — this is what a click on
   // the collapsed group reopens.
@@ -1383,6 +1444,64 @@ export default function SidebarConnor({ variant }: { variant: ConnorVariant }) {
   const openAddProjectCommandPalette = useCallback(
     () => openCommandPalette({ open: "add-project" }),
     [],
+  );
+
+  const handleProjectContextMenu = useCallback(
+    (project: SidebarProjectSnapshot, position: { x: number; y: number }) => {
+      void (async () => {
+        const api = readLocalApi();
+        if (!api) return;
+        const preferenceKeys = projectExpansionPreferenceKeys(project);
+        const isHidden = resolveProjectHidden(
+          useUiStateStore.getState().projectHiddenById,
+          preferenceKeys,
+        );
+        const clicked = await settlePromise(() =>
+          api.contextMenu.show(
+            [
+              { id: "new-thread", label: `New thread in ${project.displayName}` },
+              { id: "copy-path", label: "Copy path", icon: "copy" },
+              isHidden
+                ? { id: "unhide-project", label: "Unhide project" }
+                : { id: "hide-project", label: "Hide project" },
+            ],
+            position,
+          ),
+        );
+        if (clicked._tag === "Failure") return;
+        switch (clicked.value) {
+          case "new-thread":
+            handleNewThreadInProject(project);
+            return;
+          case "copy-path":
+            copyPathToClipboard(project.workspaceRoot, { path: project.workspaceRoot });
+            return;
+          case "hide-project":
+            setProjectHidden(preferenceKeys, true);
+            // The section vanishes on hide (filter off), so the toast is the
+            // confirmation — and the Undo is the escape hatch for a mis-click.
+            toastManager.add(
+              stackedThreadToast({
+                type: "success",
+                title: `Hid "${project.displayName}"`,
+                description: "Find it under Sort options → Show hidden projects.",
+                timeout: 5_000,
+                actionProps: {
+                  children: "Undo",
+                  onClick: () => setProjectHidden(preferenceKeys, false),
+                },
+              }),
+            );
+            return;
+          case "unhide-project":
+            setProjectHidden(preferenceKeys, false);
+            return;
+          default:
+            return;
+        }
+      })();
+    },
+    [copyPathToClipboard, handleNewThreadInProject, setProjectHidden],
   );
 
   const handleNewThreadClick = useCallback(() => {
@@ -1901,12 +2020,15 @@ export default function SidebarConnor({ variant }: { variant: ConnorVariant }) {
                   <ConnorSortMenu
                     projectSortOrder={sidebarProjectSortOrder}
                     threadSortOrder={sidebarThreadSortOrder}
+                    showHiddenProjects={connorShowHiddenProjects}
+                    hiddenProjectCount={hiddenProjectCount}
                     onProjectSortOrderChange={(sortOrder) =>
                       updateSettings({ sidebarProjectSortOrder: sortOrder })
                     }
                     onThreadSortOrderChange={(sortOrder) =>
                       updateSettings({ sidebarThreadSortOrder: sortOrder })
                     }
+                    onShowHiddenProjectsChange={setConnorShowHiddenProjects}
                   />
                   <Tooltip>
                     <TooltipTrigger
@@ -1978,10 +2100,12 @@ export default function SidebarConnor({ variant }: { variant: ConnorVariant }) {
                     project={section.project}
                     expanded={section.expanded}
                     containsActive={section.containsActive}
+                    hidden={section.hidden}
                     dragHandleProps={dragHandleProps}
                     suppressClickAfterDragRef={suppressProjectClickAfterDragRef}
                     onToggle={handleProjectToggle}
                     onNewThreadInProject={handleNewThreadInProject}
+                    onContextMenu={handleProjectContextMenu}
                   />
                   {section.expanded ? (
                     <ul className="flex flex-col gap-px ps-1 pb-1">
@@ -2032,7 +2156,11 @@ export default function SidebarConnor({ variant }: { variant: ConnorVariant }) {
               if (projectSections.length === 0) {
                 return (
                   <p className="px-2 py-6 text-center text-xs text-sidebar-muted-foreground">
-                    No projects yet
+                    {hiddenProjectCount === 0
+                      ? "No projects yet"
+                      : hiddenProjectCount === 1
+                        ? "1 project is hidden"
+                        : `${hiddenProjectCount} projects are hidden`}
                   </p>
                 );
               }

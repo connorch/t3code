@@ -30,11 +30,15 @@ export interface PersistedUiState {
   worktreeNameByKey?: Record<string, string>;
   worktreeLastThreadKeyByKey?: Record<string, string>;
   connorWorktreeExpandedByKey?: Record<string, boolean>;
+  projectHiddenById?: Record<string, boolean>;
+  connorShowHiddenProjects?: boolean;
 }
 
 export interface UiProjectState {
   projectExpandedById: Record<string, boolean>;
   projectOrder: string[];
+  /** Projects parked out of sight; keyed like projectExpandedById. */
+  projectHiddenById: Record<string, boolean>;
 }
 
 export interface UiThreadState {
@@ -51,6 +55,8 @@ export interface UiWorktreeState {
   worktreeLastThreadKeyByKey: Record<string, string>;
   /** Tree-mode (connor-2) per-worktree expansion; absent means collapsed. */
   connorWorktreeExpandedByKey: Record<string, boolean>;
+  /** Whether Stack mode's project list also shows hidden projects. */
+  connorShowHiddenProjects: boolean;
 }
 
 export interface UiEndpointState {
@@ -68,6 +74,8 @@ const initialState: UiState = {
   worktreeNameByKey: {},
   worktreeLastThreadKeyByKey: {},
   connorWorktreeExpandedByKey: {},
+  projectHiddenById: {},
+  connorShowHiddenProjects: false,
 };
 
 const LEGACY_PROJECT_CWD_PREFERENCE_PREFIX = "legacy-project-cwd:";
@@ -167,6 +175,8 @@ export function parsePersistedState(parsed: PersistedUiState): UiState {
     worktreeNameByKey: sanitizeStringRecord(parsed.worktreeNameByKey),
     worktreeLastThreadKeyByKey: sanitizeStringRecord(parsed.worktreeLastThreadKeyByKey),
     connorWorktreeExpandedByKey: sanitizeBooleanRecord(parsed.connorWorktreeExpandedByKey),
+    projectHiddenById: sanitizeBooleanRecord(parsed.projectHiddenById),
+    connorShowHiddenProjects: parsed.connorShowHiddenProjects === true,
   };
 }
 
@@ -242,6 +252,8 @@ export function persistState(state: UiState): void {
         worktreeNameByKey: state.worktreeNameByKey,
         worktreeLastThreadKeyByKey: state.worktreeLastThreadKeyByKey,
         connorWorktreeExpandedByKey: state.connorWorktreeExpandedByKey,
+        projectHiddenById: state.projectHiddenById,
+        connorShowHiddenProjects: state.connorShowHiddenProjects,
       } satisfies PersistedUiState),
     );
     if (!legacyKeysCleanedUp) {
@@ -421,6 +433,49 @@ export function setProjectExpanded(
   };
 }
 
+export function resolveProjectHidden(
+  projectHiddenById: Readonly<Record<string, boolean>>,
+  preferenceKeys: readonly string[],
+): boolean {
+  for (const key of preferenceKeys) {
+    const hidden = projectHiddenById[key];
+    if (hidden !== undefined) {
+      return hidden;
+    }
+  }
+  return false;
+}
+
+export function setProjectHidden(
+  state: UiState,
+  projectIds: string | readonly string[],
+  hidden: boolean,
+): UiState {
+  const ids = typeof projectIds === "string" ? [projectIds] : projectIds;
+  const nextEntries = ids.filter((projectId) => state.projectHiddenById[projectId] !== hidden);
+  if (nextEntries.length === 0) {
+    return state;
+  }
+  const projectHiddenById = { ...state.projectHiddenById };
+  for (const projectId of nextEntries) {
+    projectHiddenById[projectId] = hidden;
+  }
+  return {
+    ...state,
+    projectHiddenById,
+  };
+}
+
+export function setConnorShowHiddenProjects(state: UiState, show: boolean): UiState {
+  if (state.connorShowHiddenProjects === show) {
+    return state;
+  }
+  return {
+    ...state,
+    connorShowHiddenProjects: show,
+  };
+}
+
 export function reorderProjects(
   state: UiState,
   currentProjectOrder: readonly string[],
@@ -474,6 +529,8 @@ interface UiStateStore extends UiState {
   setWorktreeLastThreadKey: (worktreeKey: string, threadKey: string) => void;
   setConnorWorktreeExpanded: (worktreeKey: string, expanded: boolean) => void;
   setProjectExpanded: (projectIds: string | readonly string[], expanded: boolean) => void;
+  setProjectHidden: (projectIds: string | readonly string[], hidden: boolean) => void;
+  setConnorShowHiddenProjects: (show: boolean) => void;
   reorderProjects: (
     currentProjectOrder: readonly string[],
     draggedProjectIds: readonly string[],
@@ -498,6 +555,9 @@ export const useUiStateStore = create<UiStateStore>((set) => ({
     set((state) => setConnorWorktreeExpanded(state, worktreeKey, expanded)),
   setProjectExpanded: (projectIds, expanded) =>
     set((state) => setProjectExpanded(state, projectIds, expanded)),
+  setProjectHidden: (projectIds, hidden) =>
+    set((state) => setProjectHidden(state, projectIds, hidden)),
+  setConnorShowHiddenProjects: (show) => set((state) => setConnorShowHiddenProjects(state, show)),
   reorderProjects: (currentProjectOrder, draggedProjectIds, targetProjectIds) =>
     set((state) =>
       reorderProjects(state, currentProjectOrder, draggedProjectIds, targetProjectIds),
