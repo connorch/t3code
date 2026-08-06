@@ -204,10 +204,10 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
       >
         {activeSidebarMode === "flat" ? (
           <ThreadSidebarV2 />
-        ) : activeSidebarMode === "default" ? (
-          <ThreadSidebar />
+        ) : activeSidebarMode === "connor-1" ? (
+          <SidebarConnor />
         ) : (
-          <SidebarConnor variant={activeSidebarMode} />
+          <ThreadSidebar />
         )}
         <SidebarRail />
       </Sidebar>

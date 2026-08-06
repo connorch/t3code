@@ -29,7 +29,6 @@ function makeUiState(overrides: Partial<UiState> = {}): UiState {
     defaultAdvertisedEndpointKey: null,
     worktreeNameByKey: {},
     worktreeLastThreadKeyByKey: {},
-    connorWorktreeExpandedByKey: {},
     projectHiddenById: {},
     connorShowHiddenProjects: false,
     ...overrides,
@@ -212,7 +211,6 @@ describe("parsePersistedState", () => {
       },
       worktreeNameByKey: {},
       worktreeLastThreadKeyByKey: {},
-      connorWorktreeExpandedByKey: {},
       projectHiddenById: {},
       connorShowHiddenProjects: false,
     });
@@ -337,7 +335,6 @@ describe("uiStateStore persistence", () => {
       },
       worktreeNameByKey: {},
       worktreeLastThreadKeyByKey: {},
-      connorWorktreeExpandedByKey: {},
       projectHiddenById: {},
       connorShowHiddenProjects: false,
     });

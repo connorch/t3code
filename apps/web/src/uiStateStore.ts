@@ -29,7 +29,6 @@ export interface PersistedUiState {
   threadChangedFilesExpandedById?: Record<string, Record<string, boolean>>;
   worktreeNameByKey?: Record<string, string>;
   worktreeLastThreadKeyByKey?: Record<string, string>;
-  connorWorktreeExpandedByKey?: Record<string, boolean>;
   projectHiddenById?: Record<string, boolean>;
   connorShowHiddenProjects?: boolean;
 }
@@ -53,8 +52,6 @@ export interface UiWorktreeState {
   worktreeNameByKey: Record<string, string>;
   /** The last thread viewed in each worktree, as a scopedThreadKey. */
   worktreeLastThreadKeyByKey: Record<string, string>;
-  /** Tree-mode (connor-2) per-worktree expansion; absent means collapsed. */
-  connorWorktreeExpandedByKey: Record<string, boolean>;
   /** Whether Stack mode's project list also shows hidden projects. */
   connorShowHiddenProjects: boolean;
 }
@@ -73,7 +70,6 @@ const initialState: UiState = {
   defaultAdvertisedEndpointKey: null,
   worktreeNameByKey: {},
   worktreeLastThreadKeyByKey: {},
-  connorWorktreeExpandedByKey: {},
   projectHiddenById: {},
   connorShowHiddenProjects: false,
 };
@@ -174,7 +170,6 @@ export function parsePersistedState(parsed: PersistedUiState): UiState {
         : null,
     worktreeNameByKey: sanitizeStringRecord(parsed.worktreeNameByKey),
     worktreeLastThreadKeyByKey: sanitizeStringRecord(parsed.worktreeLastThreadKeyByKey),
-    connorWorktreeExpandedByKey: sanitizeBooleanRecord(parsed.connorWorktreeExpandedByKey),
     projectHiddenById: sanitizeBooleanRecord(parsed.projectHiddenById),
     connorShowHiddenProjects: parsed.connorShowHiddenProjects === true,
   };
@@ -251,7 +246,6 @@ export function persistState(state: UiState): void {
         threadChangedFilesExpandedById: state.threadChangedFilesExpandedById,
         worktreeNameByKey: state.worktreeNameByKey,
         worktreeLastThreadKeyByKey: state.worktreeLastThreadKeyByKey,
-        connorWorktreeExpandedByKey: state.connorWorktreeExpandedByKey,
         projectHiddenById: state.projectHiddenById,
         connorShowHiddenProjects: state.connorShowHiddenProjects,
       } satisfies PersistedUiState),
@@ -369,23 +363,6 @@ export function setWorktreeLastThreadKey(
   return {
     ...state,
     worktreeLastThreadKeyByKey: { ...state.worktreeLastThreadKeyByKey, [worktreeKey]: threadKey },
-  };
-}
-
-export function setConnorWorktreeExpanded(
-  state: UiState,
-  worktreeKey: string,
-  expanded: boolean,
-): UiState {
-  if ((state.connorWorktreeExpandedByKey[worktreeKey] ?? false) === expanded) {
-    return state;
-  }
-  return {
-    ...state,
-    connorWorktreeExpandedByKey: {
-      ...state.connorWorktreeExpandedByKey,
-      [worktreeKey]: expanded,
-    },
   };
 }
 
@@ -527,7 +504,6 @@ interface UiStateStore extends UiState {
   setDefaultAdvertisedEndpointKey: (key: string | null) => void;
   setWorktreeName: (worktreeKey: string, name: string | null) => void;
   setWorktreeLastThreadKey: (worktreeKey: string, threadKey: string) => void;
-  setConnorWorktreeExpanded: (worktreeKey: string, expanded: boolean) => void;
   setProjectExpanded: (projectIds: string | readonly string[], expanded: boolean) => void;
   setProjectHidden: (projectIds: string | readonly string[], hidden: boolean) => void;
   setConnorShowHiddenProjects: (show: boolean) => void;
@@ -551,8 +527,6 @@ export const useUiStateStore = create<UiStateStore>((set) => ({
   setWorktreeName: (worktreeKey, name) => set((state) => setWorktreeName(state, worktreeKey, name)),
   setWorktreeLastThreadKey: (worktreeKey, threadKey) =>
     set((state) => setWorktreeLastThreadKey(state, worktreeKey, threadKey)),
-  setConnorWorktreeExpanded: (worktreeKey, expanded) =>
-    set((state) => setConnorWorktreeExpanded(state, worktreeKey, expanded)),
   setProjectExpanded: (projectIds, expanded) =>
     set((state) => setProjectExpanded(state, projectIds, expanded)),
   setProjectHidden: (projectIds, hidden) =>

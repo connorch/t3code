@@ -27,29 +27,13 @@ const SIDEBAR_MODE_OPTIONS: Record<SidebarMode, { label: string; description: st
       "One flat thread list in creation order. Active work renders as rich cards; settled threads collapse to compact rows. Settling requires an up-to-date server — on older servers threads simply stay active.",
   },
   "connor-1": {
-    label: "Connor Mode 1 · Stack",
+    label: "Connor Mode",
     description:
-      "Threads grouped by git worktree as cards. One worktree open at a time (accordion); clicking a worktree jumps to its most recent thread.",
-  },
-  "connor-2": {
-    label: "Connor Mode 2 · Tree",
-    description:
-      "Threads grouped by git worktree in a dense tree. Each worktree expands and collapses independently and remembers its state.",
-  },
-  "connor-3": {
-    label: "Connor Mode 3 · Focus",
-    description:
-      "Threads grouped by git worktree with zero expansion chrome: the worktree you are working in opens automatically, everything else stays collapsed.",
+      "Projects with threads grouped by git worktree as cards. One worktree open at a time (accordion); clicking a worktree jumps to its most recent thread.",
   },
 };
 
-const SIDEBAR_MODE_ORDER: readonly SidebarMode[] = [
-  "default",
-  "flat",
-  "connor-1",
-  "connor-2",
-  "connor-3",
-];
+const SIDEBAR_MODE_ORDER: readonly SidebarMode[] = ["default", "flat", "connor-1"];
 
 function AutoSettleDaysInput({
   value,

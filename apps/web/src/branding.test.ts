@@ -194,7 +194,7 @@ describe("resolveSidebarMode", () => {
   const legacyUnset = { enabled: false, configuredByUser: false } as const;
 
   it("returns the stored enum when the user picked a mode", () => {
-    for (const mode of ["default", "flat", "connor-1", "connor-2", "connor-3"] as const) {
+    for (const mode of ["default", "flat", "connor-1"] as const) {
       expect(resolveSidebarMode({ ...hydrated, ...legacyUnset, mode, stageLabel: "Latest" })).toBe(
         mode,
       );
@@ -205,12 +205,12 @@ describe("resolveSidebarMode", () => {
     expect(
       resolveSidebarMode({
         ...hydrated,
-        mode: "connor-2",
+        mode: "connor-1",
         enabled: true,
         configuredByUser: true,
         stageLabel: "Latest",
       }),
-    ).toBe("connor-2");
+    ).toBe("connor-1");
   });
 
   it("maps a legacy v2 opt-in to flat when no mode is stored", () => {
