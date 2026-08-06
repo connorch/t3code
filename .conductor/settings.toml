@@ -1,0 +1,24 @@
+"$schema" = "https://conductor.build/schemas/settings.repo.schema.json"
+
+[scripts]
+# Mirrors the "Setup Worktree" script in t3.json: install with Vite+, then link
+# the gitignored env files from the root checkout so a workspace picks up edits
+# to them instead of holding a stale copy. Both links are optional.
+setup = 'vp i && for f in .env infra/relay/.env; do if [ -e "$CONDUCTOR_ROOT_PATH/$f" ]; then ln -sf "$CONDUCTOR_ROOT_PATH/$f" "$f"; fi; done'
+
+# The dev-runner hashes the worktree path into a stable port pair and keeps state
+# in the workspace's own .t3, so workspaces do not collide.
+run_mode = "concurrent"
+
+[scripts.run.web]
+command = "bash .conductor/dev.sh dev"
+default = true
+icon = "globe"
+
+[scripts.run.desktop]
+command = "bash .conductor/dev.sh dev:desktop"
+icon = "monitor"
+
+[scripts.run.share]
+command = "bash .conductor/dev.sh dev:share"
+icon = "cloud"
