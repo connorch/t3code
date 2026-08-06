@@ -99,6 +99,26 @@ describe("ClientSettings sidebar v2", () => {
     expect(patch.sidebarV2ConfiguredByUser).toBe(true);
   });
 
+  it("defaults the sidebar mode enum to unset so legacy booleans keep deciding", () => {
+    expect(decodeClientSettings({}).sidebarMode).toBeNull();
+    expect(decodeClientSettings({ sidebarV2Enabled: true }).sidebarMode).toBeNull();
+  });
+
+  it("accepts each sidebar mode and rejects unknown ones", () => {
+    for (const mode of ["default", "flat", "connor-1"] as const) {
+      expect(decodeClientSettings({ sidebarMode: mode }).sidebarMode).toBe(mode);
+      expect(decodeClientSettingsPatch({ sidebarMode: mode }).sidebarMode).toBe(mode);
+    }
+    expect(() => decodeClientSettings({ sidebarMode: "connor-4" })).toThrow();
+    expect(() => decodeClientSettingsPatch({ sidebarMode: "connor-4" })).toThrow();
+  });
+
+  it("migrates the retired Tree and Focus modes to Stack instead of failing the blob", () => {
+    // A decode failure here would reset every client setting to defaults.
+    expect(decodeClientSettings({ sidebarMode: "connor-2" }).sidebarMode).toBe("connor-1");
+    expect(decodeClientSettings({ sidebarMode: "connor-3" }).sidebarMode).toBe("connor-1");
+  });
+
   it("allows auto-settle by inactivity to be disabled", () => {
     expect(
       decodeClientSettings({ sidebarAutoSettleAfterDays: null }).sidebarAutoSettleAfterDays,

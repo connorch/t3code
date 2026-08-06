@@ -99,6 +99,31 @@ export const TerminalFontSize = Schema.Int.check(
 export type TerminalFontSize = typeof TerminalFontSize.Type;
 export const DEFAULT_TERMINAL_FONT_SIZE: TerminalFontSize = 12;
 
+export const SidebarMode = Schema.Literals(["default", "flat", "connor-1"]);
+export type SidebarMode = typeof SidebarMode.Type;
+
+// The retired Tree ("connor-2") and Focus ("connor-3") experiments decode to
+// the surviving Stack mode instead of failing the whole settings blob (a
+// decode failure would reset every client setting to defaults).
+const StoredSidebarMode = Schema.Literals([
+  "default",
+  "flat",
+  "connor-1",
+  "connor-2",
+  "connor-3",
+]).pipe(
+  Schema.decodeTo(
+    SidebarMode,
+    SchemaTransformation.transformOrFail({
+      decode: (value) =>
+        Effect.succeed(
+          value === "connor-2" || value === "connor-3" ? ("connor-1" as const) : value,
+        ),
+      encode: (value) => Effect.succeed(value),
+    }),
+  ),
+);
+
 export const EnvironmentIdentificationMode = Schema.Literals(["artwork", "pill", "none"]);
 export type EnvironmentIdentificationMode = typeof EnvironmentIdentificationMode.Type;
 export const DEFAULT_ENVIRONMENT_IDENTIFICATION_MODE: EnvironmentIdentificationMode = "artwork";
@@ -187,6 +212,14 @@ export const ClientSettingsSchema = Schema.Struct({
   sidebarThreadPreviewCount: SidebarThreadPreviewCount.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_SIDEBAR_THREAD_PREVIEW_COUNT)),
   ),
+  // Enum successor to `sidebarV2Enabled`: null means "never chosen here", so
+  // resolution falls back to the legacy boolean pair (and the stage default)
+  // instead of silently resetting users who configured the old toggle.
+  sidebarMode: Schema.NullOr(StoredSidebarMode).pipe(
+    Schema.withDecodingDefault(Effect.succeed(null)),
+  ),
+  // Legacy boolean kept dual-written ("flat" ⇔ true) so downgraded builds
+  // still honor the choice. Mirrors mobile's projectGroupingEnabled migration.
   sidebarV2Enabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   // Whether `sidebarV2Enabled` reflects an explicit choice in Settings → Beta.
   // Client settings persist as a whole blob, so every user who has ever touched
@@ -791,6 +824,7 @@ export const ClientSettingsPatch = Schema.Struct({
   sidebarProjectSortOrder: Schema.optionalKey(SidebarProjectSortOrder),
   sidebarThreadSortOrder: Schema.optionalKey(SidebarThreadSortOrder),
   sidebarThreadPreviewCount: Schema.optionalKey(SidebarThreadPreviewCount),
+  sidebarMode: Schema.optionalKey(Schema.NullOr(SidebarMode)),
   sidebarV2Enabled: Schema.optionalKey(Schema.Boolean),
   sidebarV2ConfiguredByUser: Schema.optionalKey(Schema.Boolean),
   timestampFormat: Schema.optionalKey(TimestampFormat),

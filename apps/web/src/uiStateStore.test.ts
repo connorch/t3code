@@ -11,8 +11,11 @@ import {
   persistState,
   reorderProjects,
   resolveProjectExpanded,
+  resolveProjectHidden,
+  setConnorShowHiddenProjects,
   setDefaultAdvertisedEndpointKey,
   setProjectExpanded,
+  setProjectHidden,
   setThreadChangedFilesExpanded,
   type UiState,
 } from "./uiStateStore";
@@ -24,6 +27,10 @@ function makeUiState(overrides: Partial<UiState> = {}): UiState {
     threadLastVisitedAtById: {},
     threadChangedFilesExpandedById: {},
     defaultAdvertisedEndpointKey: null,
+    worktreeNameByKey: {},
+    worktreeLastThreadKeyByKey: {},
+    projectHiddenById: {},
+    connorShowHiddenProjects: false,
     ...overrides,
   };
 }
@@ -51,6 +58,25 @@ describe("uiStateStore pure functions", () => {
 
     expect(next.threadLastVisitedAtById[threadId]).toBe("2026-02-25T12:29:59.999Z");
     expect(markThreadUnread(next, threadId, null)).toBe(next);
+  });
+
+  it("hides and unhides projects across preference key aliases", () => {
+    const state = setProjectHidden(makeUiState(), ["logical", "physical"], true);
+    expect(resolveProjectHidden(state.projectHiddenById, ["logical"])).toBe(true);
+    expect(resolveProjectHidden(state.projectHiddenById, ["physical", "unknown"])).toBe(true);
+    expect(resolveProjectHidden(state.projectHiddenById, ["unknown"])).toBe(false);
+
+    const unhidden = setProjectHidden(state, ["logical", "physical"], false);
+    expect(resolveProjectHidden(unhidden.projectHiddenById, ["logical"])).toBe(false);
+    // An explicit false is stored (not deleted) so it can shadow a stale alias.
+    expect(setProjectHidden(unhidden, ["logical", "physical"], false)).toBe(unhidden);
+  });
+
+  it("toggles the show-hidden-projects filter without churning state", () => {
+    const state = makeUiState();
+    expect(setConnorShowHiddenProjects(state, false)).toBe(state);
+    const shown = setConnorShowHiddenProjects(state, true);
+    expect(shown.connorShowHiddenProjects).toBe(true);
   });
 
   it("resolves project expansion from logical, physical, and legacy preference keys", () => {
@@ -183,6 +209,10 @@ describe("parsePersistedState", () => {
           "turn-2": true,
         },
       },
+      worktreeNameByKey: {},
+      worktreeLastThreadKeyByKey: {},
+      projectHiddenById: {},
+      connorShowHiddenProjects: false,
     });
   });
 
@@ -303,6 +333,10 @@ describe("uiStateStore persistence", () => {
           "turn-2": true,
         },
       },
+      worktreeNameByKey: {},
+      worktreeLastThreadKeyByKey: {},
+      projectHiddenById: {},
+      connorShowHiddenProjects: false,
     });
     expect(parsePersistedState(persisted)).toEqual({
       ...state,

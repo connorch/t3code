@@ -1,11 +1,13 @@
 import { useEffect, useState } from "react";
+import type { SidebarMode } from "@t3tools/contracts/settings";
 
 import {
   useClientSettings,
-  useSidebarV2Enabled,
+  useSidebarMode,
   useUpdateClientSettings,
 } from "../../hooks/useSettings";
 import { Input } from "../ui/input";
+import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { Switch } from "../ui/switch";
 import { SettingsPageContainer, SettingsRow, SettingsSection } from "./settingsLayout";
 import { searchableSetting } from "./settingsSearch";
@@ -13,6 +15,25 @@ import { searchableSetting } from "./settingsSearch";
 const AUTO_SETTLE_MIN_DAYS = 1;
 const AUTO_SETTLE_MAX_DAYS = 90;
 const AUTO_SETTLE_DEFAULT_DAYS = 3;
+
+const SIDEBAR_MODE_OPTIONS: Record<SidebarMode, { label: string; description: string }> = {
+  default: {
+    label: "Default",
+    description: "Projects with nested thread lists — the classic sidebar.",
+  },
+  flat: {
+    label: "Flat Mode",
+    description:
+      "One flat thread list in creation order. Active work renders as rich cards; settled threads collapse to compact rows. Settling requires an up-to-date server — on older servers threads simply stay active.",
+  },
+  "connor-1": {
+    label: "Connor Mode",
+    description:
+      "Projects with threads grouped by git worktree as cards. One worktree open at a time (accordion); clicking a worktree jumps to its most recent thread.",
+  },
+};
+
+const SIDEBAR_MODE_ORDER: readonly SidebarMode[] = ["default", "flat", "connor-1"];
 
 function AutoSettleDaysInput({
   value,
@@ -56,7 +77,7 @@ function AutoSettleDaysInput({
 }
 
 export function BetaSettingsPanel() {
-  const sidebarV2Enabled = useSidebarV2Enabled();
+  const sidebarMode = useSidebarMode();
   const sidebarAutoSettleAfterDays = useClientSettings(
     (settings) => settings.sidebarAutoSettleAfterDays,
   );
@@ -67,23 +88,36 @@ export function BetaSettingsPanel() {
       <SettingsSection title="Beta features">
         <SettingsRow
           {...searchableSetting("sidebar-v2")}
-          description="One flat thread list in creation order. Active work renders as rich cards; settled threads collapse to compact rows. Settling requires an up-to-date server — on older servers threads simply stay active. Switch back any time."
+          description={SIDEBAR_MODE_OPTIONS[sidebarMode].description}
           control={
-            <Switch
-              checked={sidebarV2Enabled}
-              // Touching the switch pins the choice, so a nightly build that
-              // defaults v2 on does not flip it back after the user opts out.
-              onCheckedChange={(checked) =>
+            <Select
+              value={sidebarMode}
+              onValueChange={(value) => {
+                const mode = value as SidebarMode;
+                // Picking a mode pins the choice (so a nightly build that
+                // defaults Flat on does not flip it back), and dual-writes the
+                // legacy boolean so downgraded builds keep flat-vs-default.
                 updateSettings({
-                  sidebarV2Enabled: Boolean(checked),
+                  sidebarMode: mode,
+                  sidebarV2Enabled: mode === "flat",
                   sidebarV2ConfiguredByUser: true,
-                })
-              }
-              aria-label="Enable the sidebar v2 beta"
-            />
+                });
+              }}
+            >
+              <SelectTrigger className="w-full sm:w-56" aria-label="Sidebar mode">
+                <SelectValue>{SIDEBAR_MODE_OPTIONS[sidebarMode].label}</SelectValue>
+              </SelectTrigger>
+              <SelectPopup align="end" alignItemWithTrigger={false}>
+                {SIDEBAR_MODE_ORDER.map((mode) => (
+                  <SelectItem key={mode} hideIndicator value={mode}>
+                    {SIDEBAR_MODE_OPTIONS[mode].label}
+                  </SelectItem>
+                ))}
+              </SelectPopup>
+            </Select>
           }
         />
-        {sidebarV2Enabled ? (
+        {sidebarMode === "flat" ? (
           <>
             <SettingsRow
               title={searchableSetting("auto-settle-inactive-threads").title}
