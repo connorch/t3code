@@ -116,6 +116,13 @@ export default function FileBrowserPanel({
   );
   const entryKindsRef = useRef<ReadonlyMap<string, ProjectEntry["kind"]>>(entryKinds);
   const treePaths = useMemo(() => entries.map(treePath), [entries]);
+  const ignoredGitStatus = useMemo(
+    () =>
+      entries
+        .filter((entry) => entry.ignored === true)
+        .map((entry) => ({ path: treePath(entry), status: "ignored" as const })),
+    [entries],
+  );
   const previousTreePathsRef = useRef<readonly string[]>([]);
   const syncingSelectionRef = useRef(false);
   const treeSelectionPathRef = useRef<string | null>(null);
@@ -263,6 +270,10 @@ export default function FileBrowserPanel({
   }, [entryKinds, model, treePaths]);
 
   useEffect(() => {
+    model.setGitStatus(ignoredGitStatus);
+  }, [ignoredGitStatus, model]);
+
+  useEffect(() => {
     if (!selectedPath) {
       handledRevealRef.current = null;
       return;
@@ -370,6 +381,7 @@ export default function FileBrowserPanel({
           style={{
             colorScheme: resolvedTheme,
             ["--trees-fg-override" as string]: "var(--foreground)",
+            ["--trees-git-ignored-color-override" as string]: "var(--muted-foreground)",
           }}
         />
       )}
