@@ -24,6 +24,9 @@ function makeUiState(overrides: Partial<UiState> = {}): UiState {
     threadLastVisitedAtById: {},
     threadChangedFilesExpandedById: {},
     defaultAdvertisedEndpointKey: null,
+    worktreeNameByKey: {},
+    worktreeLastThreadKeyByKey: {},
+    connorWorktreeExpandedByKey: {},
     ...overrides,
   };
 }
@@ -183,6 +186,9 @@ describe("parsePersistedState", () => {
           "turn-2": true,
         },
       },
+      worktreeNameByKey: {},
+      worktreeLastThreadKeyByKey: {},
+      connorWorktreeExpandedByKey: {},
     });
   });
 
@@ -303,6 +309,9 @@ describe("uiStateStore persistence", () => {
           "turn-2": true,
         },
       },
+      worktreeNameByKey: {},
+      worktreeLastThreadKeyByKey: {},
+      connorWorktreeExpandedByKey: {},
     });
     expect(parsePersistedState(persisted)).toEqual({
       ...state,

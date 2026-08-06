@@ -172,8 +172,10 @@ export const SETTINGS_SEARCH_ITEMS = [
     to: "/settings/connections",
   },
   {
+    // Historic anchor id from the boolean-toggle era; kept stable so old
+    // search deep links still land on the row.
     id: "sidebar-v2",
-    title: "Sidebar v2",
+    title: "Sidebar mode",
     to: "/settings/beta",
   },
   {

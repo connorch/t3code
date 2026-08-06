@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import {
   resolveServerBackedAppDisplayName,
   resolveServerBackedAppStageLabel,
+  resolveSidebarMode,
   resolveSidebarV2Default,
   resolveSidebarV2Enabled,
 } from "./branding.logic";
@@ -185,5 +186,75 @@ describe("resolveSidebarV2Enabled", () => {
         stageLabel: "Nightly",
       }),
     ).toBe(false);
+  });
+});
+
+describe("resolveSidebarMode", () => {
+  const hydrated = { settingsHydrated: true } as const;
+  const legacyUnset = { enabled: false, configuredByUser: false } as const;
+
+  it("returns the stored enum when the user picked a mode", () => {
+    for (const mode of ["default", "flat", "connor-1", "connor-2", "connor-3"] as const) {
+      expect(resolveSidebarMode({ ...hydrated, ...legacyUnset, mode, stageLabel: "Latest" })).toBe(
+        mode,
+      );
+    }
+  });
+
+  it("wins over the legacy boolean pair when both are set", () => {
+    expect(
+      resolveSidebarMode({
+        ...hydrated,
+        mode: "connor-2",
+        enabled: true,
+        configuredByUser: true,
+        stageLabel: "Latest",
+      }),
+    ).toBe("connor-2");
+  });
+
+  it("maps a legacy v2 opt-in to flat when no mode is stored", () => {
+    expect(
+      resolveSidebarMode({
+        ...hydrated,
+        mode: null,
+        enabled: true,
+        configuredByUser: true,
+        stageLabel: "Latest",
+      }),
+    ).toBe("flat");
+  });
+
+  it("applies the stage default for untouched settings", () => {
+    expect(
+      resolveSidebarMode({ ...hydrated, ...legacyUnset, mode: null, stageLabel: "Nightly" }),
+    ).toBe("flat");
+    expect(
+      resolveSidebarMode({ ...hydrated, ...legacyUnset, mode: null, stageLabel: "Latest" }),
+    ).toBe("default");
+  });
+
+  it("honors a legacy explicit opt-out over the stage default", () => {
+    expect(
+      resolveSidebarMode({
+        ...hydrated,
+        mode: null,
+        enabled: false,
+        configuredByUser: true,
+        stageLabel: "Nightly",
+      }),
+    ).toBe("default");
+  });
+
+  it("holds the default sidebar until settings hydrate", () => {
+    expect(
+      resolveSidebarMode({
+        mode: "connor-1",
+        enabled: true,
+        configuredByUser: true,
+        settingsHydrated: false,
+        stageLabel: "Nightly",
+      }),
+    ).toBe("default");
   });
 });

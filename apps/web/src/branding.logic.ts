@@ -1,3 +1,5 @@
+import type { SidebarMode } from "@t3tools/contracts/settings";
+
 const NIGHTLY_SERVER_VERSION_PATTERN = /-nightly\.\d{8}\.\d+$/;
 
 export function formatAppDisplayName(input: {
@@ -54,6 +56,32 @@ export function resolveSidebarV2Enabled(input: {
   return input.configuredByUser || input.enabled
     ? input.enabled
     : resolveSidebarV2Default(input.stageLabel);
+}
+
+/**
+ * Resolved sidebar mode: the stored enum when the user has picked one here,
+ * otherwise the legacy v2 boolean pair mapped onto its enum equivalent
+ * ("flat" for enabled, "default" for disabled) — including the stage default
+ * for users who never touched either setting.
+ *
+ * Held at "default" until client settings hydrate, same as
+ * `resolveSidebarV2Enabled`: resolving against the pre-hydration snapshot
+ * would mount one sidebar and swap it out a tick later.
+ */
+export function resolveSidebarMode(input: {
+  readonly mode: SidebarMode | null;
+  readonly enabled: boolean;
+  readonly configuredByUser: boolean;
+  readonly settingsHydrated: boolean;
+  readonly stageLabel: string;
+}): SidebarMode {
+  if (!input.settingsHydrated) {
+    return "default";
+  }
+  if (input.mode !== null) {
+    return input.mode;
+  }
+  return resolveSidebarV2Enabled(input) ? "flat" : "default";
 }
 
 export function resolveServerBackedAppStageLabel(input: {

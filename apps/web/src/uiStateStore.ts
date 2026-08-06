@@ -27,6 +27,9 @@ export interface PersistedUiState {
   defaultAdvertisedEndpointKey?: string | null;
   threadChangedFilesExpansionVersion?: typeof THREAD_CHANGED_FILES_EXPANSION_VERSION;
   threadChangedFilesExpandedById?: Record<string, Record<string, boolean>>;
+  worktreeNameByKey?: Record<string, string>;
+  worktreeLastThreadKeyByKey?: Record<string, string>;
+  connorWorktreeExpandedByKey?: Record<string, boolean>;
 }
 
 export interface UiProjectState {
@@ -39,11 +42,22 @@ export interface UiThreadState {
   threadChangedFilesExpandedById: Record<string, Record<string, boolean>>;
 }
 
+// Connor-mode worktree grouping. Keys are environmentId and worktreePath
+// joined with a NUL separator (see worktreeGroupKey in SidebarConnor.logic.ts).
+export interface UiWorktreeState {
+  /** User-chosen worktree display names; absent means "derive from the first thread". */
+  worktreeNameByKey: Record<string, string>;
+  /** The last thread viewed in each worktree, as a scopedThreadKey. */
+  worktreeLastThreadKeyByKey: Record<string, string>;
+  /** Tree-mode (connor-2) per-worktree expansion; absent means collapsed. */
+  connorWorktreeExpandedByKey: Record<string, boolean>;
+}
+
 export interface UiEndpointState {
   defaultAdvertisedEndpointKey: string | null;
 }
 
-export interface UiState extends UiProjectState, UiThreadState, UiEndpointState {}
+export interface UiState extends UiProjectState, UiThreadState, UiEndpointState, UiWorktreeState {}
 
 const initialState: UiState = {
   projectExpandedById: {},
@@ -51,6 +65,9 @@ const initialState: UiState = {
   threadLastVisitedAtById: {},
   threadChangedFilesExpandedById: {},
   defaultAdvertisedEndpointKey: null,
+  worktreeNameByKey: {},
+  worktreeLastThreadKeyByKey: {},
+  connorWorktreeExpandedByKey: {},
 };
 
 const LEGACY_PROJECT_CWD_PREFERENCE_PREFIX = "legacy-project-cwd:";
@@ -79,6 +96,18 @@ function sanitizeBooleanRecord(value: unknown): Record<string, boolean> {
   return Object.fromEntries(
     Object.entries(value).filter(
       (entry): entry is [string, boolean] => entry[0].length > 0 && typeof entry[1] === "boolean",
+    ),
+  );
+}
+
+function sanitizeStringRecord(value: unknown): Record<string, string> {
+  if (!value || typeof value !== "object") {
+    return {};
+  }
+  return Object.fromEntries(
+    Object.entries(value).filter(
+      (entry): entry is [string, string] =>
+        entry[0].length > 0 && typeof entry[1] === "string" && entry[1].length > 0,
     ),
   );
 }
@@ -135,6 +164,9 @@ export function parsePersistedState(parsed: PersistedUiState): UiState {
       parsed.defaultAdvertisedEndpointKey.length > 0
         ? parsed.defaultAdvertisedEndpointKey
         : null,
+    worktreeNameByKey: sanitizeStringRecord(parsed.worktreeNameByKey),
+    worktreeLastThreadKeyByKey: sanitizeStringRecord(parsed.worktreeLastThreadKeyByKey),
+    connorWorktreeExpandedByKey: sanitizeBooleanRecord(parsed.connorWorktreeExpandedByKey),
   };
 }
 
@@ -207,6 +239,9 @@ export function persistState(state: UiState): void {
         defaultAdvertisedEndpointKey: state.defaultAdvertisedEndpointKey,
         threadChangedFilesExpansionVersion: THREAD_CHANGED_FILES_EXPANSION_VERSION,
         threadChangedFilesExpandedById: state.threadChangedFilesExpandedById,
+        worktreeNameByKey: state.worktreeNameByKey,
+        worktreeLastThreadKeyByKey: state.worktreeLastThreadKeyByKey,
+        connorWorktreeExpandedByKey: state.connorWorktreeExpandedByKey,
       } satisfies PersistedUiState),
     );
     if (!legacyKeysCleanedUp) {
@@ -289,6 +324,55 @@ export function setThreadChangedFilesExpanded(
         ...currentThreadState,
         [turnId]: expanded,
       },
+    },
+  };
+}
+
+export function setWorktreeName(state: UiState, worktreeKey: string, name: string | null): UiState {
+  const trimmed = name?.trim() ?? "";
+  if (trimmed.length === 0) {
+    if (!(worktreeKey in state.worktreeNameByKey)) {
+      return state;
+    }
+    const { [worktreeKey]: _removed, ...rest } = state.worktreeNameByKey;
+    return { ...state, worktreeNameByKey: rest };
+  }
+  if (state.worktreeNameByKey[worktreeKey] === trimmed) {
+    return state;
+  }
+  return {
+    ...state,
+    worktreeNameByKey: { ...state.worktreeNameByKey, [worktreeKey]: trimmed },
+  };
+}
+
+export function setWorktreeLastThreadKey(
+  state: UiState,
+  worktreeKey: string,
+  threadKey: string,
+): UiState {
+  if (state.worktreeLastThreadKeyByKey[worktreeKey] === threadKey) {
+    return state;
+  }
+  return {
+    ...state,
+    worktreeLastThreadKeyByKey: { ...state.worktreeLastThreadKeyByKey, [worktreeKey]: threadKey },
+  };
+}
+
+export function setConnorWorktreeExpanded(
+  state: UiState,
+  worktreeKey: string,
+  expanded: boolean,
+): UiState {
+  if ((state.connorWorktreeExpandedByKey[worktreeKey] ?? false) === expanded) {
+    return state;
+  }
+  return {
+    ...state,
+    connorWorktreeExpandedByKey: {
+      ...state.connorWorktreeExpandedByKey,
+      [worktreeKey]: expanded,
     },
   };
 }
@@ -386,6 +470,9 @@ interface UiStateStore extends UiState {
   markThreadUnread: (threadId: string, latestTurnCompletedAt: string | null | undefined) => void;
   setThreadChangedFilesExpanded: (threadId: string, turnId: string, expanded: boolean) => void;
   setDefaultAdvertisedEndpointKey: (key: string | null) => void;
+  setWorktreeName: (worktreeKey: string, name: string | null) => void;
+  setWorktreeLastThreadKey: (worktreeKey: string, threadKey: string) => void;
+  setConnorWorktreeExpanded: (worktreeKey: string, expanded: boolean) => void;
   setProjectExpanded: (projectIds: string | readonly string[], expanded: boolean) => void;
   reorderProjects: (
     currentProjectOrder: readonly string[],
@@ -404,6 +491,11 @@ export const useUiStateStore = create<UiStateStore>((set) => ({
     set((state) => setThreadChangedFilesExpanded(state, threadId, turnId, expanded)),
   setDefaultAdvertisedEndpointKey: (key) =>
     set((state) => setDefaultAdvertisedEndpointKey(state, key)),
+  setWorktreeName: (worktreeKey, name) => set((state) => setWorktreeName(state, worktreeKey, name)),
+  setWorktreeLastThreadKey: (worktreeKey, threadKey) =>
+    set((state) => setWorktreeLastThreadKey(state, worktreeKey, threadKey)),
+  setConnorWorktreeExpanded: (worktreeKey, expanded) =>
+    set((state) => setConnorWorktreeExpanded(state, worktreeKey, expanded)),
   setProjectExpanded: (projectIds, expanded) =>
     set((state) => setProjectExpanded(state, projectIds, expanded)),
   reorderProjects: (currentProjectOrder, draggedProjectIds, targetProjectIds) =>

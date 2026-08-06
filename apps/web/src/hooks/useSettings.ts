@@ -22,11 +22,12 @@ import {
   type ClientSettings,
   DEFAULT_CLIENT_SETTINGS,
   type EnvironmentIdentificationMode,
+  type SidebarMode,
   type UnifiedSettings,
 } from "@t3tools/contracts/settings";
 import { safeErrorLogAttributes } from "@t3tools/client-runtime/errors";
 import { APP_STAGE_LABEL } from "~/branding";
-import { resolveSidebarV2Enabled } from "~/branding.logic";
+import { resolveSidebarMode } from "~/branding.logic";
 import { ensureLocalApi } from "~/localApi";
 import * as Struct from "effect/Struct";
 import { primaryServerSettingsAtom, serverEnvironment } from "~/state/server";
@@ -238,28 +239,33 @@ export function useEnvironmentIdentificationMode(): EnvironmentIdentificationMod
 }
 
 /**
- * Resolved sidebar v2 state: an explicit choice in Settings → Beta if the user
- * has made one, otherwise the default for this build stage (on for nightly and
- * dev, off for production). Every consumer must read through this rather than
- * `settings.sidebarV2Enabled`, which is only meaningful alongside
- * `sidebarV2ConfiguredByUser`.
+ * Resolved sidebar mode: an explicit choice in Settings → Beta if the user has
+ * made one, otherwise the legacy v2 boolean pair (whose stage default keeps
+ * nightly/dev on "flat"). Every consumer must read through this rather than
+ * `settings.sidebarMode`, which is only meaningful alongside the legacy pair.
  *
- * Held at v1 until client settings hydrate. The pre-hydration snapshot is just
- * the schema defaults, so resolving against it would mount one sidebar and then
- * swap it out once persisted settings land — remounting the whole tree.
+ * Held at "default" until client settings hydrate. The pre-hydration snapshot
+ * is just the schema defaults, so resolving against it would mount one sidebar
+ * and then swap it out once persisted settings land — remounting the tree.
  */
-export function useSidebarV2Enabled(): boolean {
+export function useSidebarMode(): SidebarMode {
   const settingsHydrated = useClientSettingsHydrated();
   const settings = useClientSettingsValue();
   return useMemo(
     () =>
-      resolveSidebarV2Enabled({
+      resolveSidebarMode({
+        mode: settings.sidebarMode,
         enabled: settings.sidebarV2Enabled,
         configuredByUser: settings.sidebarV2ConfiguredByUser,
         settingsHydrated,
         stageLabel: APP_STAGE_LABEL,
       }),
-    [settings.sidebarV2Enabled, settings.sidebarV2ConfiguredByUser, settingsHydrated],
+    [
+      settings.sidebarMode,
+      settings.sidebarV2Enabled,
+      settings.sidebarV2ConfiguredByUser,
+      settingsHydrated,
+    ],
   );
 }
 
