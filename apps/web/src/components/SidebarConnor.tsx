@@ -1,4 +1,19 @@
 import { autoAnimate } from "@formkit/auto-animate";
+import {
+  closestCorners,
+  DndContext,
+  PointerSensor,
+  pointerWithin,
+  useSensor,
+  useSensors,
+  type CollisionDetection,
+  type DragCancelEvent,
+  type DragEndEvent,
+  type DragStartEvent,
+} from "@dnd-kit/core";
+import { restrictToFirstScrollableAncestor, restrictToVerticalAxis } from "@dnd-kit/modifiers";
+import { SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import { useAtomValue } from "@effect/atom-react";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/models";
 import {
@@ -783,14 +798,56 @@ function FocusGroupSection(props: GroupSectionProps) {
 
 // ── Project section header (Stack mode only) ────────────────────────
 
+interface ConnorProjectDragHandleProps {
+  attributes: ReturnType<typeof useSortable>["attributes"];
+  listeners: ReturnType<typeof useSortable>["listeners"];
+  setActivatorNodeRef: ReturnType<typeof useSortable>["setActivatorNodeRef"];
+}
+
+/** Sortable shell for a project section under manual sorting; the whole
+    header row is the drag activator, same as the Default sidebar. */
+function ConnorSortableProjectItem({
+  projectKey,
+  children,
+}: {
+  projectKey: string;
+  children: (dragHandleProps: ConnorProjectDragHandleProps) => React.ReactNode;
+}) {
+  const {
+    attributes,
+    listeners,
+    setActivatorNodeRef,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+    isOver,
+  } = useSortable({ id: projectKey });
+  return (
+    <li
+      ref={setNodeRef}
+      style={{ transform: CSS.Translate.toString(transform), transition }}
+      className={cn(
+        "relative list-none rounded-md",
+        isDragging && "z-20 opacity-80",
+        isOver && !isDragging && "ring-1 ring-primary/40",
+      )}
+    >
+      {children({ attributes, listeners, setActivatorNodeRef })}
+    </li>
+  );
+}
+
 function ConnorProjectHeader(props: {
   project: SidebarProjectSnapshot;
   expanded: boolean;
   containsActive: boolean;
+  dragHandleProps: ConnorProjectDragHandleProps | null;
+  suppressClickAfterDragRef: React.RefObject<boolean>;
   onToggle: (project: SidebarProjectSnapshot) => void;
   onNewThreadInProject: (project: SidebarProjectSnapshot) => void;
 }) {
-  const { project } = props;
+  const { project, dragHandleProps } = props;
   return (
     <div
       role="button"
@@ -798,9 +855,23 @@ function ConnorProjectHeader(props: {
       data-testid={`sidebar-connor-project-${project.projectKey}`}
       aria-expanded={props.expanded}
       title={project.workspaceRoot}
-      className="group/connor-project flex h-8 w-full cursor-pointer items-center gap-1.5 rounded-md px-1 text-left outline-none select-none hover:bg-sidebar-row-hover focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring"
+      ref={dragHandleProps?.setActivatorNodeRef}
+      {...(dragHandleProps ? dragHandleProps.attributes : {})}
+      {...(dragHandleProps ? dragHandleProps.listeners : {})}
+      className={cn(
+        "group/connor-project flex h-8 w-full items-center gap-1.5 rounded-md px-1 text-left outline-none select-none hover:bg-sidebar-row-hover focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring",
+        dragHandleProps ? "cursor-grab active:cursor-grabbing" : "cursor-pointer",
+      )}
       onClick={(event) => {
         if ((event.target as HTMLElement).closest("button, a, input")) return;
+        // A drop fires a trailing click on the activator; consuming the flag
+        // here keeps the drag from also toggling expansion.
+        if (props.suppressClickAfterDragRef.current) {
+          props.suppressClickAfterDragRef.current = false;
+          event.preventDefault();
+          event.stopPropagation();
+          return;
+        }
         props.onToggle(project);
       }}
       onKeyDown={(event) => {
@@ -923,6 +994,7 @@ export default function SidebarConnor({ variant }: { variant: ConnorVariant }) {
   const projectOrder = useUiStateStore((state) => state.projectOrder);
   const projectExpandedById = useUiStateStore((state) => state.projectExpandedById);
   const setProjectExpanded = useUiStateStore((state) => state.setProjectExpanded);
+  const reorderProjects = useUiStateStore((state) => state.reorderProjects);
   const { environments } = useEnvironments();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
 
@@ -1245,6 +1317,46 @@ export default function SidebarConnor({ variant }: { variant: ConnorVariant }) {
     },
     [setProjectExpanded],
   );
+
+  // ── Manual project reordering (same @dnd-kit setup as the Default
+  // sidebar; both write the shared projectOrder preference) ──────────
+  const isManualProjectSorting = sidebarProjectSortOrder === "manual";
+  const suppressProjectClickAfterDragRef = useRef(false);
+  const projectDnDSensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: { distance: 6 },
+    }),
+  );
+  const projectCollisionDetection = useCallback<CollisionDetection>((args) => {
+    const pointerCollisions = pointerWithin(args);
+    return pointerCollisions.length > 0 ? pointerCollisions : closestCorners(args);
+  }, []);
+  const handleProjectDragStart = useCallback(
+    (_event: DragStartEvent) => {
+      if (!isManualProjectSorting) return;
+      suppressProjectClickAfterDragRef.current = true;
+    },
+    [isManualProjectSorting],
+  );
+  const handleProjectDragEnd = useCallback(
+    (event: DragEndEvent) => {
+      if (!isManualProjectSorting) return;
+      const { active, over } = event;
+      if (!over || active.id === over.id) return;
+      const activeProject = projectGroups.find((project) => project.projectKey === active.id);
+      const overProject = projectGroups.find((project) => project.projectKey === over.id);
+      if (!activeProject || !overProject) return;
+      const activeMemberKeys = activeProject.memberProjects.map(
+        (member) => member.physicalProjectKey,
+      );
+      const overMemberKeys = overProject.memberProjects.map((member) => member.physicalProjectKey);
+      reorderProjects(orderedProjects.map(getProjectOrderKey), activeMemberKeys, overMemberKeys);
+    },
+    [isManualProjectSorting, orderedProjects, projectGroups, reorderProjects],
+  );
+  const handleProjectDragCancel = useCallback((_event: DragCancelEvent) => {
+    suppressProjectClickAfterDragRef.current = false;
+  }, []);
 
   const handleNewThreadInProject = useCallback(
     (project: SidebarProjectSnapshot) => {
@@ -1856,13 +1968,18 @@ export default function SidebarConnor({ variant }: { variant: ConnorVariant }) {
               </p>
             )
           ) : projectSections !== null ? (
-            <ul ref={attachListAutoAnimateRef} role="list" className="flex flex-col gap-px">
-              {projectSections.map((section) => (
-                <li key={section.project.projectKey} className="list-none">
+            (() => {
+              const renderProjectSectionContent = (
+                section: (typeof projectSections)[number],
+                dragHandleProps: ConnorProjectDragHandleProps | null,
+              ) => (
+                <>
                   <ConnorProjectHeader
                     project={section.project}
                     expanded={section.expanded}
                     containsActive={section.containsActive}
+                    dragHandleProps={dragHandleProps}
+                    suppressClickAfterDragRef={suppressProjectClickAfterDragRef}
                     onToggle={handleProjectToggle}
                     onNewThreadInProject={handleNewThreadInProject}
                   />
@@ -1910,16 +2027,54 @@ export default function SidebarConnor({ variant }: { variant: ConnorVariant }) {
                       ) : null}
                     </ul>
                   ) : null}
-                </li>
-              ))}
-              {projectSections.length === 0 ? (
-                <li className="list-none">
+                </>
+              );
+              if (projectSections.length === 0) {
+                return (
                   <p className="px-2 py-6 text-center text-xs text-sidebar-muted-foreground">
                     No projects yet
                   </p>
-                </li>
-              ) : null}
-            </ul>
+                );
+              }
+              // Manual sorting swaps auto-animate for @dnd-kit: the two fight
+              // over transforms, and dnd-kit owns row motion while dragging.
+              return isManualProjectSorting ? (
+                <DndContext
+                  sensors={projectDnDSensors}
+                  collisionDetection={projectCollisionDetection}
+                  modifiers={[restrictToVerticalAxis, restrictToFirstScrollableAncestor]}
+                  onDragStart={handleProjectDragStart}
+                  onDragEnd={handleProjectDragEnd}
+                  onDragCancel={handleProjectDragCancel}
+                >
+                  <ul role="list" className="flex flex-col gap-px">
+                    <SortableContext
+                      items={projectSections.map((section) => section.project.projectKey)}
+                      strategy={verticalListSortingStrategy}
+                    >
+                      {projectSections.map((section) => (
+                        <ConnorSortableProjectItem
+                          key={section.project.projectKey}
+                          projectKey={section.project.projectKey}
+                        >
+                          {(dragHandleProps) =>
+                            renderProjectSectionContent(section, dragHandleProps)
+                          }
+                        </ConnorSortableProjectItem>
+                      ))}
+                    </SortableContext>
+                  </ul>
+                </DndContext>
+              ) : (
+                <ul ref={attachListAutoAnimateRef} role="list" className="flex flex-col gap-px">
+                  {projectSections.map((section) => (
+                    <li key={section.project.projectKey} className="list-none">
+                      {renderProjectSectionContent(section, null)}
+                    </li>
+                  ))}
+                </ul>
+              );
+            })()
           ) : (
             <ul ref={attachListAutoAnimateRef} role="list" className="flex flex-col gap-px">
               {ungroupedThreads.map((thread) => renderThreadRow(thread, true))}
