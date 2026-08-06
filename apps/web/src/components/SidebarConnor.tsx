@@ -1486,6 +1486,7 @@ export default function SidebarConnor() {
               },
               { id: "copy-path", label: "Copy path", icon: "copy" },
               ...(group.branch ? [{ id: "copy-branch", label: "Copy branch", icon: "copy" }] : []),
+              { id: "delete-worktree", label: "Delete worktree", destructive: true, icon: "trash" },
             ],
             position,
           ),
@@ -1507,6 +1508,45 @@ export default function SidebarConnor() {
           case "copy-branch":
             if (group.branch) copyBranchToClipboard(group.branch, { branch: group.branch });
             return;
+          case "delete-worktree": {
+            const displayName = resolveWorktreeDisplayName(group, worktreeNameByKey);
+            const count = group.threads.length;
+            const confirmed = await settlePromise(() =>
+              api.dialogs.confirm(
+                [
+                  `Delete worktree "${displayName}" and its ${count} thread${count === 1 ? "" : "s"}?`,
+                  "This removes the worktree directory and permanently clears conversation history.",
+                ].join("\n"),
+              ),
+            );
+            if (confirmed._tag === "Failure" || !confirmed.value) return;
+            // Grown as deletions actually land, so orphaned-worktree
+            // detection only discounts threads that are really gone; the
+            // last delete orphans the worktree and removes it.
+            const deletedThreadKeys = new Set<string>();
+            for (const thread of group.threads) {
+              const threadRef = scopeThreadRef(thread.environmentId, thread.id);
+              const result = await deleteThread(threadRef, {
+                deletedThreadKeys,
+                deleteOrphanedWorktree: true,
+              });
+              if (result._tag === "Failure") {
+                if (!isAtomCommandInterrupted(result)) {
+                  const error = squashAtomCommandFailure(result);
+                  toastManager.add(
+                    stackedThreadToast({
+                      type: "error",
+                      title: "Failed to delete worktree",
+                      description: error instanceof Error ? error.message : "An error occurred.",
+                    }),
+                  );
+                }
+                return;
+              }
+              deletedThreadKeys.add(scopedThreadKey(threadRef));
+            }
+            return;
+          }
           default:
             return;
         }
@@ -1515,6 +1555,7 @@ export default function SidebarConnor() {
     [
       copyBranchToClipboard,
       copyPathToClipboard,
+      deleteThread,
       handleNewThreadInGroup,
       setWorktreeName,
       startWorktreeRename,
