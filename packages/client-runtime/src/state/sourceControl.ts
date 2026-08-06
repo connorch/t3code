@@ -44,5 +44,11 @@ export function createSourceControlEnvironmentAtoms<R, E>(
           cwd: target.input.cwd,
         }),
     }),
+    enableAutomerge: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:source-control:enable-automerge",
+      tag: WS_METHODS.sourceControlEnableAutomerge,
+      scheduler: vcsCommandScheduler,
+      concurrency: vcsCommandConcurrency,
+    }),
   };
 }

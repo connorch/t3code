@@ -10,16 +10,16 @@ import {
   type ChangeRequestTerminology,
 } from "../sourceControlPresentation";
 
-export type GitActionIconName = "commit" | "push" | "pr";
+export type GitActionIconName = "commit" | "push" | "pr" | "automerge";
 
 export type GitDialogAction = "commit" | "push" | "create_pr";
 
 export interface GitActionMenuItem {
-  id: "commit" | "push" | "pr";
+  id: "commit" | "push" | "pr" | "automerge" | "commit_push_pr_automerge";
   label: string;
   disabled: boolean;
   icon: GitActionIconName;
-  kind: "open_dialog" | "open_pr";
+  kind: "open_dialog" | "open_pr" | "enable_automerge" | "run_action_with_automerge";
   dialogAction?: GitDialogAction;
 }
 
@@ -135,6 +135,20 @@ export function buildMenuItems(
     return [commitItem];
   }
 
+  // Automerge is only implemented through the GitHub CLI for now. On the
+  // default ref the PR-creating flow is not offered (the quick action drops
+  // the PR step there too), so hide both items unless a PR already exists.
+  const showAutomergeItems =
+    gitStatus.sourceControlProvider?.kind === "github" && (!gitStatus.isDefaultRef || hasOpenPr);
+  const canAutomerge = !isBusy && hasOpenPr;
+  const canCommitPushPrAutomerge =
+    !isBusy &&
+    hasBranch &&
+    !hasOpenPr &&
+    !gitStatus.isDefaultRef &&
+    (hasChanges || (hasDefaultBranchDelta && !isBehind)) &&
+    (gitStatus.hasUpstream || canPushWithoutUpstream);
+
   return [
     commitItem,
     {
@@ -161,6 +175,24 @@ export function buildMenuItems(
           kind: "open_dialog",
           dialogAction: "create_pr",
         },
+    ...(showAutomergeItems
+      ? [
+          {
+            id: "automerge",
+            label: "Automerge",
+            disabled: !canAutomerge,
+            icon: "automerge",
+            kind: "enable_automerge",
+          } satisfies GitActionMenuItem,
+          {
+            id: "commit_push_pr_automerge",
+            label: `Commit, push, ${terminology.shortLabel}, & Automerge`,
+            disabled: !canCommitPushPrAutomerge,
+            icon: "automerge",
+            kind: "run_action_with_automerge",
+          } satisfies GitActionMenuItem,
+        ]
+      : []),
   ];
 }
 

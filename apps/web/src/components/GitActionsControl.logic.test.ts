@@ -92,6 +92,138 @@ describe("when: ref is clean and has an open PR", () => {
   });
 });
 
+describe("when: automerge availability depends on PR and provider", () => {
+  const openPr = {
+    number: 12,
+    title: "Existing PR",
+    url: "https://example.com/pr/12",
+    baseRef: "main",
+    headRef: "feature/test",
+    state: "open",
+  } as const;
+  const githubProvider = {
+    kind: "github",
+    name: "GitHub",
+    baseUrl: "https://github.com",
+  } as const;
+
+  it("buildMenuItems enables Automerge and disables the combined action for an open GitHub PR", () => {
+    const items = buildMenuItems(
+      status({ pr: openPr, sourceControlProvider: githubProvider }),
+      false,
+    );
+    assert.deepEqual(
+      items.find((item) => item.id === "automerge"),
+      {
+        id: "automerge",
+        label: "Automerge",
+        disabled: false,
+        icon: "automerge",
+        kind: "enable_automerge",
+      },
+    );
+    assert.deepInclude(items[items.length - 1], {
+      id: "commit_push_pr_automerge",
+      disabled: true,
+    });
+  });
+
+  it("buildMenuItems disables both automerge items while busy", () => {
+    const items = buildMenuItems(
+      status({
+        pr: openPr,
+        hasWorkingTreeChanges: true,
+        sourceControlProvider: githubProvider,
+      }),
+      true,
+    );
+    assert.deepInclude(
+      items.find((item) => item.id === "automerge"),
+      { disabled: true },
+    );
+    assert.deepInclude(
+      items.find((item) => item.id === "commit_push_pr_automerge"),
+      { disabled: true },
+    );
+  });
+
+  it("buildMenuItems disables Automerge and enables the combined action without an open PR", () => {
+    const items = buildMenuItems(
+      status({ hasWorkingTreeChanges: true, sourceControlProvider: githubProvider }),
+      false,
+    );
+    assert.deepInclude(
+      items.find((item) => item.id === "automerge"),
+      { disabled: true },
+    );
+    assert.deepEqual(items[items.length - 1], {
+      id: "commit_push_pr_automerge",
+      label: "Commit, push, PR, & Automerge",
+      disabled: false,
+      icon: "automerge",
+      kind: "run_action_with_automerge",
+    });
+  });
+
+  it("buildMenuItems disables the combined action when there is nothing to commit or push", () => {
+    const items = buildMenuItems(status({ sourceControlProvider: githubProvider }), false);
+    assert.deepInclude(
+      items.find((item) => item.id === "commit_push_pr_automerge"),
+      { disabled: true },
+    );
+  });
+
+  it("buildMenuItems omits both automerge items on the default ref without an open PR", () => {
+    const items = buildMenuItems(
+      status({
+        isDefaultRef: true,
+        refName: "main",
+        hasWorkingTreeChanges: true,
+        sourceControlProvider: githubProvider,
+      }),
+      false,
+    );
+    assert.isUndefined(items.find((item) => item.id === "automerge"));
+    assert.isUndefined(items.find((item) => item.id === "commit_push_pr_automerge"));
+  });
+
+  it("buildMenuItems keeps Automerge enabled on the default ref when a PR is open", () => {
+    const items = buildMenuItems(
+      status({
+        isDefaultRef: true,
+        refName: "main",
+        pr: openPr,
+        sourceControlProvider: githubProvider,
+      }),
+      false,
+    );
+    assert.deepInclude(
+      items.find((item) => item.id === "automerge"),
+      { disabled: false },
+    );
+    assert.deepInclude(
+      items.find((item) => item.id === "commit_push_pr_automerge"),
+      { disabled: true },
+    );
+  });
+
+  it("buildMenuItems omits both automerge items for non-GitHub providers", () => {
+    const items = buildMenuItems(
+      status({
+        pr: openPr,
+        sourceControlProvider: {
+          kind: "gitlab",
+          name: "GitLab",
+          baseUrl: "https://gitlab.com",
+        },
+      }),
+      false,
+    );
+    assert.isUndefined(items.find((item) => item.id === "automerge"));
+    assert.isUndefined(items.find((item) => item.id === "commit_push_pr_automerge"));
+  });
+});
+
 describe("when: actions are busy", () => {
   it("resolveQuickAction returns running disabled state", () => {
     const quick = resolveQuickAction(status(), true);

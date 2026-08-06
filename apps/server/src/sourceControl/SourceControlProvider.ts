@@ -126,5 +126,10 @@ export class SourceControlProvider extends Context.Service<
       readonly reference: string;
       readonly force?: boolean;
     }) => Effect.Effect<void, SourceControlProviderError>;
+    readonly enableChangeRequestAutomerge: (input: {
+      readonly cwd: string;
+      readonly context?: SourceControlProviderContext;
+      readonly reference: string;
+    }) => Effect.Effect<void, SourceControlProviderError>;
   }
 >()("t3/sourceControl/SourceControlProvider") {}

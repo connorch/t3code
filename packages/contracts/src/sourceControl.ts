@@ -103,6 +103,17 @@ export const SourceControlPublishRepositoryResult = Schema.Struct({
 });
 export type SourceControlPublishRepositoryResult = typeof SourceControlPublishRepositoryResult.Type;
 
+export const SourceControlEnableAutomergeInput = Schema.Struct({
+  cwd: TrimmedNonEmptyString,
+  reference: TrimmedNonEmptyString,
+});
+export type SourceControlEnableAutomergeInput = typeof SourceControlEnableAutomergeInput.Type;
+
+export const SourceControlEnableAutomergeResult = Schema.Struct({
+  reference: TrimmedNonEmptyString,
+});
+export type SourceControlEnableAutomergeResult = typeof SourceControlEnableAutomergeResult.Type;
+
 export const SourceControlDiscoveryStatus = Schema.Literals(["available", "missing"]);
 export type SourceControlDiscoveryStatus = typeof SourceControlDiscoveryStatus.Type;
 

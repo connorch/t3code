@@ -344,6 +344,62 @@ describe("GitHubCli.layer", () => {
     }).pipe(Effect.provide(layer)),
   );
 
+  it.effect("enables automerge with a merge strategy the repository allows", () =>
+    Effect.gen(function* () {
+      mockRun.mockReturnValueOnce(Effect.succeed(processOutput("squash\n")));
+      mockRun.mockReturnValueOnce(Effect.succeed(processOutput("")));
+
+      const gh = yield* GitHubCli.GitHubCli;
+      yield* gh.enableAutoMergePullRequest({
+        cwd: "/repo",
+        reference: "42",
+      });
+
+      expect(mockRun).toHaveBeenCalledTimes(2);
+      expect(mockRun).toHaveBeenNthCalledWith(1, {
+        operation: "GitHubCli.execute",
+        command: "gh",
+        args: [
+          "repo",
+          "view",
+          "--json",
+          "squashMergeAllowed,mergeCommitAllowed,rebaseMergeAllowed",
+          "--jq",
+          'if .squashMergeAllowed then "squash" elif .mergeCommitAllowed then "merge" else "rebase" end',
+        ],
+        cwd: "/repo",
+        timeoutMs: 30_000,
+      });
+      expect(mockRun).toHaveBeenNthCalledWith(2, {
+        operation: "GitHubCli.execute",
+        command: "gh",
+        args: ["pr", "merge", "42", "--auto", "--squash"],
+        cwd: "/repo",
+        timeoutMs: 30_000,
+      });
+    }).pipe(Effect.provide(layer)),
+  );
+
+  it.effect("falls back to squash when the merge strategy lookup is unrecognized", () =>
+    Effect.gen(function* () {
+      mockRun.mockReturnValueOnce(Effect.succeed(processOutput("garbled\n")));
+      mockRun.mockReturnValueOnce(Effect.succeed(processOutput("")));
+
+      const gh = yield* GitHubCli.GitHubCli;
+      yield* gh.enableAutoMergePullRequest({
+        cwd: "/repo",
+        reference: "42",
+      });
+
+      expect(mockRun).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({
+          args: ["pr", "merge", "42", "--auto", "--squash"],
+        }),
+      );
+    }).pipe(Effect.provide(layer)),
+  );
+
   it.effect("surfaces a friendly error when the pull request is not found", () =>
     Effect.gen(function* () {
       const cause = new VcsProcessExitError({

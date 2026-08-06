@@ -95,6 +95,8 @@ import type { ClientSettings } from "./settings.ts";
 import type {
   SourceControlCloneRepositoryInput,
   SourceControlCloneRepositoryResult,
+  SourceControlEnableAutomergeInput,
+  SourceControlEnableAutomergeResult,
   SourceControlPublishRepositoryInput,
   SourceControlPublishRepositoryResult,
   SourceControlRepositoryInfo,
@@ -1197,6 +1199,9 @@ export interface EnvironmentApi {
     publishRepository: (
       input: SourceControlPublishRepositoryInput,
     ) => Promise<SourceControlPublishRepositoryResult>;
+    enableAutomerge: (
+      input: SourceControlEnableAutomergeInput,
+    ) => Promise<SourceControlEnableAutomergeResult>;
   };
   vcs: {
     listRefs: (input: VcsListRefsInput) => Promise<VcsListRefsResult>;

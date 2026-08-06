@@ -36,6 +36,7 @@ export const VcsActionOperation = Schema.Literals([
   "create_worktree",
   "init",
   "publish_repository",
+  "enable_automerge",
   "prepare_pull_request_thread",
 ]);
 export type VcsActionOperation = typeof VcsActionOperation.Type;

@@ -572,6 +572,11 @@ function createGitHubCliWithFakeGh(scenario: FakeGhScenario = {}): {
           cwd: input.cwd,
           args: ["pr", "checkout", input.reference, ...(input.force ? ["--force"] : [])],
         }).pipe(Effect.asVoid),
+      enableAutoMergePullRequest: (input) =>
+        execute({
+          cwd: input.cwd,
+          args: ["pr", "merge", input.reference, "--auto"],
+        }).pipe(Effect.asVoid),
     },
     ghCalls,
   };
