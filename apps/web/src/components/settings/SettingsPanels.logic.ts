@@ -5,10 +5,9 @@ import type {
   ProviderInstanceConfig,
   ProviderInstanceId,
   ServerSettings,
-  SidebarProjectGroupingMode,
   UnifiedSettings,
 } from "@t3tools/contracts";
-import { DEFAULT_UNIFIED_SETTINGS } from "@t3tools/contracts/settings";
+import { DEFAULT_UNIFIED_SETTINGS, SidebarProjectGroupingMode } from "@t3tools/contracts/settings";
 import {
   normalizeBackgroundActivitySettings,
   normalizeServerBackgroundActivitySettings,
@@ -25,16 +24,16 @@ export function projectGroupingModeFromToggle(
   lastEnabledMode: SidebarProjectGroupingMode = "repository",
 ): SidebarProjectGroupingMode {
   if (!enabled) return "separate";
-  return lastEnabledMode === "repository_path" ? "repository_path" : "repository";
+  return isProjectGroupingEnabled(lastEnabledMode) ? lastEnabledMode : "repository";
 }
 
 const LAST_ENABLED_PROJECT_GROUPING_MODE_KEY = "t3code:last-enabled-project-grouping-mode";
 
 export function readLastEnabledProjectGroupingMode(): SidebarProjectGroupingMode {
   try {
-    return localStorage.getItem(LAST_ENABLED_PROJECT_GROUPING_MODE_KEY) === "repository_path"
-      ? "repository_path"
-      : "repository";
+    const stored = localStorage.getItem(LAST_ENABLED_PROJECT_GROUPING_MODE_KEY);
+    const mode = SidebarProjectGroupingMode.literals.find((candidate) => candidate === stored);
+    return mode && isProjectGroupingEnabled(mode) ? mode : "repository";
   } catch {
     return "repository";
   }

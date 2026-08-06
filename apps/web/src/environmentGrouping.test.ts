@@ -93,6 +93,57 @@ describe("environment grouping", () => {
     expect(deriveLogicalProjectKey(primary)).not.toBe(deriveLogicalProjectKey(remote));
   });
 
+  it("groups projects that share a worktree and splits sibling worktrees", () => {
+    const worktreeSettings = {
+      sidebarProjectGroupingMode: "worktree" as const,
+      sidebarProjectGroupingOverrides: {},
+    };
+    const checkoutRoot = makeProject({
+      workspaceRoot: "/tmp/shared-repo",
+      repositoryIdentity: { ...repositoryIdentity, rootPath: "/tmp/shared-repo" },
+    });
+    const packageInSameCheckout = makeProject({
+      id: ProjectId.make("project-package"),
+      workspaceRoot: "/tmp/shared-repo/apps/web",
+      repositoryIdentity: { ...repositoryIdentity, rootPath: "/tmp/shared-repo" },
+    });
+    const siblingWorktree = makeProject({
+      id: ProjectId.make("project-worktree"),
+      workspaceRoot: "/tmp/worktrees/feature",
+      repositoryIdentity: { ...repositoryIdentity, rootPath: "/tmp/worktrees/feature" },
+    });
+
+    expect(deriveLogicalProjectKeyFromSettings(packageInSameCheckout, worktreeSettings)).toBe(
+      deriveLogicalProjectKeyFromSettings(checkoutRoot, worktreeSettings),
+    );
+    expect(deriveLogicalProjectKeyFromSettings(siblingWorktree, worktreeSettings)).not.toBe(
+      deriveLogicalProjectKeyFromSettings(checkoutRoot, worktreeSettings),
+    );
+  });
+
+  it("scopes worktree grouping per environment and falls back to the physical key", () => {
+    const worktreeSettings = {
+      sidebarProjectGroupingMode: "worktree" as const,
+      sidebarProjectGroupingOverrides: {},
+    };
+    const primary = makeProject({
+      repositoryIdentity: { ...repositoryIdentity, rootPath: "/tmp/shared-repo" },
+    });
+    const remote = makeProject({
+      id: ProjectId.make("project-remote"),
+      environmentId: remoteEnvironmentId,
+      repositoryIdentity: { ...repositoryIdentity, rootPath: "/tmp/shared-repo" },
+    });
+    const withoutRootPath = makeProject({ repositoryIdentity });
+
+    expect(deriveLogicalProjectKeyFromSettings(primary, worktreeSettings)).not.toBe(
+      deriveLogicalProjectKeyFromSettings(remote, worktreeSettings),
+    );
+    expect(deriveLogicalProjectKeyFromSettings(withoutRootPath, worktreeSettings)).toBe(
+      derivePhysicalProjectKey(withoutRootPath),
+    );
+  });
+
   it("uses the physical key when repository grouping is disabled", () => {
     const project = makeProject({ repositoryIdentity });
 

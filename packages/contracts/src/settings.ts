@@ -24,6 +24,7 @@ export const DEFAULT_SIDEBAR_THREAD_SORT_ORDER: SidebarThreadSortOrder = "update
 export const SidebarProjectGroupingMode = Schema.Literals([
   "repository",
   "repository_path",
+  "worktree",
   "separate",
 ]);
 export type SidebarProjectGroupingMode = typeof SidebarProjectGroupingMode.Type;

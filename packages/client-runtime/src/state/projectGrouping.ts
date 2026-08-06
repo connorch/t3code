@@ -92,9 +92,21 @@ export function resolveProjectGroupingMode(
   );
 }
 
+/**
+ * `repositoryIdentity.rootPath` comes from `git rev-parse --show-toplevel`, so a linked
+ * worktree reports its own root rather than the main checkout's, so grouping on it keeps
+ * sibling worktrees apart while folding subdirectory projects into their checkout.
+ */
+function deriveWorktreeScopedKey(
+  project: Pick<EnvironmentProject, "environmentId" | "repositoryIdentity">,
+): string | null {
+  const rootPath = project.repositoryIdentity?.rootPath?.trim();
+  return rootPath ? derivePhysicalProjectKeyFromPath(project.environmentId, rootPath) : null;
+}
+
 function deriveRepositoryScopedKey(
   project: Pick<EnvironmentProject, "workspaceRoot" | "repositoryIdentity">,
-  groupingMode: SidebarProjectGroupingMode,
+  groupingMode: "repository" | "repository_path",
 ): string | null {
   const canonicalKey = project.repositoryIdentity?.canonicalKey;
   if (!canonicalKey) {
@@ -127,6 +139,10 @@ export function deriveLogicalProjectKey(
   const groupingMode = options?.groupingMode ?? "repository";
   if (groupingMode === "separate") {
     return derivePhysicalProjectKey(project);
+  }
+
+  if (groupingMode === "worktree") {
+    return deriveWorktreeScopedKey(project) ?? derivePhysicalProjectKey(project);
   }
 
   return (
