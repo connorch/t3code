@@ -12,11 +12,14 @@ import {
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
 import type { ScopedThreadRef } from "@t3tools/contracts";
+import type { SidebarProjectSortOrder, SidebarThreadSortOrder } from "@t3tools/contracts/settings";
 import {
+  ArrowUpDownIcon,
   ChevronRightIcon,
   CircleAlertIcon,
   CircleDashedIcon,
   CircleHelpIcon,
+  FolderPlusIcon,
   GitBranchIcon,
   MessageSquareIcon,
   PlusIcon,
@@ -47,14 +50,25 @@ import { isTerminalFocused } from "../lib/terminalFocus";
 import { isModelPickerOpen } from "../modelPickerVisibility";
 import { selectThreadTerminalUiState, useTerminalUiStateStore } from "../terminalUiStateStore";
 import { readLocalApi } from "../localApi";
-import { useUiStateStore } from "../uiStateStore";
+import {
+  legacyProjectCwdPreferenceKey,
+  resolveProjectExpanded,
+  useUiStateStore,
+} from "../uiStateStore";
 import { useThreadActions } from "../hooks/useThreadActions";
 import { useHandleNewThread } from "../hooks/useHandleNewThread";
 import { openCommandPalette } from "../commandPaletteBus";
 import { startNewThreadFromContext } from "../lib/chatThreadActions";
-import { useClientSettings } from "../hooks/useSettings";
+import { useClientSettings, useUpdateClientSettings } from "../hooks/useSettings";
 import { useCopyToClipboard } from "../hooks/useCopyToClipboard";
 import { useNowMinute } from "../hooks/useNowMinute";
+import { getProjectOrderKey, selectProjectGroupingSettings } from "../logicalProject";
+import { sortThreads } from "../lib/threadSort";
+import {
+  buildSidebarProjectSnapshots,
+  type SidebarProjectSnapshot,
+} from "../sidebarProjectGrouping";
+import { useEnvironments, usePrimaryEnvironmentId } from "../state/environments";
 import { useProjects, useThreadShells } from "../state/entities";
 import { primaryServerKeybindingsAtom } from "../state/server";
 import { threadEnvironment } from "../state/threads";
@@ -69,8 +83,10 @@ import type { SidebarThreadSummary } from "../types";
 import { cn } from "~/lib/utils";
 import {
   isTrailingDoubleClick,
+  orderItemsByPreferredIds,
   resolveAdjacentThreadId,
   searchSidebarThreadsByTitle,
+  sortLogicalProjectsForSidebar,
 } from "./Sidebar.logic";
 import {
   partitionThreadsForConnorSidebar,
@@ -86,6 +102,7 @@ import { ProjectFavicon } from "./ProjectFavicon";
 import { stackedThreadToast, toastManager } from "./ui/toast";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
+import { Menu, MenuGroup, MenuPopup, MenuRadioGroup, MenuRadioItem, MenuTrigger } from "./ui/menu";
 import { SidebarContent, SidebarGroup, SidebarMenuButton } from "./ui/sidebar";
 import { useSidebar } from "./ui/sidebar";
 import { SidebarChromeFooter, SidebarChromeHeader } from "./sidebar/SidebarChrome";
@@ -170,6 +187,94 @@ const THREAD_DOT_LABEL: Record<Exclude<ConnorThreadDot, null>, string> = {
   failed: "Failed",
   unread: "Unread response",
 };
+
+// ── Project-level grouping (Stack mode only) ────────────────────────
+// Same settings, labels, and expansion store as the Default sidebar, so
+// switching modes never loses the user's sort or collapsed projects.
+
+const SIDEBAR_SORT_LABELS: Record<SidebarProjectSortOrder, string> = {
+  updated_at: "Last user message",
+  created_at: "Created at",
+  manual: "Manual",
+};
+
+const SIDEBAR_THREAD_SORT_LABELS: Record<SidebarThreadSortOrder, string> = {
+  updated_at: "Last user message",
+  created_at: "Created at",
+};
+
+function projectExpansionPreferenceKeys(project: SidebarProjectSnapshot): string[] {
+  return [
+    project.projectKey,
+    ...project.memberProjects.map((member) => member.physicalProjectKey),
+    ...project.memberProjects.map((member) => legacyProjectCwdPreferenceKey(member.workspaceRoot)),
+  ];
+}
+
+function ConnorSortMenu(props: {
+  projectSortOrder: SidebarProjectSortOrder;
+  threadSortOrder: SidebarThreadSortOrder;
+  onProjectSortOrderChange: (sortOrder: SidebarProjectSortOrder) => void;
+  onThreadSortOrderChange: (sortOrder: SidebarThreadSortOrder) => void;
+}) {
+  return (
+    <Menu>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <MenuTrigger
+              aria-label="Sort options"
+              className="inline-flex h-6 min-w-6 cursor-pointer items-center justify-center rounded-md px-[calc(--spacing(1)-1px)] text-muted-foreground/60 transition-colors hover:bg-accent hover:text-foreground"
+            />
+          }
+        >
+          <ArrowUpDownIcon className="size-3.5" />
+        </TooltipTrigger>
+        <TooltipPopup side="right">Sort options</TooltipPopup>
+      </Tooltip>
+      <MenuPopup align="end" side="bottom" className="min-w-52">
+        <MenuGroup>
+          <div className="px-2 py-1 font-medium text-muted-foreground sm:text-xs">
+            Sort projects
+          </div>
+          <MenuRadioGroup
+            value={props.projectSortOrder}
+            onValueChange={(value) =>
+              props.onProjectSortOrderChange(value as SidebarProjectSortOrder)
+            }
+          >
+            {(Object.entries(SIDEBAR_SORT_LABELS) as Array<[SidebarProjectSortOrder, string]>).map(
+              ([value, label]) => (
+                <MenuRadioItem key={value} value={value} className="min-h-7 py-1 sm:text-xs">
+                  {label}
+                </MenuRadioItem>
+              ),
+            )}
+          </MenuRadioGroup>
+        </MenuGroup>
+        <MenuGroup>
+          <div className="px-2 pt-2 pb-1 font-medium text-muted-foreground sm:text-xs">
+            Sort threads
+          </div>
+          <MenuRadioGroup
+            value={props.threadSortOrder}
+            onValueChange={(value) =>
+              props.onThreadSortOrderChange(value as SidebarThreadSortOrder)
+            }
+          >
+            {(
+              Object.entries(SIDEBAR_THREAD_SORT_LABELS) as Array<[SidebarThreadSortOrder, string]>
+            ).map(([value, label]) => (
+              <MenuRadioItem key={value} value={value} className="min-h-7 py-1 sm:text-xs">
+                {label}
+              </MenuRadioItem>
+            ))}
+          </MenuRadioGroup>
+        </MenuGroup>
+      </MenuPopup>
+    </Menu>
+  );
+}
 
 // ── Thread rows ─────────────────────────────────────────────────────
 
@@ -379,6 +484,9 @@ function WorktreeName(props: {
 interface GroupSectionProps {
   group: WorktreeGroup;
   variant: ConnorVariant;
+  /** Rows in display order; defaults to the group's creation order. Stack
+      mode passes the thread-sort setting's ordering here. */
+  displayThreads?: readonly EnvironmentThreadShell[];
   name: string;
   expanded: boolean;
   containsActive: boolean;
@@ -532,7 +640,9 @@ function StackGroupSection(props: GroupSectionProps) {
         </div>
         {props.expanded ? (
           <ul className="flex flex-col gap-px border-t border-sidebar-border/60 p-1">
-            {group.threads.map((thread) => props.renderThreadRow(thread, false))}
+            {(props.displayThreads ?? group.threads).map((thread) =>
+              props.renderThreadRow(thread, false),
+            )}
           </ul>
         ) : null}
       </section>
@@ -671,6 +781,73 @@ function FocusGroupSection(props: GroupSectionProps) {
   );
 }
 
+// ── Project section header (Stack mode only) ────────────────────────
+
+function ConnorProjectHeader(props: {
+  project: SidebarProjectSnapshot;
+  expanded: boolean;
+  containsActive: boolean;
+  onToggle: (project: SidebarProjectSnapshot) => void;
+  onNewThreadInProject: (project: SidebarProjectSnapshot) => void;
+}) {
+  const { project } = props;
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      data-testid={`sidebar-connor-project-${project.projectKey}`}
+      aria-expanded={props.expanded}
+      title={project.workspaceRoot}
+      className="group/connor-project flex h-8 w-full cursor-pointer items-center gap-1.5 rounded-md px-1 text-left outline-none select-none hover:bg-sidebar-row-hover focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring"
+      onClick={(event) => {
+        if ((event.target as HTMLElement).closest("button, a, input")) return;
+        props.onToggle(project);
+      }}
+      onKeyDown={(event) => {
+        if (event.target !== event.currentTarget) return;
+        if (event.key !== "Enter" && event.key !== " ") return;
+        event.preventDefault();
+        props.onToggle(project);
+      }}
+    >
+      <ChevronRightIcon
+        aria-hidden
+        className={cn(
+          "size-3.5 shrink-0 text-sidebar-muted-foreground/70 transition-transform",
+          props.expanded && "rotate-90",
+        )}
+      />
+      <ProjectFavicon
+        environmentId={project.environmentId}
+        cwd={project.workspaceRoot}
+        className="size-4 shrink-0"
+      />
+      <span
+        className={cn(
+          "min-w-0 flex-1 truncate text-sm font-medium",
+          props.containsActive || props.expanded
+            ? "text-sidebar-foreground"
+            : "text-sidebar-foreground/80",
+        )}
+      >
+        {project.displayName}
+      </span>
+      <button
+        type="button"
+        aria-label={`New thread in ${project.displayName}`}
+        title={`New thread in ${project.displayName}`}
+        onClick={(event) => {
+          event.stopPropagation();
+          props.onNewThreadInProject(project);
+        }}
+        className="inline-flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-sm text-sidebar-muted-foreground opacity-0 transition-opacity hover:bg-sidebar-control-surface hover:text-sidebar-foreground focus-visible:opacity-100 group-hover/connor-project:opacity-100"
+      >
+        <PlusIcon className="size-3.5" />
+      </button>
+    </div>
+  );
+}
+
 // ── Search result row ───────────────────────────────────────────────
 
 function ConnorSearchResultRow(props: {
@@ -737,6 +914,17 @@ export default function SidebarConnor({ variant }: { variant: ConnorVariant }) {
   const setWorktreeName = useUiStateStore((state) => state.setWorktreeName);
   const setWorktreeLastThreadKey = useUiStateStore((state) => state.setWorktreeLastThreadKey);
   const setConnorWorktreeExpanded = useUiStateStore((state) => state.setConnorWorktreeExpanded);
+  // Stack mode groups by project above the worktrees, sharing the Default
+  // sidebar's sort settings and project-expansion store.
+  const projectGroupingSettings = useClientSettings(selectProjectGroupingSettings);
+  const sidebarProjectSortOrder = useClientSettings((settings) => settings.sidebarProjectSortOrder);
+  const sidebarThreadSortOrder = useClientSettings((settings) => settings.sidebarThreadSortOrder);
+  const updateSettings = useUpdateClientSettings();
+  const projectOrder = useUiStateStore((state) => state.projectOrder);
+  const projectExpandedById = useUiStateStore((state) => state.projectExpandedById);
+  const setProjectExpanded = useUiStateStore((state) => state.setProjectExpanded);
+  const { environments } = useEnvironments();
+  const primaryEnvironmentId = usePrimaryEnvironmentId();
 
   const { copyToClipboard: copyPathToClipboard } = useCopyToClipboard<{ path: string }>({
     onCopy: ({ path }) =>
@@ -805,6 +993,84 @@ export default function SidebarConnor({ variant }: { variant: ConnorVariant }) {
 
   const routeGroupKey =
     routeThreadKey === null ? null : (groupKeyByThreadKey.get(routeThreadKey) ?? null);
+
+  const environmentLabelById = useMemo(
+    () =>
+      new Map(
+        environments.map((environment) => [environment.environmentId, environment.label] as const),
+      ),
+    [environments],
+  );
+  const orderedProjects = useMemo(
+    () =>
+      orderItemsByPreferredIds({
+        items: projects,
+        preferredIds: projectOrder,
+        getId: getProjectOrderKey,
+        getPreferenceIds: (project) => [
+          getProjectOrderKey(project),
+          legacyProjectCwdPreferenceKey(project.workspaceRoot),
+        ],
+      }),
+    [projectOrder, projects],
+  );
+  const projectGroups = useMemo(() => {
+    const unsorted = buildSidebarProjectSnapshots({
+      projects: sidebarProjectSortOrder === "manual" ? orderedProjects : projects,
+      settings: projectGroupingSettings,
+      primaryEnvironmentId,
+      resolveEnvironmentLabel: (environmentId) => environmentLabelById.get(environmentId) ?? null,
+    });
+    return sortLogicalProjectsForSidebar(unsorted, threads, sidebarProjectSortOrder);
+  }, [
+    environmentLabelById,
+    orderedProjects,
+    primaryEnvironmentId,
+    projectGroupingSettings,
+    projects,
+    sidebarProjectSortOrder,
+    threads,
+  ]);
+  // Stack mode's tree: project → (local-checkout threads, worktree cards).
+  // The thread-sort setting orders rows inside each section; worktree cards
+  // themselves keep static creation order.
+  const projectSections = useMemo(() => {
+    if (variant !== "connor-1") return null;
+    return projectGroups.map((project) => {
+      const memberKeys = new Set(
+        project.memberProjectRefs.map((ref) => `${ref.environmentId}:${ref.projectId}`),
+      );
+      const projectThreads = threads.filter((thread) =>
+        memberKeys.has(`${thread.environmentId}:${thread.projectId}`),
+      );
+      const partition = partitionThreadsForConnorSidebar(projectThreads);
+      return {
+        project,
+        expanded: resolveProjectExpanded(
+          projectExpandedById,
+          projectExpansionPreferenceKeys(project),
+        ),
+        containsActive:
+          routeThreadKey !== null &&
+          projectThreads.some(
+            (thread) =>
+              scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)) === routeThreadKey,
+          ),
+        ungroupedThreads: sortThreads(partition.ungroupedThreads, sidebarThreadSortOrder),
+        worktreeGroups: partition.worktreeGroups.map((group) => ({
+          group,
+          displayThreads: sortThreads(group.threads, sidebarThreadSortOrder),
+        })),
+      };
+    });
+  }, [
+    projectExpandedById,
+    projectGroups,
+    routeThreadKey,
+    sidebarThreadSortOrder,
+    threads,
+    variant,
+  ]);
 
   // Remember the last thread viewed per worktree — this is what a click on
   // the collapsed group reopens.
@@ -966,6 +1232,45 @@ export default function SidebarConnor({ variant }: { variant: ConnorVariant }) {
       })();
     },
     [isMobile, newThreadContext, setOpenMobile],
+  );
+
+  const handleProjectToggle = useCallback(
+    (project: SidebarProjectSnapshot) => {
+      const preferenceKeys = projectExpansionPreferenceKeys(project);
+      const expanded = resolveProjectExpanded(
+        useUiStateStore.getState().projectExpandedById,
+        preferenceKeys,
+      );
+      setProjectExpanded(preferenceKeys, !expanded);
+    },
+    [setProjectExpanded],
+  );
+
+  const handleNewThreadInProject = useCallback(
+    (project: SidebarProjectSnapshot) => {
+      if (isMobile) setOpenMobile(false);
+      const projectRef =
+        project.memberProjectRefs[0] ?? scopeProjectRef(project.environmentId, project.id);
+      void (async () => {
+        const result = await settlePromise(() => newThreadContext.handleNewThread(projectRef));
+        if (result._tag === "Failure") {
+          const error = squashAtomCommandFailure(result);
+          toastManager.add(
+            stackedThreadToast({
+              type: "error",
+              title: "Could not create thread",
+              description: error instanceof Error ? error.message : "An error occurred.",
+            }),
+          );
+        }
+      })();
+    },
+    [isMobile, newThreadContext, setOpenMobile],
+  );
+
+  const openAddProjectCommandPalette = useCallback(
+    () => openCommandPalette({ open: "add-project" }),
+    [],
   );
 
   const handleNewThreadClick = useCallback(() => {
@@ -1257,26 +1562,37 @@ export default function SidebarConnor({ variant }: { variant: ConnorVariant }) {
 
   // ── Keyboard traversal (⌘↑/⌘↓, ⌘1..9) over visible rows ───────────
   const orderedThreadKeys = useMemo(() => {
-    const keys = ungroupedThreads.map((thread) =>
-      scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)),
-    );
-    for (const group of worktreeGroups) {
+    const keys: string[] = [];
+    const pushThread = (thread: EnvironmentThreadShell) =>
+      keys.push(scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)));
+    const pushGroup = (group: WorktreeGroup, displayThreads: readonly EnvironmentThreadShell[]) => {
       if (isGroupExpanded(group.key)) {
-        for (const thread of group.threads) {
-          keys.push(scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)));
-        }
+        for (const thread of displayThreads) pushThread(thread);
       } else {
         const target = resolveGroupNavigationThread(
           group,
           worktreeLastThreadKeyByKey,
           threadLastVisitedAtById,
         );
-        if (target) keys.push(scopedThreadKey(scopeThreadRef(target.environmentId, target.id)));
+        if (target) pushThread(target);
       }
+    };
+    if (projectSections !== null) {
+      for (const section of projectSections) {
+        if (!section.expanded) continue;
+        for (const thread of section.ungroupedThreads) pushThread(thread);
+        for (const { group, displayThreads } of section.worktreeGroups) {
+          pushGroup(group, displayThreads);
+        }
+      }
+      return keys;
     }
+    for (const thread of ungroupedThreads) pushThread(thread);
+    for (const group of worktreeGroups) pushGroup(group, group.threads);
     return keys;
   }, [
     isGroupExpanded,
+    projectSections,
     threadLastVisitedAtById,
     ungroupedThreads,
     worktreeGroups,
@@ -1464,6 +1780,41 @@ export default function SidebarConnor({ variant }: { variant: ConnorVariant }) {
                 </Tooltip>
               </div>
             </div>
+            {variant === "connor-1" ? (
+              <div className="mt-1 flex items-center justify-between ps-2 pe-0.5">
+                <span className="text-xs font-medium text-sidebar-muted-foreground/80">
+                  Projects
+                </span>
+                <div className="flex items-center gap-1">
+                  <ConnorSortMenu
+                    projectSortOrder={sidebarProjectSortOrder}
+                    threadSortOrder={sidebarThreadSortOrder}
+                    onProjectSortOrderChange={(sortOrder) =>
+                      updateSettings({ sidebarProjectSortOrder: sortOrder })
+                    }
+                    onThreadSortOrderChange={(sortOrder) =>
+                      updateSettings({ sidebarThreadSortOrder: sortOrder })
+                    }
+                  />
+                  <Tooltip>
+                    <TooltipTrigger
+                      render={
+                        <button
+                          type="button"
+                          aria-label="Add project"
+                          data-testid="sidebar-connor-add-project"
+                          className="inline-flex h-6 min-w-6 cursor-pointer items-center justify-center rounded-md px-[calc(--spacing(1)-1px)] text-muted-foreground/60 transition-colors hover:bg-accent hover:text-foreground"
+                          onClick={openAddProjectCommandPalette}
+                        />
+                      }
+                    >
+                      <FolderPlusIcon className="size-3.5" />
+                    </TooltipTrigger>
+                    <TooltipPopup side="right">Add project</TooltipPopup>
+                  </Tooltip>
+                </div>
+              </div>
+            ) : null}
           </SidebarGroup>
         }
       >
@@ -1504,6 +1855,71 @@ export default function SidebarConnor({ variant }: { variant: ConnorVariant }) {
                 No threads found
               </p>
             )
+          ) : projectSections !== null ? (
+            <ul ref={attachListAutoAnimateRef} role="list" className="flex flex-col gap-px">
+              {projectSections.map((section) => (
+                <li key={section.project.projectKey} className="list-none">
+                  <ConnorProjectHeader
+                    project={section.project}
+                    expanded={section.expanded}
+                    containsActive={section.containsActive}
+                    onToggle={handleProjectToggle}
+                    onNewThreadInProject={handleNewThreadInProject}
+                  />
+                  {section.expanded ? (
+                    <ul className="flex flex-col gap-px ps-1 pb-1">
+                      {section.ungroupedThreads.map((thread) => renderThreadRow(thread, false))}
+                      {section.worktreeGroups.map(({ group, displayThreads }) => (
+                        <StackGroupSection
+                          key={group.key}
+                          group={group}
+                          variant={variant}
+                          displayThreads={displayThreads}
+                          name={resolveWorktreeDisplayName(group, worktreeNameByKey)}
+                          expanded={isGroupExpanded(group.key)}
+                          containsActive={routeGroupKey === group.key}
+                          indicator={resolveConnorGroupIndicator(
+                            group.threads,
+                            threadLastVisitedAtById,
+                          )}
+                          projectCwd={
+                            projectCwdByKey.get(`${group.environmentId}:${group.projectId}`) ?? null
+                          }
+                          isRenaming={renamingWorktreeKey === group.key}
+                          renamingName={
+                            renamingWorktreeKey === group.key ? renamingWorktreeName : ""
+                          }
+                          onGroupClick={handleGroupClick}
+                          onGroupToggle={handleGroupToggle}
+                          onGroupContextMenu={handleGroupContextMenu}
+                          onNewThreadInGroup={handleNewThreadInGroup}
+                          onStartGroupRename={startWorktreeRename}
+                          onRenameNameChange={setRenamingWorktreeName}
+                          onCommitGroupRename={commitWorktreeRename}
+                          onCancelGroupRename={cancelWorktreeRename}
+                          renderThreadRow={renderThreadRow}
+                        />
+                      ))}
+                      {section.ungroupedThreads.length === 0 &&
+                      section.worktreeGroups.length === 0 ? (
+                        <li className="list-none">
+                          <p className="px-2 py-2 text-xs text-sidebar-muted-foreground/70">
+                            No threads yet
+                          </p>
+                        </li>
+                      ) : null}
+                    </ul>
+                  ) : null}
+                </li>
+              ))}
+              {projectSections.length === 0 ? (
+                <li className="list-none">
+                  <p className="px-2 py-6 text-center text-xs text-sidebar-muted-foreground">
+                    No projects yet
+                  </p>
+                </li>
+              ) : null}
+            </ul>
           ) : (
             <ul ref={attachListAutoAnimateRef} role="list" className="flex flex-col gap-px">
               {ungroupedThreads.map((thread) => renderThreadRow(thread, true))}
