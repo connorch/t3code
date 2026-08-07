@@ -77,6 +77,8 @@ import * as WorkspacePaths from "../src/workspace/WorkspacePaths.ts";
 import * as VcsDriverRegistry from "../src/vcs/VcsDriverRegistry.ts";
 import { VcsStatusBroadcaster } from "../src/vcs/VcsStatusBroadcaster.ts";
 import { GitWorkflowService } from "../src/git/GitWorkflowService.ts";
+import * as GitHubCli from "../src/sourceControl/GitHubCli.ts";
+import { ChildProcessSpawner } from "effect/unstable/process";
 import * as VcsProcess from "../src/vcs/VcsProcess.ts";
 import * as AgentAwarenessRelay from "../src/relay/AgentAwarenessRelay.ts";
 
@@ -323,10 +325,21 @@ export const makeOrchestrationIntegrationHarness = (
       generateBranchName: () => Effect.succeed({ branch: "update" }),
       generateThreadTitle: () => Effect.succeed({ title: "New thread" }),
     } as unknown as TextGenerationShape);
+    const gitHubCliLayer = Layer.mock(GitHubCli.GitHubCli)({
+      execute: () =>
+        Effect.succeed({
+          exitCode: ChildProcessSpawner.ExitCode(1),
+          stdout: "",
+          stderr: "",
+          stdoutTruncated: false,
+          stderrTruncated: false,
+        }),
+    } satisfies Partial<GitHubCli.GitHubCli["Service"]>);
     const providerCommandReactorLayer = ProviderCommandReactorLive.pipe(
       Layer.provideMerge(runtimeServicesLayer),
       Layer.provideMerge(gitWorkflowLayer),
       Layer.provideMerge(textGenerationLayer),
+      Layer.provideMerge(gitHubCliLayer),
       Layer.provideMerge(serverSettingsLayer),
     );
     const checkpointReactorLayer = CheckpointReactorLive.pipe(

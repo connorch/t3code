@@ -12,7 +12,11 @@ import {
   type RuntimeMode,
   type TurnId,
 } from "@t3tools/contracts";
-import { isTemporaryWorktreeBranch, WORKTREE_BRANCH_PREFIX } from "@t3tools/shared/git";
+import {
+  isTemporaryWorktreeBranch,
+  sanitizeBranchFragment,
+  WORKTREE_BRANCH_PREFIX,
+} from "@t3tools/shared/git";
 import * as Cache from "effect/Cache";
 import * as Cause from "effect/Cause";
 import * as Crypto from "effect/Crypto";
@@ -45,6 +49,11 @@ import {
 } from "../../serverSettings.ts";
 import { VcsStatusBroadcaster } from "../../vcs/VcsStatusBroadcaster.ts";
 import { GitWorkflowService } from "../../git/GitWorkflowService.ts";
+import * as GitHubCli from "../../sourceControl/GitHubCli.ts";
+import {
+  findAuthenticatedGitHubAccount,
+  parseGitHubAuthStatus,
+} from "../../sourceControl/gitHubAuthStatus.ts";
 const isProviderAdapterRequestError = Schema.is(ProviderAdapterRequestError);
 const isProviderDriverKind = Schema.is(ProviderDriverKind);
 
@@ -287,16 +296,17 @@ function stalePendingRequestDetail(
   return `Stale pending ${requestKind} request: ${requestId}. Provider callback state does not survive app restarts or recovered sessions. Restart the turn to continue.`;
 }
 
-function buildGeneratedWorktreeBranchName(raw: string): string {
+function buildGeneratedWorktreeBranchName(raw: string, prefix: string): string {
   const normalized = raw
     .trim()
     .toLowerCase()
     .replace(/^refs\/heads\//, "")
     .replace(/['"`]/g, "");
 
-  const withoutPrefix = normalized.startsWith(`${WORKTREE_BRANCH_PREFIX}/`)
-    ? normalized.slice(`${WORKTREE_BRANCH_PREFIX}/`.length)
-    : normalized;
+  const strippablePrefix = [`${WORKTREE_BRANCH_PREFIX}/`, `${prefix}/`].find((entry) =>
+    normalized.startsWith(entry),
+  );
+  const withoutPrefix = strippablePrefix ? normalized.slice(strippablePrefix.length) : normalized;
 
   const branchFragment = withoutPrefix
     .replace(/[^a-z0-9/_-]+/g, "-")
@@ -307,7 +317,7 @@ function buildGeneratedWorktreeBranchName(raw: string): string {
     .replace(/[./_-]+$/g, "");
 
   const safeFragment = branchFragment.length > 0 ? branchFragment : "update";
-  return `${WORKTREE_BRANCH_PREFIX}/${safeFragment}`;
+  return `${prefix}/${safeFragment}`;
 }
 
 const make = Effect.gen(function* () {
@@ -317,6 +327,7 @@ const make = Effect.gen(function* () {
   const providerService = yield* ProviderService;
   const providerRegistry = yield* ProviderRegistry;
   const gitWorkflow = yield* GitWorkflowService;
+  const githubCli = yield* GitHubCli.GitHubCli;
   const vcsStatusBroadcaster = yield* VcsStatusBroadcaster;
   const textGeneration = yield* TextGeneration;
   const serverSettingsService = yield* ServerSettingsService;
@@ -792,6 +803,20 @@ const make = Effect.gen(function* () {
     };
   });
 
+  // Generated branches are namespaced under the authenticated GitHub login
+  // (e.g. `octocat/fix-reconnect`); `t3code/` remains the fallback when `gh`
+  // is unavailable or signed out.
+  const resolveGeneratedBranchPrefix = (cwd: string) =>
+    githubCli.execute({ cwd, args: ["auth", "status", "--json", "hosts"] }).pipe(
+      Effect.map((result) => {
+        const account = findAuthenticatedGitHubAccount(
+          parseGitHubAuthStatus(result.stdout).accounts,
+        );
+        return account ? sanitizeBranchFragment(account.account) : WORKTREE_BRANCH_PREFIX;
+      }),
+      Effect.catch(() => Effect.succeed(WORKTREE_BRANCH_PREFIX)),
+    );
+
   const maybeGenerateAndRenameWorktreeBranchForFirstTurn = Effect.fn(
     "maybeGenerateAndRenameWorktreeBranchForFirstTurn",
   )(function* (input: {
@@ -821,15 +846,21 @@ const make = Effect.gen(function* () {
               yield* providerRegistry.getProviders,
             );
 
-      const generated = yield* textGeneration.generateBranchName({
-        cwd,
-        message: input.messageText,
-        ...(attachments.length > 0 ? { attachments } : {}),
-        modelSelection,
-      });
+      const [generated, branchPrefix] = yield* Effect.all(
+        [
+          textGeneration.generateBranchName({
+            cwd,
+            message: input.messageText,
+            ...(attachments.length > 0 ? { attachments } : {}),
+            modelSelection,
+          }),
+          resolveGeneratedBranchPrefix(cwd),
+        ] as const,
+        { concurrency: 2 },
+      );
       if (!generated) return;
 
-      const targetBranch = buildGeneratedWorktreeBranchName(generated.branch);
+      const targetBranch = buildGeneratedWorktreeBranchName(generated.branch, branchPrefix);
       if (targetBranch === oldBranch) return;
 
       const renamed = yield* gitWorkflow.renameBranch({ cwd, oldBranch, newBranch: targetBranch });

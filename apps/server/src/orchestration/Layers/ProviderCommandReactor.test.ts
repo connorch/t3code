@@ -62,6 +62,8 @@ import * as Clock from "effect/Clock";
 import { ServerSettingsService } from "../../serverSettings.ts";
 import { VcsStatusBroadcaster } from "../../vcs/VcsStatusBroadcaster.ts";
 import * as GitWorkflowService from "../../git/GitWorkflowService.ts";
+import * as GitHubCli from "../../sourceControl/GitHubCli.ts";
+import { ChildProcessSpawner } from "effect/unstable/process";
 
 const asProjectId = (value: string): ProjectId => ProjectId.make(value);
 const asApprovalRequestId = (value: string): ApprovalRequestId => ApprovalRequestId.make(value);
@@ -297,6 +299,21 @@ describe("ProviderCommandReactor", () => {
         }),
       ),
     );
+    const executeGitHubCli = vi.fn<GitHubCli.GitHubCli["Service"]["execute"]>((_) =>
+      Effect.succeed({
+        exitCode: ChildProcessSpawner.ExitCode(0),
+        stdout: JSON.stringify({
+          hosts: {
+            "github.com": [
+              { state: "success", active: true, host: "github.com", login: "octocat" },
+            ],
+          },
+        }),
+        stderr: "",
+        stdoutTruncated: false,
+        stderrTruncated: false,
+      }),
+    );
     const providerSnapshots = [
       {
         instanceId: modelSelection.instanceId,
@@ -393,6 +410,11 @@ describe("ProviderCommandReactor", () => {
         Layer.mock(GitWorkflowService.GitWorkflowService)({
           renameBranch,
         } satisfies Partial<GitWorkflowService.GitWorkflowService["Service"]>),
+      ),
+      Layer.provideMerge(
+        Layer.mock(GitHubCli.GitHubCli)({
+          execute: executeGitHubCli,
+        } satisfies Partial<GitHubCli.GitHubCli["Service"]>),
       ),
       Layer.provideMerge(
         Layer.succeed(VcsStatusBroadcaster, {
@@ -499,6 +521,7 @@ describe("ProviderCommandReactor", () => {
       refreshStatus,
       generateBranchName,
       generateThreadTitle,
+      executeGitHubCli,
       runtimeSessions,
       stateDir,
       drain,
@@ -1504,6 +1527,8 @@ describe("ProviderCommandReactor", () => {
     expect(harness.generateBranchName.mock.calls[0]?.[0]).toMatchObject({
       message: "Add a safer reconnect backoff.",
     });
+    const renameInput = harness.renameBranch.mock.calls[0]?.[0] as { newBranch: string };
+    expect(renameInput.newBranch.startsWith("octocat/")).toBe(true);
     expect(harness.refreshStatus.mock.calls[0]?.[0]).toBe("/tmp/provider-project-worktree");
   });
 
