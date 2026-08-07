@@ -5,6 +5,7 @@ import {
   resolveThreadActionProjectRef,
   resolveNewDraftStartFromOrigin,
   startNewThreadFromContext,
+  startNewThreadInCurrentWorkspace,
   type ChatThreadActionContext,
 } from "./chatThreadActions";
 
@@ -103,5 +104,100 @@ describe("chatThreadActions", () => {
 
     expect(didStart).toBe(false);
     expect(handleNewThread).not.toHaveBeenCalled();
+  });
+
+  it("carries the active thread's worktree when starting in the current workspace", async () => {
+    const handleNewThread = vi.fn<ChatThreadActionContext["handleNewThread"]>(async () => {});
+
+    const didStart = await startNewThreadInCurrentWorkspace(
+      createContext({
+        activeThread: {
+          environmentId: ENVIRONMENT_ID,
+          projectId: PROJECT_ID,
+          branch: "feature/foo",
+          worktreePath: "/tmp/worktrees/foo",
+        },
+        handleNewThread,
+      }),
+    );
+
+    expect(didStart).toBe(true);
+    expect(handleNewThread).toHaveBeenCalledWith(scopeProjectRef(ENVIRONMENT_ID, PROJECT_ID), {
+      branch: "feature/foo",
+      worktreePath: "/tmp/worktrees/foo",
+      envMode: "worktree",
+      startFromOrigin: false,
+    });
+  });
+
+  it("preselects the current checkout when the active thread runs on the root checkout", async () => {
+    const handleNewThread = vi.fn<ChatThreadActionContext["handleNewThread"]>(async () => {});
+
+    const didStart = await startNewThreadInCurrentWorkspace(
+      createContext({
+        activeThread: {
+          environmentId: ENVIRONMENT_ID,
+          projectId: PROJECT_ID,
+          branch: "main",
+          worktreePath: null,
+        },
+        handleNewThread,
+      }),
+    );
+
+    expect(didStart).toBe(true);
+    expect(handleNewThread).toHaveBeenCalledWith(scopeProjectRef(ENVIRONMENT_ID, PROJECT_ID), {
+      branch: null,
+      worktreePath: null,
+      envMode: "local",
+      startFromOrigin: false,
+    });
+  });
+
+  it("carries an open draft's workspace selection verbatim", async () => {
+    const handleNewThread = vi.fn<ChatThreadActionContext["handleNewThread"]>(async () => {});
+
+    const didStart = await startNewThreadInCurrentWorkspace(
+      createContext({
+        activeDraftThread: {
+          environmentId: ENVIRONMENT_ID,
+          projectId: PROJECT_ID,
+          branch: "feature/bar",
+          worktreePath: null,
+          envMode: "worktree",
+          startFromOrigin: true,
+        },
+        handleNewThread,
+      }),
+    );
+
+    expect(didStart).toBe(true);
+    expect(handleNewThread).toHaveBeenCalledWith(scopeProjectRef(ENVIRONMENT_ID, PROJECT_ID), {
+      branch: "feature/bar",
+      worktreePath: null,
+      envMode: "worktree",
+      startFromOrigin: true,
+    });
+  });
+
+  it("defaults to the current checkout when there is no active thread context", async () => {
+    const handleNewThread = vi.fn<ChatThreadActionContext["handleNewThread"]>(async () => {});
+
+    const didStart = await startNewThreadInCurrentWorkspace(
+      createContext({
+        handleNewThread,
+      }),
+    );
+
+    expect(didStart).toBe(true);
+    expect(handleNewThread).toHaveBeenCalledWith(
+      scopeProjectRef(ENVIRONMENT_ID, FALLBACK_PROJECT_ID),
+      {
+        branch: null,
+        worktreePath: null,
+        envMode: "local",
+        startFromOrigin: false,
+      },
+    );
   });
 });

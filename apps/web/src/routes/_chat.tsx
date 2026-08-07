@@ -11,7 +11,10 @@ import { selectProjectGroupingSettings } from "../logicalProject";
 import { buildSidebarProjectSnapshots } from "../sidebarProjectGrouping";
 import { dispatchPreviewAction } from "../components/preview/previewActionBus";
 import { useHandleNewThread } from "../hooks/useHandleNewThread";
-import { startNewThreadFromContext } from "../lib/chatThreadActions";
+import {
+  startNewThreadFromContext,
+  startNewThreadInCurrentWorkspace,
+} from "../lib/chatThreadActions";
 import { isPreviewFocused } from "../lib/previewFocus";
 import { isTerminalFocused } from "../lib/terminalFocus";
 import { resolveShortcutCommand } from "../keybindings";
@@ -81,6 +84,30 @@ function ChatRouteGlobalShortcuts() {
         event.preventDefault();
         event.stopPropagation();
         void startNewThreadFromContext({
+          activeDraftThread,
+          activeThread: activeThread ?? undefined,
+          defaultProjectRef,
+          handleNewThread,
+        });
+        return;
+      }
+
+      if (command === "chat.newInWorkspace") {
+        event.preventDefault();
+        event.stopPropagation();
+        // A viewed thread or draft pins the target project and workspace, so
+        // create directly. Without one there is nothing contextual about the
+        // command — fall back to the same routing as chat.new.
+        if (
+          !activeThread &&
+          !activeDraftThread &&
+          sidebarMode !== "default" &&
+          projectGroupCount > 1
+        ) {
+          openCommandPalette({ open: "new-thread-in" });
+          return;
+        }
+        void startNewThreadInCurrentWorkspace({
           activeDraftThread,
           activeThread: activeThread ?? undefined,
           defaultProjectRef,
