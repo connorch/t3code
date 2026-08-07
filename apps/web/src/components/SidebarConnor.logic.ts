@@ -4,11 +4,17 @@ import { hasUnseenCompletion, parseTimestampMs, resolveSidebarV2Status } from ".
 
 // ── Connor mode: the worktree is the unit of navigation ─────────────
 // Threads sharing a `worktreePath` collapse into one sidebar group; threads
-// without a worktree (local-checkout mode) stay flat above the groups.
+// without a worktree collapse into one "Current Checkout" group per project,
+// rendered with the same card UI and listed above the worktrees.
 
 /** Group identity: a worktree path is only unique within an environment. */
 export function worktreeGroupKey(environmentId: string, worktreePath: string): string {
   return `${environmentId}\u0000${worktreePath}`;
+}
+
+/** Paths cannot contain NUL, so this can never collide with a worktree key. */
+export function localCheckoutGroupKey(environmentId: string, projectId: string): string {
+  return `${environmentId}\u0000local\u0000${projectId}`;
 }
 
 /** Same format as `scopedThreadKey`, without requiring branded ids. */
@@ -38,16 +44,34 @@ export type ConnorStatusThread = Pick<
   | "backgroundLiveness"
 > & { readonly environmentId: string; readonly id: string };
 
-export interface ConnorWorktreeGroup<T extends { environmentId: string; projectId: string }> {
+interface ConnorGroupBase<T extends { environmentId: string; projectId: string }> {
   readonly key: string;
   readonly environmentId: T["environmentId"];
   readonly projectId: T["projectId"];
-  readonly worktreePath: string;
   /** The newest member's branch — later threads may have switched branches. */
   readonly branch: string | null;
   /** Creation order, oldest first: the first thread names the worktree. */
   readonly threads: readonly T[];
 }
+
+export interface ConnorWorktreeGroup<
+  T extends { environmentId: string; projectId: string },
+> extends ConnorGroupBase<T> {
+  readonly kind: "worktree";
+  readonly worktreePath: string;
+}
+
+export interface ConnorLocalCheckoutGroup<
+  T extends { environmentId: string; projectId: string },
+> extends ConnorGroupBase<T> {
+  readonly kind: "local";
+  /** The checkout root — null until the owning project resolves it. */
+  readonly worktreePath: string | null;
+}
+
+export type ConnorSidebarGroup<T extends { environmentId: string; projectId: string }> =
+  | ConnorWorktreeGroup<T>
+  | ConnorLocalCheckoutGroup<T>;
 
 function normalizedWorktreePath(path: string | null): string | null {
   const trimmed = path?.trim();
@@ -65,55 +89,78 @@ function byCreatedAtAscending<T extends { createdAt: string; id: string }>(
 }
 
 /**
- * Splits live threads into the flat top section (no worktree) and worktree
- * groups. Ordering is static creation order, newest first — same philosophy
- * as sidebar v2: activity changes indicators, never positions.
+ * Groups live threads into local-checkout groups (one per physical project)
+ * followed by worktree groups. Ordering is static creation order, newest
+ * first — same philosophy as sidebar v2: activity changes indicators, never
+ * positions.
  */
 export function partitionThreadsForConnorSidebar<T extends ConnorGroupableThread>(
   threads: readonly T[],
 ): {
-  ungroupedThreads: T[];
-  worktreeGroups: ConnorWorktreeGroup<T>[];
+  groups: ConnorSidebarGroup<T>[];
 } {
-  const ungrouped: T[] = [];
-  const membersByKey = new Map<string, { worktreePath: string; threads: T[] }>();
+  const localsByKey = new Map<string, T[]>();
+  const worktreesByKey = new Map<string, { worktreePath: string; threads: T[] }>();
   for (const thread of threads) {
     if (thread.archivedAt !== null) continue;
     const worktreePath = normalizedWorktreePath(thread.worktreePath);
     if (worktreePath === null) {
-      ungrouped.push(thread);
+      const key = localCheckoutGroupKey(thread.environmentId, thread.projectId);
+      const existing = localsByKey.get(key);
+      if (existing) {
+        existing.push(thread);
+      } else {
+        localsByKey.set(key, [thread]);
+      }
       continue;
     }
     const key = worktreeGroupKey(thread.environmentId, worktreePath);
-    const existing = membersByKey.get(key);
+    const existing = worktreesByKey.get(key);
     if (existing) {
       existing.threads.push(thread);
     } else {
-      membersByKey.set(key, { worktreePath, threads: [thread] });
+      worktreesByKey.set(key, { worktreePath, threads: [thread] });
     }
   }
 
-  const groups = [...membersByKey.entries()].map(([key, { worktreePath, threads: members }]) => {
+  const groupBase = (key: string, members: T[]) => {
     const ordered = members.toSorted(byCreatedAtAscending);
     const first = ordered[0]!;
-    const branch = ordered.findLast((thread) => thread.branch !== null)?.branch ?? null;
     return {
       key,
       environmentId: first.environmentId,
       projectId: first.projectId,
-      worktreePath,
-      branch,
+      branch: ordered.findLast((thread) => thread.branch !== null)?.branch ?? null,
       threads: ordered,
-    } satisfies ConnorWorktreeGroup<T>;
-  });
-
-  return {
-    ungroupedThreads: ungrouped.toSorted((left, right) => byCreatedAtAscending(right, left)),
-    // Newest worktree (by its first thread) on top.
-    worktreeGroups: groups.toSorted((left, right) =>
-      byCreatedAtAscending(right.threads[0]!, left.threads[0]!),
-    ),
+    };
   };
+  // Newest group (by its first thread) on top, within each kind.
+  const byNewestFirstThread = (left: ConnorGroupBase<T>, right: ConnorGroupBase<T>) =>
+    byCreatedAtAscending(right.threads[0]!, left.threads[0]!);
+
+  const localGroups = [...localsByKey.entries()]
+    .map(
+      ([key, members]) =>
+        ({
+          ...groupBase(key, members),
+          kind: "local",
+          worktreePath: null,
+        }) satisfies ConnorLocalCheckoutGroup<T>,
+    )
+    .toSorted(byNewestFirstThread);
+  const worktreeGroups = [...worktreesByKey.entries()]
+    .map(
+      ([key, { worktreePath, threads: members }]) =>
+        ({
+          ...groupBase(key, members),
+          kind: "worktree",
+          worktreePath,
+        }) satisfies ConnorWorktreeGroup<T>,
+    )
+    .toSorted(byNewestFirstThread);
+
+  // The current checkout sits above the worktrees.
+  return { groups: [...localGroups, ...worktreeGroups] };
 }
 
 /**

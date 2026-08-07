@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  localCheckoutGroupKey,
   partitionThreadsForConnorSidebar,
   resolveConnorGroupIndicator,
   resolveConnorThreadDot,
@@ -60,17 +61,19 @@ const WT_A = "/Users/x/.t3/worktrees/repo/branch-a";
 const WT_B = "/Users/x/.t3/worktrees/repo/branch-b";
 
 describe("partitionThreadsForConnorSidebar", () => {
-  it("splits worktree threads into groups and leaves the rest flat", () => {
+  it("groups local-checkout threads per project ahead of the worktree groups", () => {
     const threads = [
       makeThread({ id: "t1", createdAt: "2026-08-01T00:00:00.000Z" }),
       makeThread({ id: "t2", worktreePath: WT_A, createdAt: "2026-08-02T00:00:00.000Z" }),
       makeThread({ id: "t3", worktreePath: WT_A, createdAt: "2026-08-03T00:00:00.000Z" }),
       makeThread({ id: "t4", worktreePath: WT_B, createdAt: "2026-08-04T00:00:00.000Z" }),
     ];
-    const { ungroupedThreads, worktreeGroups } = partitionThreadsForConnorSidebar(threads);
-    expect(ungroupedThreads.map((thread) => thread.id)).toEqual(["t1"]);
-    expect(worktreeGroups.map((group) => group.worktreePath)).toEqual([WT_B, WT_A]);
-    expect(worktreeGroups[1]!.threads.map((thread) => thread.id)).toEqual(["t2", "t3"]);
+    const { groups } = partitionThreadsForConnorSidebar(threads);
+    expect(groups.map((group) => group.kind)).toEqual(["local", "worktree", "worktree"]);
+    expect(groups[0]!.key).toBe(localCheckoutGroupKey("env-1", "proj-1"));
+    expect(groups[0]!.threads.map((thread) => thread.id)).toEqual(["t1"]);
+    expect(groups.slice(1).map((group) => group.worktreePath)).toEqual([WT_B, WT_A]);
+    expect(groups[2]!.threads.map((thread) => thread.id)).toEqual(["t2", "t3"]);
   });
 
   it("keeps within-group threads in creation order, oldest first", () => {
@@ -78,8 +81,8 @@ describe("partitionThreadsForConnorSidebar", () => {
       makeThread({ id: "new", worktreePath: WT_A, createdAt: "2026-08-05T00:00:00.000Z" }),
       makeThread({ id: "old", worktreePath: WT_A, createdAt: "2026-08-01T00:00:00.000Z" }),
     ];
-    const { worktreeGroups } = partitionThreadsForConnorSidebar(threads);
-    expect(worktreeGroups[0]!.threads.map((thread) => thread.id)).toEqual(["old", "new"]);
+    const { groups } = partitionThreadsForConnorSidebar(threads);
+    expect(groups[0]!.threads.map((thread) => thread.id)).toEqual(["old", "new"]);
   });
 
   it("orders groups by their first thread, newest worktree on top", () => {
@@ -90,18 +93,29 @@ describe("partitionThreadsForConnorSidebar", () => {
       makeThread({ id: "a2", worktreePath: WT_A, createdAt: "2026-08-09T00:00:00.000Z" }),
       makeThread({ id: "b1", worktreePath: WT_B, createdAt: "2026-08-05T00:00:00.000Z" }),
     ];
-    const { worktreeGroups } = partitionThreadsForConnorSidebar(threads);
-    expect(worktreeGroups.map((group) => group.worktreePath)).toEqual([WT_B, WT_A]);
+    const { groups } = partitionThreadsForConnorSidebar(threads);
+    expect(groups.map((group) => group.worktreePath)).toEqual([WT_B, WT_A]);
   });
 
-  it("excludes archived threads and treats blank worktree paths as ungrouped", () => {
+  it("keeps the local-checkout group above even newer worktrees", () => {
+    const threads = [
+      makeThread({ id: "old-local", createdAt: "2026-08-01T00:00:00.000Z" }),
+      makeThread({ id: "wt", worktreePath: WT_A, createdAt: "2026-08-05T00:00:00.000Z" }),
+    ];
+    const { groups } = partitionThreadsForConnorSidebar(threads);
+    expect(groups.map((group) => group.kind)).toEqual(["local", "worktree"]);
+  });
+
+  it("excludes archived threads and treats blank worktree paths as local", () => {
     const threads = [
       makeThread({ id: "archived", worktreePath: WT_A, archivedAt: "2026-08-02T00:00:00.000Z" }),
       makeThread({ id: "blank", worktreePath: "   " }),
     ];
-    const { ungroupedThreads, worktreeGroups } = partitionThreadsForConnorSidebar(threads);
-    expect(worktreeGroups).toEqual([]);
-    expect(ungroupedThreads.map((thread) => thread.id)).toEqual(["blank"]);
+    const { groups } = partitionThreadsForConnorSidebar(threads);
+    expect(groups).toHaveLength(1);
+    expect(groups[0]!.kind).toBe("local");
+    expect(groups[0]!.worktreePath).toBeNull();
+    expect(groups[0]!.threads.map((thread) => thread.id)).toEqual(["blank"]);
   });
 
   it("does not merge equal worktree paths across environments", () => {
@@ -109,8 +123,19 @@ describe("partitionThreadsForConnorSidebar", () => {
       makeThread({ id: "local", worktreePath: WT_A, environmentId: "env-1" }),
       makeThread({ id: "remote", worktreePath: WT_A, environmentId: "env-2" }),
     ];
-    const { worktreeGroups } = partitionThreadsForConnorSidebar(threads);
-    expect(worktreeGroups).toHaveLength(2);
+    const { groups } = partitionThreadsForConnorSidebar(threads);
+    expect(groups).toHaveLength(2);
+  });
+
+  it("does not merge local-checkout threads across projects or environments", () => {
+    const threads = [
+      makeThread({ id: "p1", projectId: "proj-1" }),
+      makeThread({ id: "p2", projectId: "proj-2" }),
+      makeThread({ id: "e2", environmentId: "env-2" }),
+    ];
+    const { groups } = partitionThreadsForConnorSidebar(threads);
+    expect(groups).toHaveLength(3);
+    expect(groups.every((group) => group.kind === "local")).toBe(true);
   });
 
   it("takes the branch from the newest member that has one", () => {
@@ -134,8 +159,8 @@ describe("partitionThreadsForConnorSidebar", () => {
         createdAt: "2026-08-03T00:00:00.000Z",
       }),
     ];
-    const { worktreeGroups } = partitionThreadsForConnorSidebar(threads);
-    expect(worktreeGroups[0]!.branch).toBe("new-branch");
+    const { groups } = partitionThreadsForConnorSidebar(threads);
+    expect(groups[0]!.branch).toBe("new-branch");
   });
 });
 
