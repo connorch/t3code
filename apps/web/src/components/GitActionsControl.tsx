@@ -379,7 +379,7 @@ function GitActionItemIcon({
 // is open, purple once it merged. Dark-mode duplicates are needed because the
 // outline variant sets its own dark background and hover fills.
 const PR_QUICK_ACTION_TINT_CLASS_NAMES = {
-  open: "[--control-icon-color:currentColor] border-success bg-success text-white shadow-success/24 dark:bg-success [:hover,[data-pressed]]:bg-success/90 dark:[:hover,[data-pressed]]:bg-success/90",
+  open: "[--control-icon-color:currentColor] border-success-strong bg-success-strong text-white shadow-success-strong/24 dark:bg-success-strong [:hover,[data-pressed]]:bg-success-strong/90 dark:[:hover,[data-pressed]]:bg-success-strong/90",
   merged:
     "[--control-icon-color:currentColor] border-merged bg-merged text-white shadow-merged/24 dark:bg-merged [:hover,[data-pressed]]:bg-merged/90 dark:[:hover,[data-pressed]]:bg-merged/90",
 } as const;

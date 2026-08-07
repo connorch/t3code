@@ -151,6 +151,7 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   --color-warning: var(--warning);
   --color-success-foreground: var(--success-foreground);
   --color-success: var(--success);
+  --color-success-strong: var(--success-strong);
   --color-merged-foreground: var(--merged-foreground);
   --color-merged: var(--merged);
   --color-info-foreground: var(--info-foreground);
@@ -891,6 +892,9 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   --info-foreground: var(--color-blue-700);
   --success: var(--color-emerald-500);
   --success-foreground: var(--color-emerald-700);
+  /* Solid success surfaces (e.g. the open-PR button); green-700 tracks
+     GitHub's open green (#1f883d), where emerald-500 reads too bright. */
+  --success-strong: var(--color-green-700);
   /* Merged change requests; violet-500 tracks GitHub's merged purple. */
   --merged: var(--color-violet-500);
   --merged-foreground: var(--color-violet-700);
@@ -937,6 +941,7 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
     --info-foreground: var(--color-blue-400);
     --success: var(--color-emerald-500);
     --success-foreground: var(--color-emerald-400);
+    --success-strong: var(--color-green-700);
     --merged: var(--color-violet-500);
     --merged-foreground: var(--color-violet-400);
     --warning: var(--color-amber-500);
