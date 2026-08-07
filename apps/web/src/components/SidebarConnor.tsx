@@ -514,7 +514,6 @@ interface GroupSectionProps {
   expanded: boolean;
   containsActive: boolean;
   indicator: ConnorGroupIndicator;
-  projectCwd: string | null;
   isRenaming: boolean;
   renamingName: string;
   onGroupClick: (group: WorktreeGroup) => void;
@@ -601,7 +600,9 @@ function StackGroupSection(props: GroupSectionProps) {
           data-testid={`sidebar-connor-group-${group.key}`}
           title={interactions.headerTitle}
           className={cn(
-            "group/connor-group flex w-full cursor-pointer flex-col gap-0.5 px-2.5 py-2 text-left outline-none select-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring",
+            // -1px start padding compensates the card border so the name
+            // sits exactly on the project-title alignment line.
+            "group/connor-group flex w-full cursor-pointer flex-col gap-0.5 ps-[calc(--spacing(2)-1px)] pe-2.5 py-2 text-left outline-none select-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring",
             !props.expanded && "hover:bg-sidebar-row-hover",
           )}
           onClick={interactions.handleClick}
@@ -610,11 +611,6 @@ function StackGroupSection(props: GroupSectionProps) {
           onContextMenu={interactions.handleContextMenu}
         >
           <div className="flex min-w-0 items-center gap-2">
-            <ProjectFavicon
-              environmentId={group.environmentId}
-              cwd={props.projectCwd ?? ""}
-              className="size-4 shrink-0"
-            />
             <WorktreeName
               name={props.name}
               isRenaming={props.isRenaming}
@@ -1935,7 +1931,10 @@ export default function SidebarConnor() {
                     onContextMenu={handleProjectContextMenu}
                   />
                   {section.expanded ? (
-                    <ul className="flex flex-col gap-px ps-1 pb-1">
+                    // ps-9.5 (38px) + the rows' own 8px inset lines their text
+                    // up with the project title (4px padding + chevron +
+                    // favicon + two 6px gaps = 46px).
+                    <ul className="flex flex-col gap-px ps-9.5 pb-1">
                       {section.ungroupedThreads.map((thread) => renderThreadRow(thread))}
                       {section.worktreeGroups.map(({ group, displayThreads }) => (
                         <StackGroupSection
@@ -1949,9 +1948,6 @@ export default function SidebarConnor() {
                             group.threads,
                             threadLastVisitedAtById,
                           )}
-                          projectCwd={
-                            projectCwdByKey.get(`${group.environmentId}:${group.projectId}`) ?? null
-                          }
                           isRenaming={renamingWorktreeKey === group.key}
                           renamingName={
                             renamingWorktreeKey === group.key ? renamingWorktreeName : ""
