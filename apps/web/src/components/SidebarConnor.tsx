@@ -760,18 +760,23 @@ function ConnorProjectHeader(props: {
         props.onContextMenu(project, { x: event.clientX, y: event.clientY });
       }}
     >
-      <ChevronRightIcon
-        aria-hidden
-        className={cn(
-          "size-3.5 shrink-0 text-sidebar-muted-foreground/70 transition-transform",
-          props.expanded && "rotate-90",
-        )}
-      />
-      <ProjectFavicon
-        environmentId={project.environmentId}
-        cwd={project.workspaceRoot}
-        className={cn("size-4 shrink-0", props.hidden && "opacity-50 grayscale")}
-      />
+      <span className="relative flex size-4 shrink-0 items-center justify-center">
+        <ProjectFavicon
+          environmentId={project.environmentId}
+          cwd={project.workspaceRoot}
+          className={cn(
+            "size-4 transition-opacity group-hover/connor-project:opacity-0",
+            props.hidden && "opacity-50 grayscale",
+          )}
+        />
+        <ChevronRightIcon
+          aria-hidden
+          className={cn(
+            "absolute size-3.5 text-sidebar-muted-foreground/70 opacity-0 transition group-hover/connor-project:opacity-100",
+            props.expanded && "rotate-90",
+          )}
+        />
+      </span>
       <span
         className={cn(
           "min-w-0 flex-1 truncate text-sm font-medium",
@@ -1931,10 +1936,10 @@ export default function SidebarConnor() {
                     onContextMenu={handleProjectContextMenu}
                   />
                   {section.expanded ? (
-                    // ps-9.5 (38px) + the rows' own 8px inset lines their text
-                    // up with the project title (4px padding + chevron +
-                    // favicon + two 6px gaps = 46px).
-                    <ul className="flex flex-col gap-px ps-9.5 pb-1">
+                    // ps-4.5 (18px) + the rows' own 8px inset lines their text
+                    // up with the project title (4px padding + 16px icon slot
+                    // + 6px gap = 26px).
+                    <ul className="flex flex-col gap-px ps-4.5 pb-1">
                       {section.ungroupedThreads.map((thread) => renderThreadRow(thread))}
                       {section.worktreeGroups.map(({ group, displayThreads }) => (
                         <StackGroupSection
