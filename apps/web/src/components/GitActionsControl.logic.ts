@@ -218,6 +218,7 @@ export function resolveQuickAction(
   const hasBranch = gitStatus.refName !== null;
   const hasChanges = gitStatus.hasWorkingTreeChanges;
   const hasOpenPr = gitStatus.pr?.state === "open";
+  const hasMergedPr = gitStatus.pr?.state === "merged";
   const isAhead = gitStatus.aheadCount > 0;
   const hasDefaultBranchDelta = (gitStatus.aheadOfDefaultCount ?? gitStatus.aheadCount) > 0;
   const isBehind = gitStatus.behindCount > 0;
@@ -250,7 +251,7 @@ export function resolveQuickAction(
 
   if (!gitStatus.hasUpstream) {
     if (!hasPrimaryRemote) {
-      if (hasOpenPr && !isAhead) {
+      if ((hasOpenPr || hasMergedPr) && !isAhead) {
         return { label: `View ${terminology.shortLabel}`, disabled: false, kind: "open_pr" };
       }
       return {
@@ -260,7 +261,7 @@ export function resolveQuickAction(
       };
     }
     if (!isAhead) {
-      if (hasOpenPr) {
+      if (hasOpenPr || hasMergedPr) {
         return { label: `View ${terminology.shortLabel}`, disabled: false, kind: "open_pr" };
       }
       return {
@@ -320,7 +321,10 @@ export function resolveQuickAction(
     };
   }
 
-  if (hasOpenPr && gitStatus.hasUpstream) {
+  // A merged PR wins over the create-PR fallback: after a squash merge the
+  // branch still reads as ahead of default, but re-creating a PR for commits
+  // that already landed is never the right offer.
+  if (hasOpenPr || hasMergedPr) {
     return { label: `View ${terminology.shortLabel}`, disabled: false, kind: "open_pr" };
   }
 

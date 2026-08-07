@@ -92,6 +92,37 @@ describe("when: ref is clean and has an open PR", () => {
   });
 });
 
+describe("when: ref has a merged PR", () => {
+  const mergedPr = {
+    number: 15,
+    title: "Merged PR",
+    url: "https://example.com/pr/15",
+    baseRef: "main",
+    headRef: "feature/test",
+    state: "merged",
+  } as const;
+
+  it("resolveQuickAction opens the merged PR when the ref is idle", () => {
+    const quick = resolveQuickAction(status({ pr: mergedPr }), false);
+    assert.deepInclude(quick, { kind: "open_pr", label: "View PR", disabled: false });
+  });
+
+  it("resolveQuickAction prefers viewing the merged PR over re-creating one after a squash merge", () => {
+    const quick = resolveQuickAction(status({ pr: mergedPr, aheadOfDefaultCount: 2 }), false);
+    assert.deepInclude(quick, { kind: "open_pr", label: "View PR", disabled: false });
+  });
+
+  it("resolveQuickAction opens the merged PR when the upstream ref is gone", () => {
+    const quick = resolveQuickAction(status({ pr: mergedPr, hasUpstream: false }), false);
+    assert.deepInclude(quick, { kind: "open_pr", label: "View PR", disabled: false });
+  });
+
+  it("resolveQuickAction still offers the commit flow for new changes", () => {
+    const quick = resolveQuickAction(status({ pr: mergedPr, hasWorkingTreeChanges: true }), false);
+    assert.deepInclude(quick, { kind: "run_action", action: "commit_push_pr" });
+  });
+});
+
 describe("when: automerge availability depends on PR and provider", () => {
   const openPr = {
     number: 12,

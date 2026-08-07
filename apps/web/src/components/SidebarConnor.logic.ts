@@ -4,7 +4,7 @@ import { hasUnseenCompletion, parseTimestampMs, resolveSidebarV2Status } from ".
 
 // ── Connor mode: the worktree is the unit of navigation ─────────────
 // Threads sharing a `worktreePath` collapse into one sidebar group; threads
-// without a worktree collapse into one "Current Checkout" group per project,
+// without a worktree collapse into one "Root Checkout" group per project,
 // rendered with the same card UI and listed above the worktrees.
 
 /** Group identity: a worktree path is only unique within an environment. */
@@ -159,7 +159,7 @@ export function partitionThreadsForConnorSidebar<T extends ConnorGroupableThread
     )
     .toSorted(byNewestFirstThread);
 
-  // The current checkout sits above the worktrees.
+  // The root checkout sits above the worktrees.
   return { groups: [...localGroups, ...worktreeGroups] };
 }
 

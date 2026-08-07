@@ -375,6 +375,15 @@ function GitActionItemIcon({
   return <SourceControlIcon />;
 }
 
+// GitHub-style state tint for the "View PR" quick action: green while the PR
+// is open, purple once it merged. Dark-mode duplicates are needed because the
+// outline variant sets its own dark background and hover fills.
+const PR_QUICK_ACTION_TINT_CLASS_NAMES = {
+  open: "[--control-icon-color:currentColor] border-success bg-success text-white shadow-success/24 dark:bg-success [:hover,[data-pressed]]:bg-success/90 dark:[:hover,[data-pressed]]:bg-success/90",
+  merged:
+    "[--control-icon-color:currentColor] border-merged bg-merged text-white shadow-merged/24 dark:bg-merged [:hover,[data-pressed]]:bg-merged/90 dark:[:hover,[data-pressed]]:bg-merged/90",
+} as const;
+
 function GitQuickActionIcon({
   quickAction,
   SourceControlIcon,
@@ -1191,6 +1200,12 @@ export default function GitActionsControl({
   const quickActionDisabledReason = quickAction.disabled
     ? (quickAction.hint ?? "This action is currently unavailable.")
     : null;
+  const quickActionPrState =
+    quickAction.kind === "open_pr" ? gitStatusForActions?.pr?.state : undefined;
+  const quickActionTintClassName =
+    quickActionPrState === "open" || quickActionPrState === "merged"
+      ? PR_QUICK_ACTION_TINT_CLASS_NAMES[quickActionPrState]
+      : undefined;
   const pendingDefaultBranchActionCopy = pendingDefaultBranchAction
     ? resolveDefaultBranchActionDialogCopy({
         action: pendingDefaultBranchAction.action,
@@ -1256,11 +1271,14 @@ export default function GitActionsControl({
       });
       return;
     }
-    const prUrl = gitStatusForActions?.pr?.state === "open" ? gitStatusForActions.pr.url : null;
+    const prUrl =
+      gitStatusForActions?.pr?.state === "open" || gitStatusForActions?.pr?.state === "merged"
+        ? gitStatusForActions.pr.url
+        : null;
     if (!prUrl) {
       toastManager.add({
         type: "error",
-        title: "No open pull request found.",
+        title: "No pull request found.",
         data: threadToastData,
       });
       return;
@@ -1843,7 +1861,7 @@ export default function GitActionsControl({
             <Button
               variant="outline"
               size="xs"
-              className="ps-[8.5px]"
+              className={cn("ps-[8.5px]", quickActionTintClassName)}
               disabled={isGitActionRunning || quickAction.disabled}
               onClick={runQuickAction}
             >

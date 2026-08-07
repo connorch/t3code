@@ -87,6 +87,8 @@ import {
 } from "../sidebarProjectGrouping";
 import { useEnvironments, usePrimaryEnvironmentId } from "../state/environments";
 import { useProjects, useThreadShells } from "../state/entities";
+import { useEnvironmentQuery } from "../state/query";
+import { vcsEnvironment } from "../state/vcs";
 import { primaryServerKeybindingsAtom } from "../state/server";
 import { threadEnvironment } from "../state/threads";
 import { useAtomCommand } from "../state/use-atom-command";
@@ -116,6 +118,7 @@ import {
   type ConnorThreadDot,
 } from "./SidebarConnor.logic";
 import { ProjectFavicon } from "./ProjectFavicon";
+import { resolveThreadPr } from "./ThreadStatusIndicators";
 import { stackedThreadToast, toastManager } from "./ui/toast";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
@@ -508,6 +511,8 @@ function WorktreeName(props: {
 
 interface GroupSectionProps {
   group: ConnorGroup;
+  /** Where git status is read: the worktree, or the project root for the root checkout. */
+  gitCwd: string | null;
   /** Rows in display order: the thread-sort setting's ordering. */
   displayThreads: readonly EnvironmentThreadShell[];
   name: string;
@@ -554,7 +559,7 @@ function useGroupHeaderInteractions(props: GroupSectionProps) {
     event.preventDefault();
     props.onGroupClick(group);
   };
-  const location = group.worktreePath ?? "Current checkout";
+  const location = group.worktreePath ?? "Root checkout";
   const headerTitle = `${location}${group.branch ? ` (${group.branch})` : ""}`;
   return { handleClick, handleDoubleClick, handleContextMenu, handleKeyDown, headerTitle };
 }
@@ -587,6 +592,18 @@ function GroupPlusButton(props: {
 function StackGroupSection(props: GroupSectionProps) {
   const { group } = props;
   const interactions = useGroupHeaderInteractions(props);
+  const gitStatusQuery = useEnvironmentQuery(
+    group.branch !== null && props.gitCwd !== null
+      ? vcsEnvironment.status({
+          environmentId: group.environmentId,
+          input: { cwd: props.gitCwd },
+        })
+      : null,
+  );
+  const groupPr = resolveThreadPr({
+    threadBranch: group.branch,
+    gitStatus: gitStatusQuery.data ?? null,
+  });
   return (
     <li className="list-none py-0.5">
       <section
@@ -634,7 +651,14 @@ function StackGroupSection(props: GroupSectionProps) {
           <div className="flex min-w-0 items-center gap-1.5 text-xs text-sidebar-muted-foreground/70">
             {group.branch ? (
               <>
-                <GitBranchIcon aria-hidden className="size-3 shrink-0" />
+                <GitBranchIcon
+                  aria-hidden
+                  className={cn(
+                    "size-3 shrink-0",
+                    groupPr?.state === "open" && "text-success-foreground",
+                    groupPr?.state === "merged" && "text-merged-foreground",
+                  )}
+                />
                 <span className="min-w-0 truncate">{group.branch}</span>
               </>
             ) : (
@@ -1000,7 +1024,7 @@ export default function SidebarConnor() {
     sidebarProjectSortOrder,
     threads,
   ]);
-  // Stack mode's tree: project → cards (Current Checkout, then worktrees).
+  // Stack mode's tree: project → cards (Root Checkout, then worktrees).
   // The thread-sort setting orders rows inside each card; the cards
   // themselves keep static creation order.
   const projectSections = useMemo(() => {
@@ -1985,10 +2009,15 @@ export default function SidebarConnor() {
                         <StackGroupSection
                           key={group.key}
                           group={group}
+                          gitCwd={
+                            group.worktreePath ??
+                            projectCwdByKey.get(`${group.environmentId}:${group.projectId}`) ??
+                            null
+                          }
                           displayThreads={displayThreads}
                           name={
                             group.kind === "local"
-                              ? "Current Checkout"
+                              ? "Root Checkout"
                               : resolveWorktreeDisplayName(group, worktreeNameByKey)
                           }
                           expanded={isGroupExpanded(group.key)}
