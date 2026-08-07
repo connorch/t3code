@@ -112,8 +112,8 @@ import {
   resolveGroupNavigationThread,
   resolveWorktreeDisplayName,
   type ConnorGroupIndicator,
+  type ConnorSidebarGroup,
   type ConnorThreadDot,
-  type ConnorWorktreeGroup,
 } from "./SidebarConnor.logic";
 import { ProjectFavicon } from "./ProjectFavicon";
 import { stackedThreadToast, toastManager } from "./ui/toast";
@@ -134,7 +134,7 @@ import { SidebarChromeFooter, SidebarChromeHeader } from "./sidebar/SidebarChrom
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
 import { useComposerDraftStore } from "../composerDraftStore";
 
-type WorktreeGroup = ConnorWorktreeGroup<EnvironmentThreadShell>;
+type ConnorGroup = ConnorSidebarGroup<EnvironmentThreadShell>;
 
 function compactTimeLabel(label: string): string {
   if (label === "just now") return "now";
@@ -507,23 +507,22 @@ function WorktreeName(props: {
 }
 
 interface GroupSectionProps {
-  group: WorktreeGroup;
+  group: ConnorGroup;
   /** Rows in display order: the thread-sort setting's ordering. */
   displayThreads: readonly EnvironmentThreadShell[];
   name: string;
   expanded: boolean;
   containsActive: boolean;
   indicator: ConnorGroupIndicator;
-  projectCwd: string | null;
   isRenaming: boolean;
   renamingName: string;
-  onGroupClick: (group: WorktreeGroup) => void;
-  onGroupToggle: (group: WorktreeGroup) => void;
-  onGroupContextMenu: (group: WorktreeGroup, position: { x: number; y: number }) => void;
-  onNewThreadInGroup: (group: WorktreeGroup) => void;
-  onStartGroupRename: (group: WorktreeGroup) => void;
+  onGroupClick: (group: ConnorGroup) => void;
+  onGroupToggle: (group: ConnorGroup) => void;
+  onGroupContextMenu: (group: ConnorGroup, position: { x: number; y: number }) => void;
+  onNewThreadInGroup: (group: ConnorGroup) => void;
+  onStartGroupRename: (group: ConnorGroup) => void;
   onRenameNameChange: (name: string) => void;
-  onCommitGroupRename: (group: WorktreeGroup) => void;
+  onCommitGroupRename: (group: ConnorGroup) => void;
   onCancelGroupRename: () => void;
   renderThreadRow: (thread: EnvironmentThreadShell) => React.ReactNode;
 }
@@ -555,20 +554,23 @@ function useGroupHeaderInteractions(props: GroupSectionProps) {
     event.preventDefault();
     props.onGroupClick(group);
   };
-  const headerTitle = `${group.worktreePath}${group.branch ? ` (${group.branch})` : ""}`;
+  const location = group.worktreePath ?? "Current checkout";
+  const headerTitle = `${location}${group.branch ? ` (${group.branch})` : ""}`;
   return { handleClick, handleDoubleClick, handleContextMenu, handleKeyDown, headerTitle };
 }
 
-/** Hover-revealed "new thread in this worktree" affordance. */
+/** Hover-revealed "new thread in this group" affordance. */
 function GroupPlusButton(props: {
-  group: WorktreeGroup;
-  onNewThreadInGroup: (group: WorktreeGroup) => void;
+  group: ConnorGroup;
+  onNewThreadInGroup: (group: ConnorGroup) => void;
 }) {
+  const label =
+    props.group.kind === "local" ? "New thread in this checkout" : "New thread in this worktree";
   return (
     <button
       type="button"
-      aria-label="New thread in this worktree"
-      title="New thread in this worktree"
+      aria-label={label}
+      title={label}
       onClick={(event) => {
         event.stopPropagation();
         props.onNewThreadInGroup(props.group);
@@ -601,7 +603,9 @@ function StackGroupSection(props: GroupSectionProps) {
           data-testid={`sidebar-connor-group-${group.key}`}
           title={interactions.headerTitle}
           className={cn(
-            "group/connor-group flex w-full cursor-pointer flex-col gap-0.5 px-2.5 py-2 text-left outline-none select-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring",
+            // -1px start padding compensates the card border so the name
+            // sits exactly on the project-title alignment line.
+            "group/connor-group flex w-full cursor-pointer flex-col gap-0.5 ps-[calc(--spacing(2)-1px)] pe-2.5 py-2 text-left outline-none select-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring",
             !props.expanded && "hover:bg-sidebar-row-hover",
           )}
           onClick={interactions.handleClick}
@@ -610,11 +614,6 @@ function StackGroupSection(props: GroupSectionProps) {
           onContextMenu={interactions.handleContextMenu}
         >
           <div className="flex min-w-0 items-center gap-2">
-            <ProjectFavicon
-              environmentId={group.environmentId}
-              cwd={props.projectCwd ?? ""}
-              className="size-4 shrink-0"
-            />
             <WorktreeName
               name={props.name}
               isRenaming={props.isRenaming}
@@ -639,7 +638,9 @@ function StackGroupSection(props: GroupSectionProps) {
                 <span className="min-w-0 truncate">{group.branch}</span>
               </>
             ) : (
-              <span className="min-w-0 truncate">worktree</span>
+              <span className="min-w-0 truncate">
+                {group.kind === "local" ? "local checkout" : "worktree"}
+              </span>
             )}
             <span className="ml-auto shrink-0 tabular-nums">
               {group.threads.length === 1 ? "1 thread" : `${group.threads.length} threads`}
@@ -764,18 +765,23 @@ function ConnorProjectHeader(props: {
         props.onContextMenu(project, { x: event.clientX, y: event.clientY });
       }}
     >
-      <ChevronRightIcon
-        aria-hidden
-        className={cn(
-          "size-3.5 shrink-0 text-sidebar-muted-foreground/70 transition-transform",
-          props.expanded && "rotate-90",
-        )}
-      />
-      <ProjectFavicon
-        environmentId={project.environmentId}
-        cwd={project.workspaceRoot}
-        className={cn("size-4 shrink-0", props.hidden && "opacity-50 grayscale")}
-      />
+      <span className="relative flex size-4 shrink-0 items-center justify-center">
+        <ProjectFavicon
+          environmentId={project.environmentId}
+          cwd={project.workspaceRoot}
+          className={cn(
+            "size-4 transition-opacity group-hover/connor-project:opacity-0",
+            props.hidden && "opacity-50 grayscale",
+          )}
+        />
+        <ChevronRightIcon
+          aria-hidden
+          className={cn(
+            "absolute size-3.5 text-sidebar-muted-foreground/70 opacity-0 transition group-hover/connor-project:opacity-100",
+            props.expanded && "rotate-90",
+          )}
+        />
+      </span>
       <span
         className={cn(
           "min-w-0 flex-1 truncate text-sm font-medium",
@@ -942,20 +948,17 @@ export default function SidebarConnor() {
     [projects],
   );
 
-  const { ungroupedThreads, worktreeGroups } = useMemo(
-    () => partitionThreadsForConnorSidebar(threads),
-    [threads],
-  );
+  const { groups: allGroups } = useMemo(() => partitionThreadsForConnorSidebar(threads), [threads]);
 
   const groupKeyByThreadKey = useMemo(() => {
     const mapping = new Map<string, string>();
-    for (const group of worktreeGroups) {
+    for (const group of allGroups) {
       for (const thread of group.threads) {
         mapping.set(scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)), group.key);
       }
     }
     return mapping;
-  }, [worktreeGroups]);
+  }, [allGroups]);
 
   const routeGroupKey =
     routeThreadKey === null ? null : (groupKeyByThreadKey.get(routeThreadKey) ?? null);
@@ -997,8 +1000,8 @@ export default function SidebarConnor() {
     sidebarProjectSortOrder,
     threads,
   ]);
-  // Stack mode's tree: project → (local-checkout threads, worktree cards).
-  // The thread-sort setting orders rows inside each section; worktree cards
+  // Stack mode's tree: project → cards (Current Checkout, then worktrees).
+  // The thread-sort setting orders rows inside each card; the cards
   // themselves keep static creation order.
   const projectSections = useMemo(() => {
     return projectGroups.flatMap((project) => {
@@ -1025,9 +1028,17 @@ export default function SidebarConnor() {
               (thread) =>
                 scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)) === routeThreadKey,
             ),
-          ungroupedThreads: sortThreads(partition.ungroupedThreads, sidebarThreadSortOrder),
-          worktreeGroups: partition.worktreeGroups.map((group) => ({
-            group,
+          groups: partition.groups.map((group) => ({
+            // Local-checkout groups learn their path from the owning project
+            // so the card tooltip and copy-path work like a worktree's.
+            group:
+              group.kind === "local"
+                ? {
+                    ...group,
+                    worktreePath:
+                      projectCwdByKey.get(`${group.environmentId}:${group.projectId}`) ?? null,
+                  }
+                : group,
             displayThreads: sortThreads(group.threads, sidebarThreadSortOrder),
           })),
         },
@@ -1035,6 +1046,7 @@ export default function SidebarConnor() {
     });
   }, [
     connorShowHiddenProjects,
+    projectCwdByKey,
     projectExpandedById,
     projectGroups,
     projectHiddenById,
@@ -1085,7 +1097,7 @@ export default function SidebarConnor() {
   );
 
   const handleGroupClick = useCallback(
-    (group: WorktreeGroup) => {
+    (group: ConnorGroup) => {
       const target = resolveGroupNavigationThread(
         group,
         worktreeLastThreadKeyByKey,
@@ -1097,7 +1109,7 @@ export default function SidebarConnor() {
     [navigateToThread, threadLastVisitedAtById, worktreeLastThreadKeyByKey],
   );
 
-  const handleGroupToggle = useCallback((group: WorktreeGroup) => {
+  const handleGroupToggle = useCallback((group: ConnorGroup) => {
     setStackExpandedKey((current) => (current === group.key ? null : group.key));
   }, []);
 
@@ -1142,7 +1154,9 @@ export default function SidebarConnor() {
   const [renamingWorktreeKey, setRenamingWorktreeKey] = useState<string | null>(null);
   const [renamingWorktreeName, setRenamingWorktreeName] = useState("");
   const startWorktreeRename = useCallback(
-    (group: WorktreeGroup) => {
+    (group: ConnorGroup) => {
+      // The local-checkout card has a fixed title.
+      if (group.kind !== "worktree") return;
       setRenamingWorktreeKey(group.key);
       setRenamingWorktreeName(resolveWorktreeDisplayName(group, worktreeNameByKey));
     },
@@ -1150,7 +1164,7 @@ export default function SidebarConnor() {
   );
   const cancelWorktreeRename = useCallback(() => setRenamingWorktreeKey(null), []);
   const commitWorktreeRename = useCallback(
-    (group: WorktreeGroup) => {
+    (group: ConnorGroup) => {
       setRenamingWorktreeKey(null);
       // Empty commits clear the custom name and fall back to the default
       // (first thread's title).
@@ -1161,16 +1175,28 @@ export default function SidebarConnor() {
 
   // ── New threads ───────────────────────────────────────────────────
   const handleNewThreadInGroup = useCallback(
-    (group: WorktreeGroup) => {
+    (group: ConnorGroup) => {
       if (isMobile) setOpenMobile(false);
       void (async () => {
         const result = await settlePromise(() =>
-          newThreadContext.handleNewThread(scopeProjectRef(group.environmentId, group.projectId), {
-            branch: group.branch,
-            worktreePath: group.worktreePath,
-            envMode: "worktree",
-            startFromOrigin: false,
-          }),
+          newThreadContext.handleNewThread(
+            scopeProjectRef(group.environmentId, group.projectId),
+            group.kind === "worktree"
+              ? {
+                  branch: group.branch,
+                  worktreePath: group.worktreePath,
+                  envMode: "worktree",
+                  startFromOrigin: false,
+                }
+              : // branch: null = whatever the checkout is currently on, not the
+                // (possibly stale) branch of the newest member thread.
+                {
+                  branch: null,
+                  worktreePath: null,
+                  envMode: "local",
+                  startFromOrigin: false,
+                },
+          ),
         );
         if (result._tag === "Failure") {
           const error = squashAtomCommandFailure(result);
@@ -1470,23 +1496,40 @@ export default function SidebarConnor() {
   );
 
   const handleGroupContextMenu = useCallback(
-    (group: WorktreeGroup, position: { x: number; y: number }) => {
+    (group: ConnorGroup, position: { x: number; y: number }) => {
       void (async () => {
         const api = readLocalApi();
         if (!api) return;
-        const hasCustomName = (worktreeNameByKey[group.key]?.trim() ?? "") !== "";
+        const isWorktree = group.kind === "worktree";
+        const hasCustomName = isWorktree && (worktreeNameByKey[group.key]?.trim() ?? "") !== "";
         const clicked = await settlePromise(() =>
           api.contextMenu.show(
             [
-              { id: "rename-worktree", label: "Rename worktree", icon: "pencil" },
+              // The local-checkout card has a fixed title and its directory
+              // is the project itself — no rename or delete.
+              ...(isWorktree
+                ? [{ id: "rename-worktree", label: "Rename worktree", icon: "pencil" }]
+                : []),
               ...(hasCustomName ? [{ id: "reset-name", label: "Reset name" }] : []),
               {
                 id: "new-thread",
-                label: group.branch ? `New thread on ${group.branch}` : "New thread here",
+                label:
+                  isWorktree && group.branch ? `New thread on ${group.branch}` : "New thread here",
               },
-              { id: "copy-path", label: "Copy path", icon: "copy" },
+              ...(group.worktreePath
+                ? [{ id: "copy-path", label: "Copy path", icon: "copy" }]
+                : []),
               ...(group.branch ? [{ id: "copy-branch", label: "Copy branch", icon: "copy" }] : []),
-              { id: "delete-worktree", label: "Delete worktree", destructive: true, icon: "trash" },
+              ...(isWorktree
+                ? [
+                    {
+                      id: "delete-worktree",
+                      label: "Delete worktree",
+                      destructive: true,
+                      icon: "trash",
+                    },
+                  ]
+                : []),
             ],
             position,
           ),
@@ -1503,12 +1546,15 @@ export default function SidebarConnor() {
             handleNewThreadInGroup(group);
             return;
           case "copy-path":
-            copyPathToClipboard(group.worktreePath, { path: group.worktreePath });
+            if (group.worktreePath) {
+              copyPathToClipboard(group.worktreePath, { path: group.worktreePath });
+            }
             return;
           case "copy-branch":
             if (group.branch) copyBranchToClipboard(group.branch, { branch: group.branch });
             return;
           case "delete-worktree": {
+            if (group.kind !== "worktree") return;
             const displayName = resolveWorktreeDisplayName(group, worktreeNameByKey);
             const count = group.threads.length;
             const confirmed = await settlePromise(() =>
@@ -1577,10 +1623,7 @@ export default function SidebarConnor() {
   const [threadSearchQuery, setThreadSearchQuery] = useState("");
   const [activeSearchResultIndex, setActiveSearchResultIndex] = useState(0);
   const isSearchingThreads = threadSearchQuery.trim().length > 0;
-  const searchableThreads = useMemo(
-    () => [...ungroupedThreads, ...worktreeGroups.flatMap((group) => group.threads)],
-    [ungroupedThreads, worktreeGroups],
-  );
+  const searchableThreads = useMemo(() => allGroups.flatMap((group) => group.threads), [allGroups]);
   const threadSearchResults = useMemo(
     () => searchSidebarThreadsByTitle(searchableThreads, threadSearchQuery),
     [searchableThreads, threadSearchQuery],
@@ -1651,7 +1694,7 @@ export default function SidebarConnor() {
     const keys: string[] = [];
     const pushThread = (thread: EnvironmentThreadShell) =>
       keys.push(scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)));
-    const pushGroup = (group: WorktreeGroup, displayThreads: readonly EnvironmentThreadShell[]) => {
+    const pushGroup = (group: ConnorGroup, displayThreads: readonly EnvironmentThreadShell[]) => {
       if (isGroupExpanded(group.key)) {
         for (const thread of displayThreads) pushThread(thread);
       } else {
@@ -1665,8 +1708,7 @@ export default function SidebarConnor() {
     };
     for (const section of projectSections) {
       if (!section.expanded) continue;
-      for (const thread of section.ungroupedThreads) pushThread(thread);
-      for (const { group, displayThreads } of section.worktreeGroups) {
+      for (const { group, displayThreads } of section.groups) {
         pushGroup(group, displayThreads);
       }
     }
@@ -1935,23 +1977,26 @@ export default function SidebarConnor() {
                     onContextMenu={handleProjectContextMenu}
                   />
                   {section.expanded ? (
-                    <ul className="flex flex-col gap-px ps-1 pb-1">
-                      {section.ungroupedThreads.map((thread) => renderThreadRow(thread))}
-                      {section.worktreeGroups.map(({ group, displayThreads }) => (
+                    // ps-4.5 (18px) + the rows' own 8px inset lines their text
+                    // up with the project title (4px padding + 16px icon slot
+                    // + 6px gap = 26px).
+                    <ul className="flex flex-col gap-px ps-4.5 pb-1">
+                      {section.groups.map(({ group, displayThreads }) => (
                         <StackGroupSection
                           key={group.key}
                           group={group}
                           displayThreads={displayThreads}
-                          name={resolveWorktreeDisplayName(group, worktreeNameByKey)}
+                          name={
+                            group.kind === "local"
+                              ? "Current Checkout"
+                              : resolveWorktreeDisplayName(group, worktreeNameByKey)
+                          }
                           expanded={isGroupExpanded(group.key)}
                           containsActive={routeGroupKey === group.key}
                           indicator={resolveConnorGroupIndicator(
                             group.threads,
                             threadLastVisitedAtById,
                           )}
-                          projectCwd={
-                            projectCwdByKey.get(`${group.environmentId}:${group.projectId}`) ?? null
-                          }
                           isRenaming={renamingWorktreeKey === group.key}
                           renamingName={
                             renamingWorktreeKey === group.key ? renamingWorktreeName : ""
@@ -1967,8 +2012,7 @@ export default function SidebarConnor() {
                           renderThreadRow={renderThreadRow}
                         />
                       ))}
-                      {section.ungroupedThreads.length === 0 &&
-                      section.worktreeGroups.length === 0 ? (
+                      {section.groups.length === 0 ? (
                         <li className="list-none">
                           <p className="px-2 py-2 text-xs text-sidebar-muted-foreground/70">
                             No threads yet
