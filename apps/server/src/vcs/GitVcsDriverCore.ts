@@ -27,6 +27,7 @@ import {
   type VcsRef,
 } from "@t3tools/contracts";
 import { dedupeRemoteBranchesWithLocalMatches, normalizeGitRemoteUrl } from "@t3tools/shared/git";
+import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
 import { compactTraceAttributes } from "@t3tools/shared/observability";
 import { decodeJsonResult } from "@t3tools/shared/schemaJson";
 import { gitCommandDuration, gitCommandsTotal, withMetrics } from "../observability/Metrics.ts";
@@ -39,6 +40,12 @@ import {
 import { ServerConfig } from "../config.ts";
 
 const DEFAULT_TIMEOUT_MS = 30_000;
+// Matches the scratch names produced by removeWorktree's rename-aside step.
+const WORKTREE_TRASH_PATTERN = /^\..+\.removing-[0-9a-f]{8}$/;
+
+class WorktreeTrashDeleteError extends Data.TaggedError("WorktreeTrashDeleteError")<{
+  readonly detail: string;
+}> {}
 const DEFAULT_MAX_OUTPUT_BYTES = 1_000_000;
 const OUTPUT_TRUNCATED_MARKER = "\n\n[truncated]";
 const PREPARED_COMMIT_PATCH_MAX_OUTPUT_BYTES = 49_000;
@@ -2896,6 +2903,58 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       input.branch,
     ]);
 
+  // Deleting via a child `rm -rf` keeps a multi-gigabyte tree walk off the
+  // server's libuv threadpool (shared with WebSocket compression and the rest
+  // of its file I/O), and unlike `fs.rm` it keeps going past files it cannot
+  // unlink (macOS App Management denies unlinking inside .app bundles) instead
+  // of aborting the whole walk.
+  const deleteWorktreeTrashDirectory = Effect.fn("deleteWorktreeTrashDirectory")(function* (
+    targetPath: string,
+  ) {
+    const platform = yield* HostProcessPlatform;
+    if (platform === "win32") {
+      return yield* fileSystem.remove(targetPath, { recursive: true, force: true });
+    }
+    const { exitCode, stderr } = yield* Effect.scoped(
+      Effect.gen(function* () {
+        const child = yield* commandSpawner.spawn(
+          ChildProcess.make("rm", ["-rf", "--", targetPath], {
+            stdin: "ignore",
+            stdout: "ignore",
+          }),
+        );
+        const [stderrText, code] = yield* Effect.all(
+          [Stream.mkString(Stream.decodeText(child.stderr)), child.exitCode],
+          { concurrency: "unbounded" },
+        );
+        return { exitCode: code, stderr: stderrText };
+      }),
+    );
+    if (exitCode !== 0) {
+      return yield* new WorktreeTrashDeleteError({
+        detail: `rm exited with code ${exitCode}: ${stderr.trim() || "no stderr output"}`,
+      });
+    }
+  });
+
+  const sweepWorktreeTrash = Effect.fn("sweepWorktreeTrash")(function* (parentDir: string) {
+    const entries = yield* fileSystem
+      .readDirectory(parentDir)
+      .pipe(Effect.orElseSucceed((): ReadonlyArray<string> => []));
+    for (const entry of entries) {
+      if (!WORKTREE_TRASH_PATTERN.test(entry)) continue;
+      const target = path.join(parentDir, entry);
+      yield* deleteWorktreeTrashDirectory(target).pipe(
+        Effect.catch((error) =>
+          Effect.logWarning(
+            `GitVcsDriver.removeWorktree: could not delete worktree trash at ${target}`,
+            error,
+          ),
+        ),
+      );
+    }
+  });
+
   const removeWorktree: GitVcsDriver.GitVcsDriver["Service"]["removeWorktree"] = Effect.fn(
     "removeWorktree",
   )(function* (input) {
@@ -2974,14 +3033,13 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     const worktreeDirExists = yield* fileSystem
       .exists(matched.onDiskPath)
       .pipe(Effect.orElseSucceed(() => false));
-    let trashPath: string | null = null;
     if (worktreeDirExists) {
       const suffix = yield* crypto.randomUUIDv4.pipe(
         Effect.mapError((cause) =>
           failure("Could not generate a scratch name for worktree removal.", cause),
         ),
       );
-      trashPath = path.join(
+      const trashPath = path.join(
         path.dirname(matched.onDiskPath),
         `.${path.basename(matched.onDiskPath)}.removing-${suffix.slice(0, 8)}`,
       );
@@ -2999,11 +3057,12 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       fallbackErrorDetail: "git worktree prune failed",
     });
 
-    if (trashPath !== null) {
-      yield* fileSystem
-        .remove(trashPath, { recursive: true, force: true })
-        .pipe(Effect.ignoreCause({ log: true }), Effect.forkDetach);
-    }
+    // The sweep picks up the directory renamed aside above along with any
+    // trash left behind by earlier removals whose deletes failed.
+    yield* sweepWorktreeTrash(path.dirname(matched.onDiskPath)).pipe(
+      Effect.ignoreCause({ log: true }),
+      Effect.forkDetach,
+    );
   });
 
   const renameBranch: GitVcsDriver.GitVcsDriver["Service"]["renameBranch"] = Effect.fn(

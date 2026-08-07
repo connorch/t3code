@@ -635,6 +635,41 @@ it.effect("backs off failed upstream refreshes across linked worktrees", () =>
   ).pipe(Effect.provide(ServerConfigLayer.pipe(Layer.provideMerge(NodeServices.layer)))),
 );
 
+// Runs with the live clock (outside the layered suite) because the trash
+// delete happens in a detached fiber doing real subprocess/filesystem work.
+it.live("force-removal sweeps stale trash directories left by earlier removals", () =>
+  Effect.gen(function* () {
+    const cwd = yield* makeTmpDir();
+    const { initialBranch } = yield* initRepoWithCommit(cwd);
+    const pathService = yield* Path.Path;
+    const worktreesRoot = yield* makeTmpDir("git-worktrees-");
+    const worktreePath = pathService.join(worktreesRoot, "feature-worktree");
+    const driver = yield* GitVcsDriver.GitVcsDriver;
+    const fileSystem = yield* FileSystem.FileSystem;
+
+    yield* driver.createWorktree({
+      cwd,
+      path: worktreePath,
+      refName: initialBranch,
+      newRefName: "feature/sweep-trash",
+    });
+    const staleTrashPath = pathService.join(worktreesRoot, ".feature-worktree.removing-deadbeef");
+    yield* fileSystem.makeDirectory(staleTrashPath, { recursive: true });
+    yield* writeTextFile(staleTrashPath, "leftover.txt", "stale");
+
+    yield* driver.removeWorktree({ cwd, path: worktreePath, force: true });
+    assert.equal(yield* fileSystem.exists(worktreePath), false);
+
+    // The delete runs in a detached fiber; wait for it to clear both the
+    // renamed-aside worktree and the stale trash directory.
+    yield* Effect.gen(function* () {
+      while ((yield* fileSystem.readDirectory(worktreesRoot)).length > 0) {
+        yield* Effect.sleep("50 millis");
+      }
+    }).pipe(Effect.timeout("10 seconds"));
+  }).pipe(Effect.provide(TestLayer)),
+);
+
 it.layer(TestLayer)("GitVcsDriver core integration", (it) => {
   describe("process environment", () => {
     it.effect("preserves the caller locale for general Git subprocesses", () =>
