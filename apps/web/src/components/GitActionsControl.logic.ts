@@ -224,6 +224,9 @@ export function resolveQuickAction(
   const isBehind = gitStatus.behindCount > 0;
   const isDiverged = isAhead && isBehind;
   const terminology = resolveChangeRequestTerminology(gitStatus);
+  // A merged PR still opens on click, but the label reports the state rather
+  // than the action - the purple tint and "Merged" read as one status chip.
+  const viewPrLabel = hasMergedPr ? "Merged" : `View ${terminology.shortLabel}`;
 
   if (!hasBranch) {
     return {
@@ -252,7 +255,7 @@ export function resolveQuickAction(
   if (!gitStatus.hasUpstream) {
     if (!hasPrimaryRemote) {
       if ((hasOpenPr || hasMergedPr) && !isAhead) {
-        return { label: `View ${terminology.shortLabel}`, disabled: false, kind: "open_pr" };
+        return { label: viewPrLabel, disabled: false, kind: "open_pr" };
       }
       return {
         label: "Publish repository",
@@ -262,7 +265,7 @@ export function resolveQuickAction(
     }
     if (!isAhead) {
       if (hasOpenPr || hasMergedPr) {
-        return { label: `View ${terminology.shortLabel}`, disabled: false, kind: "open_pr" };
+        return { label: viewPrLabel, disabled: false, kind: "open_pr" };
       }
       return {
         label: "Push",
@@ -325,7 +328,7 @@ export function resolveQuickAction(
   // branch still reads as ahead of default, but re-creating a PR for commits
   // that already landed is never the right offer.
   if (hasOpenPr || hasMergedPr) {
-    return { label: `View ${terminology.shortLabel}`, disabled: false, kind: "open_pr" };
+    return { label: viewPrLabel, disabled: false, kind: "open_pr" };
   }
 
   if (hasDefaultBranchDelta && !isDefaultRef) {

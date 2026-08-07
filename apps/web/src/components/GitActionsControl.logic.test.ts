@@ -104,17 +104,17 @@ describe("when: ref has a merged PR", () => {
 
   it("resolveQuickAction opens the merged PR when the ref is idle", () => {
     const quick = resolveQuickAction(status({ pr: mergedPr }), false);
-    assert.deepInclude(quick, { kind: "open_pr", label: "View PR", disabled: false });
+    assert.deepInclude(quick, { kind: "open_pr", label: "Merged", disabled: false });
   });
 
   it("resolveQuickAction prefers viewing the merged PR over re-creating one after a squash merge", () => {
     const quick = resolveQuickAction(status({ pr: mergedPr, aheadOfDefaultCount: 2 }), false);
-    assert.deepInclude(quick, { kind: "open_pr", label: "View PR", disabled: false });
+    assert.deepInclude(quick, { kind: "open_pr", label: "Merged", disabled: false });
   });
 
   it("resolveQuickAction opens the merged PR when the upstream ref is gone", () => {
     const quick = resolveQuickAction(status({ pr: mergedPr, hasUpstream: false }), false);
-    assert.deepInclude(quick, { kind: "open_pr", label: "View PR", disabled: false });
+    assert.deepInclude(quick, { kind: "open_pr", label: "Merged", disabled: false });
   });
 
   it("resolveQuickAction still offers the commit flow for new changes", () => {
