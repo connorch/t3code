@@ -5,6 +5,10 @@ import type { DraftThreadEnvMode } from "../composerDraftStore";
 interface ThreadContextLike {
   environmentId: EnvironmentId;
   projectId: ProjectId;
+  branch?: string | null;
+  worktreePath?: string | null;
+  envMode?: DraftThreadEnvMode;
+  startFromOrigin?: boolean;
 }
 
 interface NewThreadHandler {
@@ -63,5 +67,48 @@ export async function startNewThreadFromContext(
   }
 
   await context.handleNewThread(projectRef);
+  return true;
+}
+
+// The explicit counterpart to the above: `chat.newInWorkspace` carries the
+// viewed thread's workspace on purpose — its worktree when it has one,
+// otherwise the current checkout (branch null = whatever the checkout is on).
+// A viewed draft is itself a workspace selection, so it carries verbatim —
+// handleNewThread reuses the open draft, and this keeps that a no-op.
+export async function startNewThreadInCurrentWorkspace(
+  context: ChatThreadActionContext,
+): Promise<boolean> {
+  const projectRef = resolveThreadActionProjectRef(context);
+  if (!projectRef) {
+    return false;
+  }
+
+  const currentCheckout = {
+    branch: null,
+    worktreePath: null,
+    envMode: "local" as const,
+    startFromOrigin: false,
+  };
+  const thread = context.activeThread;
+  const draft = thread ? null : context.activeDraftThread;
+  const options = thread
+    ? thread.worktreePath
+      ? {
+          branch: thread.branch ?? null,
+          worktreePath: thread.worktreePath,
+          envMode: "worktree" as const,
+          startFromOrigin: false,
+        }
+      : currentCheckout
+    : draft
+      ? {
+          branch: draft.branch ?? null,
+          worktreePath: draft.worktreePath ?? null,
+          envMode:
+            draft.envMode ?? (draft.worktreePath ? ("worktree" as const) : ("local" as const)),
+          startFromOrigin: draft.startFromOrigin ?? false,
+        }
+      : currentCheckout;
+  await context.handleNewThread(projectRef, options);
   return true;
 }
