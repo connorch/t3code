@@ -26,7 +26,7 @@ import {
   settlePromise,
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
-import type { ScopedThreadRef } from "@t3tools/contracts";
+import type { EnvironmentId, ScopedThreadRef } from "@t3tools/contracts";
 import type { SidebarProjectSortOrder, SidebarThreadSortOrder } from "@t3tools/contracts/settings";
 import {
   ArrowUpDownIcon,
@@ -34,6 +34,7 @@ import {
   CircleAlertIcon,
   CircleDashedIcon,
   CircleHelpIcon,
+  CloudIcon,
   EyeOffIcon,
   FolderPlusIcon,
   GitBranchIcon,
@@ -509,10 +510,34 @@ function WorktreeName(props: {
   );
 }
 
+/** Shown only for groups living on a non-primary machine; the local checkout
+    is the unmarked default, so it stays glyph-free. */
+function RemoteEnvironmentGlyph({ label }: { label: string }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          // The empty title suppresses the card's native tooltip over the icon.
+          <span
+            title=""
+            aria-label={`Runs on ${label}`}
+            className="inline-flex shrink-0 items-center"
+          />
+        }
+      >
+        <CloudIcon aria-hidden className="size-3" />
+      </TooltipTrigger>
+      <TooltipPopup side="top">{label}</TooltipPopup>
+    </Tooltip>
+  );
+}
+
 interface GroupSectionProps {
   group: ConnorGroup;
   /** Where git status is read: the worktree, or the project root for the root checkout. */
   gitCwd: string | null;
+  /** Machine name when the group is remote; null for the local checkout. */
+  remoteEnvironmentLabel: string | null;
   /** Rows in display order: the thread-sort setting's ordering. */
   displayThreads: readonly EnvironmentThreadShell[];
   name: string;
@@ -650,22 +675,21 @@ function StackGroupSection(props: GroupSectionProps) {
           </div>
           <div className="flex min-w-0 items-center gap-1.5 text-xs text-sidebar-muted-foreground/70">
             {group.branch ? (
-              <>
-                <GitBranchIcon
-                  aria-hidden
-                  className={cn(
-                    "size-3 shrink-0",
-                    groupPr?.state === "open" && "text-success-foreground",
-                    groupPr?.state === "merged" && "text-merged-foreground",
-                  )}
-                />
-                <span className="min-w-0 truncate">{group.branch}</span>
-              </>
-            ) : (
-              <span className="min-w-0 truncate">
-                {group.kind === "local" ? "local checkout" : "worktree"}
-              </span>
-            )}
+              <GitBranchIcon
+                aria-hidden
+                className={cn(
+                  "size-3 shrink-0",
+                  groupPr?.state === "open" && "text-success-foreground",
+                  groupPr?.state === "merged" && "text-merged-foreground",
+                )}
+              />
+            ) : null}
+            {props.remoteEnvironmentLabel ? (
+              <RemoteEnvironmentGlyph label={props.remoteEnvironmentLabel} />
+            ) : null}
+            <span className="min-w-0 truncate">
+              {group.branch ?? (group.kind === "local" ? "local checkout" : "worktree")}
+            </span>
             <span className="ml-auto shrink-0 tabular-nums">
               {group.threads.length === 1 ? "1 thread" : `${group.threads.length} threads`}
             </span>
@@ -993,6 +1017,15 @@ export default function SidebarConnor() {
         environments.map((environment) => [environment.environmentId, environment.label] as const),
       ),
     [environments],
+  );
+  // Anything not on the primary environment is "somewhere else": the card
+  // gets a machine glyph, the local checkout stays unmarked.
+  const resolveRemoteEnvironmentLabel = useCallback(
+    (environmentId: EnvironmentId): string | null =>
+      primaryEnvironmentId === null || environmentId === primaryEnvironmentId
+        ? null
+        : (environmentLabelById.get(environmentId) ?? "Remote machine"),
+    [environmentLabelById, primaryEnvironmentId],
   );
   const orderedProjects = useMemo(
     () =>
@@ -2014,6 +2047,9 @@ export default function SidebarConnor() {
                             projectCwdByKey.get(`${group.environmentId}:${group.projectId}`) ??
                             null
                           }
+                          remoteEnvironmentLabel={resolveRemoteEnvironmentLabel(
+                            group.environmentId,
+                          )}
                           displayThreads={displayThreads}
                           name={
                             group.kind === "local"
