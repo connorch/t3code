@@ -21,6 +21,7 @@ import {
   type ModelUsage,
 } from "@anthropic-ai/claude-agent-sdk";
 import { parseCliArgs } from "@t3tools/shared/cliArgs";
+import { WORKTREE_CONTEXT_DIRECTORY_NAME } from "@t3tools/shared/git";
 import {
   ApprovalRequestId,
   type CanonicalItemType,
@@ -99,6 +100,13 @@ const encodeUnknownJsonStringExit = Schema.encodeUnknownExit(Schema.fromJsonStri
 const decodeUnknownJsonStringExit = Schema.decodeUnknownExit(Schema.fromJsonString(Schema.Unknown));
 
 const PROVIDER = ProviderDriverKind.make("claudeAgent");
+
+// Appended to the system prompt when the session's cwd carries the
+// t3code-provisioned `.context/` scratch directory (worktrees get one at
+// creation; see GitVcsDriverCore.provisionContextDirectory). Only claimed when
+// the directory actually exists so the prompt never points at a missing path.
+const CONTEXT_DIRECTORY_PROMPT =
+  "If the user asks you to build a plan, or you want somewhere to hand the user files that should not be committed to git, put them in the `.context` directory at the repository root. t3code automatically gitignores it.";
 type ClaudeTextStreamKind = Extract<RuntimeContentStreamKind, "assistant_text" | "reasoning_text">;
 type ClaudeToolResultStreamKind = Extract<
   RuntimeContentStreamKind,
@@ -4090,11 +4098,20 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         ...(ultracode ? { ultracode: true } : {}),
       };
       const mcpSession = McpProviderSession.readMcpProviderSession(input.threadId);
+      const hasContextDirectory =
+        input.cwd !== undefined &&
+        (yield* fileSystem
+          .exists(path.join(input.cwd, WORKTREE_CONTEXT_DIRECTORY_NAME))
+          .pipe(Effect.orElseSucceed(() => false)));
       const queryOptions: ClaudeQueryOptions = {
         ...(input.cwd ? { cwd: input.cwd } : {}),
         ...(apiModelId ? { model: apiModelId } : {}),
         pathToClaudeCodeExecutable: claudeBinaryPath,
-        systemPrompt: { type: "preset", preset: "claude_code" },
+        systemPrompt: {
+          type: "preset",
+          preset: "claude_code",
+          ...(hasContextDirectory ? { append: CONTEXT_DIRECTORY_PROMPT } : {}),
+        },
         settingSources: [...CLAUDE_SETTING_SOURCES],
         // `ultracode` is a Claude Code setting, not an API effort level. It is
         // normalized to `xhigh` above and paired with `settings.ultracode`.
