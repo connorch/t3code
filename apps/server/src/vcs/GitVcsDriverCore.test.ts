@@ -1399,6 +1399,51 @@ it.layer(TestLayer)("GitVcsDriver core integration", (it) => {
       }),
     );
 
+    it.effect("provisions a git-ignored .context directory in new worktrees", () =>
+      Effect.gen(function* () {
+        const cwd = yield* makeTmpDir();
+        const { initialBranch } = yield* initRepoWithCommit(cwd);
+        const pathService = yield* Path.Path;
+        const worktreesRoot = yield* makeTmpDir("git-worktrees-");
+        const worktreePath = pathService.join(worktreesRoot, "feature-worktree");
+        const driver = yield* GitVcsDriver.GitVcsDriver;
+
+        yield* driver.createWorktree({
+          cwd,
+          path: worktreePath,
+          refName: initialBranch,
+          newRefName: "feature/context-dir",
+        });
+
+        const fileSystem = yield* FileSystem.FileSystem;
+        assert.equal(
+          yield* fileSystem.exists(pathService.join(worktreePath, ".context", "_.txt")),
+          true,
+        );
+        // The info/exclude entry keeps the scratch directory out of git
+        // status, so the fresh worktree reads as clean and can be removed
+        // without --force.
+        assert.equal(yield* git(worktreePath, ["status", "--porcelain"]), "");
+        yield* driver.removeWorktree({ cwd, path: worktreePath });
+        assert.equal(yield* fileSystem.exists(worktreePath), false);
+
+        // Creating another worktree must not duplicate the exclude entry.
+        yield* driver.createWorktree({
+          cwd,
+          path: pathService.join(worktreesRoot, "second-worktree"),
+          refName: initialBranch,
+          newRefName: "feature/context-dir-second",
+        });
+        const excludeContents = yield* fileSystem.readFileString(
+          pathService.join(cwd, ".git", "info", "exclude"),
+        );
+        const entryCount = excludeContents
+          .split(/\r?\n/)
+          .filter((line) => line.trim() === ".context/").length;
+        assert.equal(entryCount, 1);
+      }),
+    );
+
     it.effect("force-removes a dirty worktree without deleting its files in-band", () =>
       Effect.gen(function* () {
         const cwd = yield* makeTmpDir();

@@ -1,3 +1,7 @@
+import { DndContext, PointerSensor, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
+import { restrictToFirstScrollableAncestor, restrictToHorizontalAxis } from "@dnd-kit/modifiers";
+import { SortableContext, horizontalListSortingStrategy, useSortable } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import type { ContextMenuItem, PreviewSessionSnapshot } from "@t3tools/contracts";
 import { getTerminalLabel } from "@t3tools/shared/terminalLabels";
 import {
@@ -45,6 +49,7 @@ interface RightPanelTabsProps {
   previewSessions: Readonly<Record<string, PreviewSessionSnapshot>>;
   terminalLabelsById: ReadonlyMap<string, string>;
   onActivate: (surface: RightPanelSurface) => void;
+  onReorderSurface: (surfaceId: string, targetSurfaceId: string) => void;
   onCloseSurface: (surface: RightPanelSurface) => void;
   onCloseOtherSurfaces: (surface: RightPanelSurface) => void;
   onCloseSurfacesToRight: (surface: RightPanelSurface) => void;
@@ -126,7 +131,7 @@ function GhostSurfaceTab({ action }: { action: SurfaceAction }) {
             className={cn(
               "flex h-6 shrink-0 items-center gap-1.5 rounded-md border border-border/70 px-2.5 text-xs text-muted-foreground",
               action.available
-                ? "hover:bg-accent/60 hover:text-foreground"
+                ? "cursor-pointer hover:bg-accent/60 hover:text-foreground"
                 : "cursor-not-allowed opacity-40",
             )}
           >
@@ -159,7 +164,7 @@ function GhostSurfaceIconButton({ action }: { action: SurfaceAction }) {
             className={cn(
               "flex size-6 shrink-0 items-center justify-center rounded-md border border-border/70 text-muted-foreground",
               action.available
-                ? "hover:bg-accent/60 hover:text-foreground"
+                ? "cursor-pointer hover:bg-accent/60 hover:text-foreground"
                 : "cursor-not-allowed opacity-40",
             )}
           >
@@ -171,6 +176,72 @@ function GhostSurfaceIconButton({ action }: { action: SurfaceAction }) {
         {action.available ? action.addLabel : action.disabledReason}
       </TooltipPopup>
     </Tooltip>
+  );
+}
+
+/** Open tab; drag-sortable within the strip to reorder surfaces. */
+function SortableSurfaceTab(props: {
+  surface: RightPanelSurface;
+  active: boolean;
+  pending: boolean;
+  title: string;
+  sessions: Readonly<Record<string, PreviewSessionSnapshot>>;
+  theme: "light" | "dark";
+  onActivate: () => void;
+  onClose: () => void;
+  onMouseDown: (event: ReactMouseEvent) => void;
+  onAuxClick: (event: ReactMouseEvent) => void;
+  onContextMenu: (event: ReactMouseEvent) => void;
+}) {
+  const { setNodeRef, listeners, transform, transition, isDragging } = useSortable({
+    id: props.surface.id,
+  });
+  return (
+    <div
+      ref={setNodeRef}
+      style={{ transform: CSS.Translate.toString(transform), transition }}
+      {...listeners}
+      data-active-tab={props.active}
+      onMouseDown={props.onMouseDown}
+      onAuxClick={props.onAuxClick}
+      onContextMenu={props.onContextMenu}
+      className={cn(
+        // no-drag keeps tab drags from moving the frameless desktop window.
+        "group/tab flex h-6 max-w-36 shrink-0 items-center gap-0.5 rounded-md pr-2 pl-1.5 text-xs [-webkit-app-region:no-drag]",
+        props.active
+          ? "bg-accent text-foreground"
+          : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
+        isDragging && "relative z-10 opacity-80",
+      )}
+    >
+      <button
+        type="button"
+        className="group/close relative flex size-4 shrink-0 items-center justify-center rounded-sm hover:bg-muted"
+        aria-label={`Close ${props.title}`}
+        onClick={props.onClose}
+      >
+        <span className="relative flex size-3 items-center justify-center group-hover/tab:hidden group-focus-visible/close:hidden">
+          <SurfaceIcon surface={props.surface} sessions={props.sessions} theme={props.theme} />
+          {props.pending ? (
+            <span
+              className="absolute -right-0.5 -bottom-0.5 size-1.5 rounded-full bg-current"
+              aria-hidden
+            />
+          ) : null}
+        </span>
+        <X className="hidden size-3 group-hover/tab:block group-focus-visible/close:block" />
+      </button>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <button type="button" className="flex min-w-0 items-center" onClick={props.onActivate}>
+              <span className="truncate">{props.title}</span>
+            </button>
+          }
+        />
+        <TooltipPopup>{props.title}</TooltipPopup>
+      </Tooltip>
+    </div>
   );
 }
 
@@ -268,17 +339,6 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
 
   const surfaceActions: readonly SurfaceAction[] = [
     {
-      label: "Browser",
-      addLabel: "New browser",
-      description: "Open a local app or URL.",
-      icon: Globe2,
-      surfaceKind: "preview",
-      multiInstance: true,
-      available: props.browserAvailable,
-      disabledReason: SURFACE_DISABLED_REASONS.browser,
-      onClick: props.onAddBrowser,
-    },
-    {
       label: "Terminal",
       addLabel: "New terminal",
       description: "Start a shell in this workspace.",
@@ -310,6 +370,17 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
       available: props.diffAvailable,
       disabledReason: SURFACE_DISABLED_REASONS.diff,
       onClick: props.onAddDiff,
+    },
+    {
+      label: "Browser",
+      addLabel: "New browser",
+      description: "Open a local app or URL.",
+      icon: Globe2,
+      surfaceKind: "preview",
+      multiInstance: true,
+      available: props.browserAvailable,
+      disabledReason: SURFACE_DISABLED_REASONS.browser,
+      onClick: props.onAddBrowser,
     },
     {
       label: "Agents",
@@ -386,6 +457,18 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
     },
     [props],
   );
+  // Distance constraint keeps plain clicks activating/closing tabs instead of starting a drag.
+  const tabDragSensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+  );
+  const handleTabDragEnd = useCallback(
+    (event: DragEndEvent) => {
+      const { active, over } = event;
+      if (!over || active.id === over.id) return;
+      props.onReorderSurface(String(active.id), String(over.id));
+    },
+    [props],
+  );
   const handleTabMouseDown = useCallback((event: ReactMouseEvent) => {
     if (event.button !== 1) return;
     event.preventDefault();
@@ -431,62 +514,33 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
           data-right-panel-tab-list
         >
           <div className="flex h-full w-max min-w-full items-center gap-1">
-            {props.surfaces.map((surface) => {
-              const active = surface.id === props.activeSurfaceId;
-              const pending = props.pendingSurfaceIds.has(surface.id);
-              const title = surfaceTitle(surface, props.previewSessions, props.terminalLabelsById);
-              return (
-                <div
-                  key={surface.id}
-                  data-active-tab={active}
-                  onMouseDown={handleTabMouseDown}
-                  onAuxClick={(event) => handleTabAuxClick(event, surface)}
-                  onContextMenu={(event) => void handleTabContextMenu(event, surface)}
-                  className={cn(
-                    "group/tab flex h-6 max-w-36 shrink-0 items-center gap-0.5 rounded-md pr-2 pl-1.5 text-xs",
-                    active
-                      ? "bg-accent text-foreground"
-                      : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
-                  )}
-                >
-                  <button
-                    type="button"
-                    className="group/close relative flex size-4 shrink-0 items-center justify-center rounded-sm hover:bg-muted"
-                    aria-label={`Close ${title}`}
-                    onClick={() => props.onCloseSurface(surface)}
-                  >
-                    <span className="relative flex size-3 items-center justify-center group-hover/tab:hidden group-focus-visible/close:hidden">
-                      <SurfaceIcon
-                        surface={surface}
-                        sessions={props.previewSessions}
-                        theme={resolvedTheme}
-                      />
-                      {pending ? (
-                        <span
-                          className="absolute -right-0.5 -bottom-0.5 size-1.5 rounded-full bg-current"
-                          aria-hidden
-                        />
-                      ) : null}
-                    </span>
-                    <X className="hidden size-3 group-hover/tab:block group-focus-visible/close:block" />
-                  </button>
-                  <Tooltip>
-                    <TooltipTrigger
-                      render={
-                        <button
-                          type="button"
-                          className="flex min-w-0 items-center"
-                          onClick={() => props.onActivate(surface)}
-                        >
-                          <span className="truncate">{title}</span>
-                        </button>
-                      }
-                    />
-                    <TooltipPopup>{title}</TooltipPopup>
-                  </Tooltip>
-                </div>
-              );
-            })}
+            <DndContext
+              sensors={tabDragSensors}
+              modifiers={[restrictToHorizontalAxis, restrictToFirstScrollableAncestor]}
+              onDragEnd={handleTabDragEnd}
+            >
+              <SortableContext
+                items={props.surfaces.map((surface) => surface.id)}
+                strategy={horizontalListSortingStrategy}
+              >
+                {props.surfaces.map((surface) => (
+                  <SortableSurfaceTab
+                    key={surface.id}
+                    surface={surface}
+                    active={surface.id === props.activeSurfaceId}
+                    pending={props.pendingSurfaceIds.has(surface.id)}
+                    title={surfaceTitle(surface, props.previewSessions, props.terminalLabelsById)}
+                    sessions={props.previewSessions}
+                    theme={resolvedTheme}
+                    onActivate={() => props.onActivate(surface)}
+                    onClose={() => props.onCloseSurface(surface)}
+                    onMouseDown={handleTabMouseDown}
+                    onAuxClick={(event) => handleTabAuxClick(event, surface)}
+                    onContextMenu={(event) => void handleTabContextMenu(event, surface)}
+                  />
+                ))}
+              </SortableContext>
+            </DndContext>
             {props.surfaces.length === 0 ? (
               surfaceActions.map((action) => <GhostSurfaceTab key={action.label} action={action} />)
             ) : (
@@ -503,7 +557,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
                 </div>
                 <Menu>
                   <MenuTrigger
-                    className="relative inline-flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground @sm/tab-strip:hidden"
+                    className="relative inline-flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground @sm/tab-strip:hidden"
                     aria-label="Add panel surface"
                   >
                     <Plus className="size-3.5" />

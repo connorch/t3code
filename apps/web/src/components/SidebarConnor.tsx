@@ -1645,6 +1645,7 @@ export default function SidebarConnor() {
                 label:
                   isWorktree && group.branch ? `New thread on ${group.branch}` : "New thread here",
               },
+              { id: "mark-unread", label: "Mark unread" },
               ...(group.worktreePath
                 ? [{ id: "copy-path", label: "Copy path", icon: "copy" }]
                 : []),
@@ -1674,6 +1675,22 @@ export default function SidebarConnor() {
           case "new-thread":
             handleNewThreadInGroup(group);
             return;
+          case "mark-unread": {
+            // Unread the last-read thread; the card's indicator logic picks
+            // it up and shows the group as unread.
+            const target = resolveGroupNavigationThread(
+              group,
+              worktreeLastThreadKeyByKey,
+              threadLastVisitedAtById,
+            );
+            if (target) {
+              markThreadUnread(
+                scopedThreadKey(scopeThreadRef(target.environmentId, target.id)),
+                target.latestTurn?.completedAt,
+              );
+            }
+            return;
+          }
           case "copy-path":
             if (group.worktreePath) {
               copyPathToClipboard(group.worktreePath, { path: group.worktreePath });
@@ -1732,8 +1749,11 @@ export default function SidebarConnor() {
       copyPathToClipboard,
       deleteThread,
       handleNewThreadInGroup,
+      markThreadUnread,
       setWorktreeName,
       startWorktreeRename,
+      threadLastVisitedAtById,
+      worktreeLastThreadKeyByKey,
       worktreeNameByKey,
     ],
   );

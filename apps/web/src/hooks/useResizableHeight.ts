@@ -34,11 +34,15 @@ export interface ResizableHeightHandlers {
  * Height state for a bottom-anchored panel resized via a drag handle on its
  * TOP edge (drag up to grow). `height` is null until the user drags, meaning
  * "size to content"; double-clicking the handle returns to that auto state.
+ * While `isResizing`, `height` tracks the cursor so callers can pin the panel
+ * to it for direct feedback; once settled, callers typically apply it as a
+ * max-height only, so the panel still sizes to content beneath it.
  * Height is read from localStorage on mount and persisted on drag-end (not
  * on every rAF tick — would otherwise be ~60 writes/sec).
  */
 export function useResizableHeight(options: UseResizableHeightOptions): {
   readonly height: number | null;
+  readonly isResizing: boolean;
   readonly handlers: ResizableHeightHandlers;
 } {
   const { storageKey, minHeight, maxHeight, measureRenderedHeight } = options;
@@ -63,10 +67,16 @@ export function useResizableHeight(options: UseResizableHeightOptions): {
     }
   });
 
+  const [isResizing, setIsResizing] = useState(false);
+
   const dragStateRef = useRef<{
     pointerId: number;
     startY: number;
     startHeight: number;
+    /** `height` state when the drag began, restored if the drag is a no-op. */
+    startStoredHeight: number | null;
+    /** True once the pointer has moved past the click-jitter threshold. */
+    moved: boolean;
     pending: number;
     rafId: number | null;
     target: HTMLElement;
@@ -88,6 +98,7 @@ export function useResizableHeight(options: UseResizableHeightOptions): {
     document.body.style.removeProperty("cursor");
     document.body.style.removeProperty("user-select");
     dragStateRef.current = null;
+    setIsResizing(false);
   }, []);
 
   const onPointerDown = useCallback(
@@ -108,10 +119,16 @@ export function useResizableHeight(options: UseResizableHeightOptions): {
         pointerId: event.pointerId,
         startY: event.clientY,
         startHeight,
+        startStoredHeight: height,
+        moved: false,
         pending: startHeight,
         rafId: null,
         target,
       };
+      // Sync state to the rendered height so callers pinning the panel to
+      // `height` during the drag don't see it jump to a stale stored value.
+      setIsResizing(true);
+      setHeight(startHeight);
     },
     [clamp, height, measureRenderedHeight, minHeight],
   );
@@ -121,6 +138,9 @@ export function useResizableHeight(options: UseResizableHeightOptions): {
       const state = dragStateRef.current;
       if (!state || state.pointerId !== event.pointerId) return;
       event.preventDefault();
+      // Ignore click jitter so a plain click on the handle doesn't commit a height.
+      if (!state.moved && Math.abs(event.clientY - state.startY) < 3) return;
+      state.moved = true;
       // The handle is on the top edge, so moving the pointer up grows the panel.
       state.pending = clamp(state.startHeight + (state.startY - event.clientY));
       if (state.rafId !== null) return;
@@ -140,6 +160,12 @@ export function useResizableHeight(options: UseResizableHeightOptions): {
       if (!state || state.pointerId !== event.pointerId) return;
       const finalHeight = clamp(state.pending);
       releasePointer(event.pointerId);
+      // A click without a real drag commits nothing (it would otherwise pin
+      // the max at whatever the content height happened to be).
+      if (!state.moved) {
+        setHeight(state.startStoredHeight);
+        return;
+      }
       // Commit once at drag-end to avoid 60Hz localStorage writes.
       try {
         setLocalStorageItem(storageKey, finalHeight, HeightSchema);
@@ -155,9 +181,9 @@ export function useResizableHeight(options: UseResizableHeightOptions): {
     (event: ReactPointerEvent<HTMLElement>) => {
       const state = dragStateRef.current;
       if (!state || state.pointerId !== event.pointerId) return;
-      // Don't persist a cancelled drag; revert to the start height.
+      // Don't persist a cancelled drag; revert to the pre-drag stored height.
       releasePointer(event.pointerId);
-      setHeight(state.startHeight);
+      setHeight(state.startStoredHeight);
     },
     [releasePointer],
   );
@@ -173,6 +199,7 @@ export function useResizableHeight(options: UseResizableHeightOptions): {
 
   return {
     height,
+    isResizing,
     handlers: { onPointerDown, onPointerMove, onPointerUp, onPointerCancel, onDoubleClick },
   };
 }

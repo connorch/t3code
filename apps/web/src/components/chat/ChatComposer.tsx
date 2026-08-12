@@ -1051,19 +1051,28 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         ?.offsetHeight ?? null,
     [],
   );
-  const { height: composerEditorHeight, handlers: composerResizeHandlers } = useResizableHeight({
+  const {
+    height: composerEditorHeight,
+    isResizing: isComposerEditorResizing,
+    handlers: composerResizeHandlers,
+  } = useResizableHeight({
     storageKey: COMPOSER_EDITOR_HEIGHT_STORAGE_KEY,
     minHeight: COMPOSER_EDITOR_MIN_HEIGHT,
     maxHeight: COMPOSER_EDITOR_MAX_HEIGHT,
     measureRenderedHeight: measureComposerEditorHeight,
   });
+  // The dragged height only raises/lowers the editor's MAX height: the editor
+  // still auto-grows with content up to it, then scrolls. While the drag is in
+  // flight the min is pinned too, so the panel tracks the cursor directly.
   // Cap against the viewport too, so a height persisted on a tall window
   // can't swallow the messages timeline on a short one.
   const composerEditorHeightStyle =
     composerEditorHeight === null
       ? undefined
       : ({
-          "--composer-editor-min-height": `min(${composerEditorHeight}px, 60svh)`,
+          ...(isComposerEditorResizing
+            ? { "--composer-editor-min-height": `min(${composerEditorHeight}px, 60svh)` }
+            : null),
           "--composer-editor-max-height": `min(${composerEditorHeight}px, 60svh)`,
         } as CSSProperties);
 
