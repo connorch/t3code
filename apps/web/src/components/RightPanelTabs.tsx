@@ -126,7 +126,7 @@ function GhostSurfaceTab({ action }: { action: SurfaceAction }) {
             className={cn(
               "flex h-6 shrink-0 items-center gap-1.5 rounded-md border border-border/70 px-2.5 text-xs text-muted-foreground",
               action.available
-                ? "hover:bg-accent/60 hover:text-foreground"
+                ? "cursor-pointer hover:bg-accent/60 hover:text-foreground"
                 : "cursor-not-allowed opacity-40",
             )}
           >
@@ -159,7 +159,7 @@ function GhostSurfaceIconButton({ action }: { action: SurfaceAction }) {
             className={cn(
               "flex size-6 shrink-0 items-center justify-center rounded-md border border-border/70 text-muted-foreground",
               action.available
-                ? "hover:bg-accent/60 hover:text-foreground"
+                ? "cursor-pointer hover:bg-accent/60 hover:text-foreground"
                 : "cursor-not-allowed opacity-40",
             )}
           >
@@ -503,7 +503,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
                 </div>
                 <Menu>
                   <MenuTrigger
-                    className="relative inline-flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground @sm/tab-strip:hidden"
+                    className="relative inline-flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground @sm/tab-strip:hidden"
                     aria-label="Add panel surface"
                   >
                     <Plus className="size-3.5" />
