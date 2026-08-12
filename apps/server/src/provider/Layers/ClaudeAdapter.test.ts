@@ -400,6 +400,52 @@ describe("ClaudeAdapterLive", () => {
     );
   });
 
+  it.effect("appends the .context note to the system prompt when the cwd carries one", () => {
+    const cwd = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "claude-context-dir-"));
+    NodeFS.mkdirSync(NodePath.join(cwd, ".context"));
+    const harness = makeHarness();
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+      yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: ProviderDriverKind.make("claudeAgent"),
+        runtimeMode: "full-access",
+        cwd,
+      });
+
+      const systemPrompt = harness.getLastCreateQueryInput()?.options.systemPrompt;
+      if (typeof systemPrompt !== "object" || Array.isArray(systemPrompt)) {
+        return assert.fail("expected a preset system prompt object");
+      }
+      assert.include(systemPrompt.append ?? "", "`.context` directory");
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
+  it.effect("omits the .context note when the cwd has no .context directory", () => {
+    const cwd = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "claude-no-context-dir-"));
+    const harness = makeHarness();
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+      yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: ProviderDriverKind.make("claudeAgent"),
+        runtimeMode: "full-access",
+        cwd,
+      });
+
+      assert.deepEqual(harness.getLastCreateQueryInput()?.options.systemPrompt, {
+        type: "preset",
+        preset: "claude_code",
+      });
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
   it.effect("uses bypass permissions for full-access claude sessions", () => {
     const harness = makeHarness();
     return Effect.gen(function* () {

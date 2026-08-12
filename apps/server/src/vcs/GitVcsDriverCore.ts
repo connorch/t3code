@@ -26,7 +26,11 @@ import {
   type ReviewDiffPreviewSource,
   type VcsRef,
 } from "@t3tools/contracts";
-import { dedupeRemoteBranchesWithLocalMatches, normalizeGitRemoteUrl } from "@t3tools/shared/git";
+import {
+  dedupeRemoteBranchesWithLocalMatches,
+  normalizeGitRemoteUrl,
+  WORKTREE_CONTEXT_DIRECTORY_NAME,
+} from "@t3tools/shared/git";
 import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
 import { compactTraceAttributes } from "@t3tools/shared/observability";
 import { decodeJsonResult } from "@t3tools/shared/schemaJson";
@@ -42,6 +46,10 @@ import { ServerConfig } from "../config.ts";
 const DEFAULT_TIMEOUT_MS = 30_000;
 // Matches the scratch names produced by removeWorktree's rename-aside step.
 const WORKTREE_TRASH_PATTERN = /^\..+\.removing-[0-9a-f]{8}$/;
+// The workspace file tree only surfaces directories that contain files, so the
+// `.context` scratch directory is seeded with an empty placeholder to keep it
+// visible.
+const WORKTREE_CONTEXT_PLACEHOLDER_FILE = "_.txt";
 
 class WorktreeTrashDeleteError extends Data.TaggedError("WorktreeTrashDeleteError")<{
   readonly detail: string;
@@ -2777,6 +2785,42 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     },
   );
 
+  // Gives every new worktree a `.context/` scratch directory without touching
+  // the project's tracked .gitignore: the ignore entry goes into the repo's
+  // `info/exclude`, which lives in the shared common dir, so one entry covers
+  // the main checkout and all worktrees. The exclude entry is written before
+  // the placeholder file so the placeholder is born ignored (untracked files
+  // would dirty status and block non-forced worktree removal; ignored files
+  // do neither).
+  const provisionContextDirectory = Effect.fn("provisionContextDirectory")(function* (
+    cwd: string,
+    worktreePath: string,
+  ) {
+    const gitCommonDir = yield* resolveGitCommonDir(cwd);
+    const excludePath = path.join(gitCommonDir, "info", "exclude");
+    const excludeEntry = `${WORKTREE_CONTEXT_DIRECTORY_NAME}/`;
+    const existingExcludes = yield* fileSystem
+      .readFileString(excludePath)
+      .pipe(Effect.orElseSucceed(() => ""));
+    const hasEntry = existingExcludes.split(/\r?\n/).some((line) => line.trim() === excludeEntry);
+    if (!hasEntry) {
+      yield* fileSystem.makeDirectory(path.dirname(excludePath), { recursive: true });
+      const separator =
+        existingExcludes.length === 0 || existingExcludes.endsWith("\n") ? "" : "\n";
+      yield* fileSystem.writeFileString(
+        excludePath,
+        `${existingExcludes}${separator}${excludeEntry}\n`,
+      );
+    }
+
+    const contextDirPath = path.join(worktreePath, WORKTREE_CONTEXT_DIRECTORY_NAME);
+    yield* fileSystem.makeDirectory(contextDirPath, { recursive: true });
+    yield* fileSystem.writeFileString(
+      path.join(contextDirPath, WORKTREE_CONTEXT_PLACEHOLDER_FILE),
+      "",
+    );
+  });
+
   const createWorktree: GitVcsDriver.GitVcsDriver["Service"]["createWorktree"] = Effect.fn(
     "createWorktree",
   )(function* (input) {
@@ -2805,6 +2849,17 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
         baseBranch,
       ]);
     }
+
+    // Best-effort: a missing scratch directory should not fail worktree
+    // creation.
+    yield* provisionContextDirectory(input.cwd, worktreePath).pipe(
+      Effect.catch((error) =>
+        Effect.logWarning("GitVcsDriver.createWorktree: failed to provision .context", {
+          worktreePath,
+          error,
+        }),
+      ),
+    );
 
     return {
       worktree: {

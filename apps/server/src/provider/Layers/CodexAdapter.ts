@@ -31,6 +31,7 @@ import * as Crypto from "effect/Crypto";
 import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
+import * as Path from "effect/Path";
 import * as Queue from "effect/Queue";
 import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
@@ -39,6 +40,7 @@ import { ChildProcessSpawner } from "effect/unstable/process";
 import * as CodexErrors from "effect-codex-app-server/errors";
 import * as EffectCodexSchema from "effect-codex-app-server/schema";
 
+import { WORKTREE_CONTEXT_DIRECTORY_NAME } from "@t3tools/shared/git";
 import { getModelSelectionStringOptionValue } from "@t3tools/shared/model";
 import { getCodexServiceTierOptionValue } from "../../codexModelOptions.ts";
 import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
@@ -1627,6 +1629,7 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
 ) {
   const boundInstanceId = options?.instanceId ?? ProviderInstanceId.make("codex");
   const fileSystem = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
   const childProcessSpawner = yield* ChildProcessSpawner.ChildProcessSpawner;
   const crypto = yield* Crypto.Crypto;
   const serverConfig = yield* Effect.service(ServerConfig);
@@ -1663,10 +1666,14 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
             ? getCodexServiceTierOptionValue(input.modelSelection)
             : undefined;
         const mcpSession = McpProviderSession.readMcpProviderSession(input.threadId);
+        const sessionCwd = input.cwd ?? process.cwd();
+        const hasContextDirectory = yield* fileSystem
+          .exists(path.join(sessionCwd, WORKTREE_CONTEXT_DIRECTORY_NAME))
+          .pipe(Effect.orElseSucceed(() => false));
         const runtimeInput: CodexSessionRuntimeOptions = {
           threadId: input.threadId,
           providerInstanceId: boundInstanceId,
-          cwd: input.cwd ?? process.cwd(),
+          cwd: sessionCwd,
           binaryPath: codexConfig.binaryPath,
           launchArgs: resolveCodexLaunchArgs(codexConfig.launchArgs, options?.environment),
           ...(options?.environment ? { environment: options.environment } : {}),
@@ -1675,6 +1682,7 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
             ? { resumeCursor: input.resumeCursor }
             : {}),
           runtimeMode: input.runtimeMode,
+          ...(hasContextDirectory ? { hasContextDirectory: true } : {}),
           ...(input.modelSelection?.instanceId === boundInstanceId
             ? { model: input.modelSelection.model }
             : {}),
