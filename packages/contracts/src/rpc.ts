@@ -164,8 +164,8 @@ import {
   SourceControlCloneRepositoryInput,
   SourceControlCloneRepositoryResult,
   SourceControlDiscoveryResult,
-  SourceControlEnableAutomergeInput,
-  SourceControlEnableAutomergeResult,
+  SourceControlSetAutomergeInput,
+  SourceControlSetAutomergeResult,
   SourceControlProviderError,
   SourceControlPublishRepositoryInput,
   SourceControlPublishRepositoryResult,
@@ -266,7 +266,7 @@ export const WS_METHODS = {
   sourceControlLookupRepository: "sourceControl.lookupRepository",
   sourceControlCloneRepository: "sourceControl.cloneRepository",
   sourceControlPublishRepository: "sourceControl.publishRepository",
-  sourceControlEnableAutomerge: "sourceControl.enableAutomerge",
+  sourceControlSetAutomerge: "sourceControl.setAutomerge",
 
   // Streaming subscriptions
   subscribeVcsStatus: "subscribeVcsStatus",
@@ -454,9 +454,9 @@ export const WsSourceControlPublishRepositoryRpc = Rpc.make(
   },
 );
 
-export const WsSourceControlEnableAutomergeRpc = Rpc.make(WS_METHODS.sourceControlEnableAutomerge, {
-  payload: SourceControlEnableAutomergeInput,
-  success: SourceControlEnableAutomergeResult,
+export const WsSourceControlSetAutomergeRpc = Rpc.make(WS_METHODS.sourceControlSetAutomerge, {
+  payload: SourceControlSetAutomergeInput,
+  success: SourceControlSetAutomergeResult,
   error: Schema.Union([SourceControlProviderError, EnvironmentAuthorizationError]),
 });
 
@@ -866,7 +866,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsSourceControlLookupRepositoryRpc,
   WsSourceControlCloneRepositoryRpc,
   WsSourceControlPublishRepositoryRpc,
-  WsSourceControlEnableAutomergeRpc,
+  WsSourceControlSetAutomergeRpc,
   WsProjectsListEntriesRpc,
   WsProjectsReadFileRpc,
   WsProjectsSearchContentsRpc,

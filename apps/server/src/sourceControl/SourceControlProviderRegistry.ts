@@ -120,10 +120,10 @@ function unsupportedProvider(
         reference: SourceControlProvider.transportSafeSourceControlErrorValue(input.reference),
         detail: `No ${kind} source control provider is registered.`,
       }),
-    enableChangeRequestAutomerge: (input) =>
+    setChangeRequestAutomerge: (input) =>
       new SourceControlProviderError({
         provider: kind,
-        operation: "enableChangeRequestAutomerge",
+        operation: "setChangeRequestAutomerge",
         cwd: input.cwd,
         reference: SourceControlProvider.transportSafeSourceControlErrorValue(input.reference),
         detail: `No ${kind} source control provider is registered.`,
@@ -198,8 +198,8 @@ function bindProviderContext(
         ...input,
         context: input.context ?? context,
       }),
-    enableChangeRequestAutomerge: (input) =>
-      provider.enableChangeRequestAutomerge({
+    setChangeRequestAutomerge: (input) =>
+      provider.setChangeRequestAutomerge({
         ...input,
         context: input.context ?? context,
       }),

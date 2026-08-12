@@ -185,6 +185,7 @@ export interface GitHubPullRequestSummary {
   readonly baseRefName: string;
   readonly headRefName: string;
   readonly state?: "open" | "closed" | "merged";
+  readonly isAutoMergeEnabled?: boolean;
   readonly isCrossRepository?: boolean;
   readonly headRepositoryNameWithOwner?: string | null;
   readonly headRepositoryOwnerLogin?: string | null;
@@ -245,9 +246,10 @@ export class GitHubCli extends Context.Service<
       readonly force?: boolean;
     }) => Effect.Effect<void, GitHubCliError>;
 
-    readonly enableAutoMergePullRequest: (input: {
+    readonly setAutoMergePullRequest: (input: {
       readonly cwd: string;
       readonly reference: string;
+      readonly enabled: boolean;
     }) => Effect.Effect<void, GitHubCliError>;
   }
 >()("t3/sourceControl/GitHubCli") {}
@@ -337,7 +339,7 @@ export const make = Effect.gen(function* () {
           "--limit",
           String(input.limit ?? 1),
           "--json",
-          "number,title,url,baseRefName,headRefName,state,mergedAt,isCrossRepository,headRepository,headRepositoryOwner",
+          "number,title,url,baseRefName,headRefName,state,mergedAt,autoMergeRequest,isCrossRepository,headRepository,headRepositoryOwner",
         ],
       }).pipe(
         Effect.map((result) => result.stdout.trim()),
@@ -371,7 +373,7 @@ export const make = Effect.gen(function* () {
           "view",
           input.reference,
           "--json",
-          "number,title,url,baseRefName,headRefName,state,mergedAt,isCrossRepository,headRepository,headRepositoryOwner",
+          "number,title,url,baseRefName,headRefName,state,mergedAt,autoMergeRequest,isCrossRepository,headRepository,headRepositoryOwner",
         ],
       }).pipe(
         Effect.map((result) => result.stdout.trim()),
@@ -455,32 +457,37 @@ export const make = Effect.gen(function* () {
         cwd: input.cwd,
         args: ["pr", "checkout", input.reference, ...(input.force ? ["--force"] : [])],
       }).pipe(Effect.asVoid),
-    enableAutoMergePullRequest: (input) =>
-      // `gh pr merge --auto` refuses to run non-interactively without an
-      // explicit strategy, so pick one the repository actually allows.
-      execute({
-        cwd: input.cwd,
-        args: [
-          "repo",
-          "view",
-          "--json",
-          "squashMergeAllowed,mergeCommitAllowed,rebaseMergeAllowed",
-          "--jq",
-          'if .squashMergeAllowed then "squash" elif .mergeCommitAllowed then "merge" else "rebase" end',
-        ],
-      }).pipe(
-        Effect.map((result) => {
-          const method = result.stdout.trim();
-          return method === "merge" || method === "rebase" ? method : "squash";
-        }),
-        Effect.flatMap((method) =>
+    setAutoMergePullRequest: (input) =>
+      input.enabled
+        ? // `gh pr merge --auto` refuses to run non-interactively without an
+          // explicit strategy, so pick one the repository actually allows.
           execute({
             cwd: input.cwd,
-            args: ["pr", "merge", input.reference, "--auto", `--${method}`],
-          }),
-        ),
-        Effect.asVoid,
-      ),
+            args: [
+              "repo",
+              "view",
+              "--json",
+              "squashMergeAllowed,mergeCommitAllowed,rebaseMergeAllowed",
+              "--jq",
+              'if .squashMergeAllowed then "squash" elif .mergeCommitAllowed then "merge" else "rebase" end',
+            ],
+          }).pipe(
+            Effect.map((result) => {
+              const method = result.stdout.trim();
+              return method === "merge" || method === "rebase" ? method : "squash";
+            }),
+            Effect.flatMap((method) =>
+              execute({
+                cwd: input.cwd,
+                args: ["pr", "merge", input.reference, "--auto", `--${method}`],
+              }),
+            ),
+            Effect.asVoid,
+          )
+        : execute({
+            cwd: input.cwd,
+            args: ["pr", "merge", input.reference, "--disable-auto"],
+          }).pipe(Effect.asVoid),
   });
 });
 
