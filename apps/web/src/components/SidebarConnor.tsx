@@ -450,9 +450,12 @@ const ConnorThreadRow = memo(function ConnorThreadRow(props: {
       >
         {title}
         {/* Stacked cell: the hover-revealed archive button replaces the
-            status dot / time label instead of sitting next to it. */}
+            status dot / time label instead of sitting next to it. The
+            indicator is pointer-events-none: its hover opacity (< 1) promotes
+            it above the sibling button in paint order, where it would
+            otherwise swallow the button's clicks. */}
         <span className="ml-auto grid shrink-0 items-center justify-items-end">
-          <span className="col-start-1 row-start-1 flex items-center transition-opacity group-hover/connor-row:opacity-0">
+          <span className="pointer-events-none col-start-1 row-start-1 flex items-center transition-opacity group-hover/connor-row:opacity-0">
             {dot !== null ? (
               <span
                 role="img"
@@ -713,9 +716,12 @@ function StackGroupSection(props: GroupSectionProps) {
               onCancelRename={props.onCancelGroupRename}
             />
             {/* Stacked cell: the hover-revealed archive/+ pair replaces the
-                group status indicator instead of sitting next to it. */}
+                group status indicator instead of sitting next to it. The
+                indicator is pointer-events-none: its hover opacity (< 1)
+                promotes it above the sibling buttons in paint order, where it
+                would otherwise swallow their clicks. */}
             <span className="ml-auto grid shrink-0 items-center justify-items-end">
-              <span className="col-start-1 row-start-1 flex items-center transition-opacity group-hover/connor-group:opacity-0">
+              <span className="pointer-events-none col-start-1 row-start-1 flex items-center transition-opacity group-hover/connor-group:opacity-0">
                 <GroupIndicatorGlyph indicator={props.indicator} />
               </span>
               <span className="col-start-1 row-start-1 flex items-center opacity-0 transition-opacity group-hover/connor-group:opacity-100 focus-within:opacity-100">
