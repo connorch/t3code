@@ -11,8 +11,8 @@ import {
   type SourceControlCloneRepositoryInput,
   type SourceControlCloneRepositoryResult,
   type SourceControlCloneProtocol,
-  type SourceControlEnableAutomergeInput,
-  type SourceControlEnableAutomergeResult,
+  type SourceControlSetAutomergeInput,
+  type SourceControlSetAutomergeResult,
   type SourceControlProviderError,
   type SourceControlProviderKind,
   type SourceControlPublishRepositoryInput,
@@ -39,9 +39,9 @@ export class SourceControlRepositoryService extends Context.Service<
     readonly publishRepository: (
       input: SourceControlPublishRepositoryInput,
     ) => Effect.Effect<SourceControlPublishRepositoryResult, SourceControlRepositoryError>;
-    readonly enableAutomerge: (
-      input: SourceControlEnableAutomergeInput,
-    ) => Effect.Effect<SourceControlEnableAutomergeResult, SourceControlProviderError>;
+    readonly setAutomerge: (
+      input: SourceControlSetAutomergeInput,
+    ) => Effect.Effect<SourceControlSetAutomergeResult, SourceControlProviderError>;
   }
 >()("t3/sourceControl/SourceControlRepositoryService") {}
 
@@ -281,15 +281,16 @@ export const make = Effect.gen(function* () {
     },
   );
 
-  const enableAutomerge = Effect.fn("SourceControlRepositoryService.enableAutomerge")(function* (
-    input: SourceControlEnableAutomergeInput,
+  const setAutomerge = Effect.fn("SourceControlRepositoryService.setAutomerge")(function* (
+    input: SourceControlSetAutomergeInput,
   ) {
     const provider = yield* providers.resolve({ cwd: input.cwd });
-    yield* provider.enableChangeRequestAutomerge({
+    yield* provider.setChangeRequestAutomerge({
       cwd: input.cwd,
       reference: input.reference,
+      enabled: input.enabled,
     });
-    return { reference: input.reference };
+    return { reference: input.reference, enabled: input.enabled };
   });
 
   return SourceControlRepositoryService.of({
@@ -301,7 +302,7 @@ export const make = Effect.gen(function* () {
       ),
     publishRepository: (input) =>
       publishRepository(input).pipe(mapRepositoryError("publishRepository", input.provider)),
-    enableAutomerge,
+    setAutomerge,
   });
 });
 

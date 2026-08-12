@@ -33,7 +33,7 @@ export type SourceControlActionKind =
   | "init"
   | "pull"
   | "publishRepository"
-  | "enableAutomerge"
+  | "setAutomerge"
   | "runStackedAction"
   | "preparePullRequestThread";
 
@@ -60,7 +60,7 @@ const ACTION_OPERATION = {
   init: "init",
   pull: "pull",
   publishRepository: "publish_repository",
-  enableAutomerge: "enable_automerge",
+  setAutomerge: "set_automerge",
   runStackedAction: "run_change_request",
   preparePullRequestThread: "prepare_pull_request_thread",
 } as const satisfies Record<SourceControlActionKind, VcsActionOperation>;
@@ -306,8 +306,8 @@ export function useSourceControlPublishRepositoryAction(scope: SourceControlActi
   });
 }
 
-export function useSourceControlEnableAutomergeAction(scope: SourceControlActionScope) {
-  const enableAutomerge = useAtomCommand(sourceControlEnvironment.enableAutomerge, {
+export function useSourceControlSetAutomergeAction(scope: SourceControlActionScope) {
+  const setAutomerge = useAtomCommand(sourceControlEnvironment.setAutomerge, {
     reportFailure: false,
   });
   const status = useEnvironmentQuery(
@@ -319,32 +319,33 @@ export function useSourceControlEnableAutomergeAction(scope: SourceControlAction
       : null,
   );
   const action = useCallback(
-    async (input: { reference: string }) => {
+    async (input: { reference: string; enabled: boolean }) => {
       const target = resolveScope(scope);
       if (target === null) {
         return AsyncResult.failure<never, VcsActionUnavailableError>(
           Cause.fail(
             new VcsActionUnavailableError({
-              operation: "enable_automerge",
+              operation: "set_automerge",
               environmentId: scope.environmentId,
               cwd: scope.cwd,
             }),
           ),
         );
       }
-      return enableAutomerge({
+      return setAutomerge({
         environmentId: target.environmentId,
         input: {
           cwd: target.cwd,
           reference: input.reference,
+          enabled: input.enabled,
         },
       });
     },
-    [enableAutomerge, scope],
+    [setAutomerge, scope],
   );
   return useAction({
-    kind: "enableAutomerge",
-    label: "Enabling automerge",
+    kind: "setAutomerge",
+    label: "Updating automerge",
     scope,
     action,
     onSuccess: status.refresh,

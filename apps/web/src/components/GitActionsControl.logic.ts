@@ -19,7 +19,7 @@ export interface GitActionMenuItem {
   label: string;
   disabled: boolean;
   icon: GitActionIconName;
-  kind: "open_dialog" | "open_pr" | "enable_automerge" | "run_action_with_automerge";
+  kind: "open_dialog" | "open_pr" | "toggle_automerge" | "run_action_with_automerge";
   dialogAction?: GitDialogAction;
 }
 
@@ -141,6 +141,7 @@ export function buildMenuItems(
   const showAutomergeItems =
     gitStatus.sourceControlProvider?.kind === "github" && (!gitStatus.isDefaultRef || hasOpenPr);
   const canAutomerge = !isBusy && hasOpenPr;
+  const isAutomergeEnabled = hasOpenPr && gitStatus.pr?.isAutoMergeEnabled === true;
   const canCommitPushPrAutomerge =
     !isBusy &&
     hasBranch &&
@@ -179,10 +180,10 @@ export function buildMenuItems(
       ? [
           {
             id: "automerge",
-            label: "Automerge",
+            label: isAutomergeEnabled ? "Disable automerge" : "Automerge",
             disabled: !canAutomerge,
             icon: "automerge",
-            kind: "enable_automerge",
+            kind: "toggle_automerge",
           } satisfies GitActionMenuItem,
           {
             id: "commit_push_pr_automerge",

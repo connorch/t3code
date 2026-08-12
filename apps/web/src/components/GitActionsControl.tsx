@@ -74,7 +74,7 @@ import { useOpenInPreferredEditor } from "~/editorPreferences";
 import {
   useGitStackedAction,
   useSourceControlActionRunning,
-  useSourceControlEnableAutomergeAction,
+  useSourceControlSetAutomergeAction,
   useSourceControlPublishRepositoryAction,
   useVcsInitAction,
   useVcsPullAction,
@@ -161,7 +161,7 @@ const RUNNING_SOURCE_CONTROL_ACTIONS = [
   "runStackedAction",
   "pull",
   "publishRepository",
-  "enableAutomerge",
+  "setAutomerge",
 ] as const;
 
 const PUBLISH_PROVIDER_OPTIONS = [
@@ -1151,7 +1151,7 @@ export default function GitActionsControl({
   const initAction = useVcsInitAction(sourceControlScope);
   const runImmediateGitAction = useGitStackedAction(sourceControlScope);
   const pullAction = useVcsPullAction(sourceControlScope);
-  const enableAutomergeAction = useSourceControlEnableAutomergeAction(sourceControlScope);
+  const setAutomergeAction = useSourceControlSetAutomergeAction(sourceControlScope);
   const isGitActionRunning = useSourceControlActionRunning(
     sourceControlScope,
     RUNNING_SOURCE_CONTROL_ACTIONS,
@@ -1482,8 +1482,9 @@ export default function GitActionsControl({
           timeout: 0,
           data: scopedToastData,
         });
-        const automergeResult = await enableAutomergeAction.run({
+        const automergeResult = await setAutomergeAction.run({
           reference: String(actionResult.pr.number),
+          enabled: true,
         });
         if (automergeResult._tag === "Failure") {
           if (!isAtomCommandInterrupted(automergeResult)) {
@@ -1680,7 +1681,7 @@ export default function GitActionsControl({
     }
   };
 
-  const runEnableAutomerge = () => {
+  const runToggleAutomerge = () => {
     const pr = gitStatusForActions?.pr?.state === "open" ? gitStatusForActions.pr : null;
     if (!pr) {
       toastManager.add({
@@ -1690,14 +1691,15 @@ export default function GitActionsControl({
       });
       return;
     }
+    const enabled = pr.isAutoMergeEnabled !== true;
     const toastId = toastManager.add({
       type: "loading",
-      title: "Enabling automerge...",
+      title: enabled ? "Enabling automerge..." : "Disabling automerge...",
       timeout: 0,
       data: threadToastData,
     });
     void (async () => {
-      const result = await enableAutomergeAction.run({ reference: String(pr.number) });
+      const result = await setAutomergeAction.run({ reference: String(pr.number), enabled });
       if (result._tag === "Failure") {
         if (isAtomCommandInterrupted(result)) {
           toastManager.close(toastId);
@@ -1708,7 +1710,7 @@ export default function GitActionsControl({
           toastId,
           stackedThreadToast({
             type: "error",
-            title: "Automerge failed",
+            title: enabled ? "Automerge failed" : "Disabling automerge failed",
             description: error instanceof Error ? error.message : "An error occurred.",
             ...(threadToastData !== undefined ? { data: threadToastData } : {}),
           }),
@@ -1718,8 +1720,10 @@ export default function GitActionsControl({
 
       toastManager.update(toastId, {
         type: "success",
-        title: "Automerge enabled",
-        description: `${changeRequestTerminology.shortLabel} #${pr.number} will merge automatically once its requirements are met.`,
+        title: enabled ? "Automerge enabled" : "Automerge disabled",
+        description: enabled
+          ? `${changeRequestTerminology.shortLabel} #${pr.number} will merge automatically once its requirements are met.`
+          : `${changeRequestTerminology.shortLabel} #${pr.number} will no longer merge automatically.`,
         data: threadToastData,
       });
     })();
@@ -1731,8 +1735,8 @@ export default function GitActionsControl({
       void openExistingPr();
       return;
     }
-    if (item.kind === "enable_automerge") {
-      runEnableAutomerge();
+    if (item.kind === "toggle_automerge") {
+      runToggleAutomerge();
       return;
     }
     if (item.kind === "run_action_with_automerge") {
