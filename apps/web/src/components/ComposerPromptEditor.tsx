@@ -1753,8 +1753,9 @@ function ComposerPromptEditorInner({
             <ContentEditable
               className={cn(
                 // The size comes from .composer-editor-surface so Settings -> Appearance
-                // can drive it; keep everything else here.
-                "block max-h-50 min-h-17.5 w-full overflow-y-auto whitespace-pre-wrap wrap-break-word bg-transparent leading-relaxed text-foreground focus:outline-none",
+                // can drive it; keep everything else here. The height bounds read CSS
+                // variables so ChatComposer's drag-to-resize handle can override them.
+                "block max-h-[var(--composer-editor-max-height,20rem)] min-h-[var(--composer-editor-min-height,4.375rem)] w-full overflow-y-auto whitespace-pre-wrap wrap-break-word bg-transparent leading-relaxed text-foreground focus:outline-none",
                 className,
               )}
               data-testid="composer-editor"
