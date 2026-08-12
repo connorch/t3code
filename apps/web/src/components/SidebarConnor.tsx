@@ -827,6 +827,9 @@ function ConnorProjectHeader(props: {
   containsActive: boolean;
   /** True when the project is marked hidden but the filter is showing it. */
   hidden: boolean;
+  /** True when the project has no worktrees or threads; hovering the row
+   * then explains the emptiness instead of rendering an empty-state line. */
+  empty: boolean;
   dragHandleProps: ConnorProjectDragHandleProps | null;
   suppressClickAfterDragRef: React.RefObject<boolean>;
   onToggle: (project: SidebarProjectSnapshot) => void;
@@ -834,13 +837,13 @@ function ConnorProjectHeader(props: {
   onContextMenu: (project: SidebarProjectSnapshot, position: { x: number; y: number }) => void;
 }) {
   const { project, dragHandleProps } = props;
-  return (
+  const header = (
     <div
       role="button"
       tabIndex={0}
       data-testid={`sidebar-connor-project-${project.projectKey}`}
       aria-expanded={props.expanded}
-      title={project.workspaceRoot}
+      title={props.empty ? undefined : project.workspaceRoot}
       ref={dragHandleProps?.setActivatorNodeRef}
       {...(dragHandleProps ? dragHandleProps.attributes : {})}
       {...(dragHandleProps ? dragHandleProps.listeners : {})}
@@ -921,6 +924,13 @@ function ConnorProjectHeader(props: {
         <PlusIcon className="size-3.5" />
       </button>
     </div>
+  );
+  if (!props.empty) return header;
+  return (
+    <Tooltip>
+      <TooltipTrigger render={header} />
+      <TooltipPopup side="right">No threads yet</TooltipPopup>
+    </Tooltip>
   );
 }
 
@@ -2166,13 +2176,14 @@ export default function SidebarConnor() {
                     expanded={section.expanded}
                     containsActive={section.containsActive}
                     hidden={section.hidden}
+                    empty={section.groups.length === 0}
                     dragHandleProps={dragHandleProps}
                     suppressClickAfterDragRef={suppressProjectClickAfterDragRef}
                     onToggle={handleProjectToggle}
                     onNewThreadInProject={handleNewThreadInProject}
                     onContextMenu={handleProjectContextMenu}
                   />
-                  {section.expanded ? (
+                  {section.expanded && section.groups.length > 0 ? (
                     // ps-4.5 (18px) + the rows' own 8px inset lines their text
                     // up with the project title (4px padding + 16px icon slot
                     // + 6px gap = 26px).
@@ -2217,13 +2228,6 @@ export default function SidebarConnor() {
                           renderThreadRow={renderThreadRow}
                         />
                       ))}
-                      {section.groups.length === 0 ? (
-                        <li className="list-none">
-                          <p className="px-2 py-2 text-xs text-sidebar-muted-foreground/70">
-                            No threads yet
-                          </p>
-                        </li>
-                      ) : null}
                     </ul>
                   ) : null}
                 </>
