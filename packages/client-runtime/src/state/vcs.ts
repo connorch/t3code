@@ -15,7 +15,12 @@ import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
 import { Atom, AtomRegistry } from "effect/unstable/reactivity";
 
-import { createEnvironmentRpcCommand, createEnvironmentSubscriptionAtomFamily } from "./runtime.ts";
+import {
+  createEnvironmentRpcCommand,
+  createEnvironmentRpcQueryAtomFamily,
+  createEnvironmentSubscriptionAtomFamily,
+  type AtomCommandConcurrency,
+} from "./runtime.ts";
 import type { EnvironmentRegistry } from "../connection/registry.ts";
 import { EnvironmentSupervisor } from "../connection/supervisor.ts";
 import { safeErrorLogAttributes } from "../errors/safeLog.ts";
@@ -30,6 +35,16 @@ import {
 } from "./vcsRefInvalidation.ts";
 
 const OFFLINE_BRANCH_LIST_LIMIT = 100;
+
+// Worktree archive commands have no cwd, so they cannot share the per-cwd vcs
+// concurrency key; serialize them per environment instead.
+const worktreeArchiveCommandConcurrency: AtomCommandConcurrency<{
+  readonly environmentId: EnvironmentId;
+  readonly input: unknown;
+}> = {
+  mode: "serial",
+  key: ({ environmentId }) => JSON.stringify([environmentId, "worktree-archive"]),
+};
 const VCS_REFS_IDLE_TTL_MS = 30_000;
 const VCS_REFS_RETRY_SCHEDULE = Schedule.exponential("1 second").pipe(
   Schedule.modifyDelay(({ duration }) =>
@@ -310,6 +325,22 @@ export function createVcsEnvironmentAtoms<R, E>(
       scheduler: vcsCommandScheduler,
       concurrency: vcsCommandConcurrency,
       onSettled: invalidateRefs,
+    }),
+    archiveWorktree: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:vcs:archive-worktree",
+      tag: WS_METHODS.vcsArchiveWorktree,
+      scheduler: vcsCommandScheduler,
+      concurrency: worktreeArchiveCommandConcurrency,
+    }),
+    unarchiveWorktree: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:vcs:unarchive-worktree",
+      tag: WS_METHODS.vcsUnarchiveWorktree,
+      scheduler: vcsCommandScheduler,
+      concurrency: worktreeArchiveCommandConcurrency,
+    }),
+    worktreeArchives: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:vcs:worktree-archives",
+      tag: WS_METHODS.vcsListWorktreeArchives,
     }),
     createRef: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:vcs:create-ref",
