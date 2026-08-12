@@ -4,6 +4,7 @@ import { isPreviewableUrl } from "@t3tools/shared/preview";
 import * as Schema from "effect/Schema";
 
 import type { OpenPreviewMutation } from "~/browser/openFileInPreview";
+import { urlMatchesPreviewLinkPattern } from "~/browser/previewLinkPattern";
 import { applyPreviewServerSnapshot, isPreviewSupportedInRuntime } from "~/previewStateStore";
 import { useRightPanelStore } from "~/rightPanelStore";
 
@@ -39,13 +40,19 @@ interface OpenTerminalLinkInPreviewInput<E> {
   readonly openPreview: OpenPreviewMutation<E>;
   readonly localApi: LocalApi;
   readonly fallbackToBrowser: () => void;
+  /** Beta `openLinksInPreviewPattern` setting; matching URLs skip the menu. */
+  readonly previewLinkPattern?: string;
 }
 
 export async function openTerminalLinkInPreview<E>(
   input: OpenTerminalLinkInPreviewInput<E>,
 ): Promise<void> {
+  const matchesLinkPattern = urlMatchesPreviewLinkPattern(
+    input.previewLinkPattern ?? "",
+    input.url,
+  );
   const supportsPreview =
-    isPreviewableUrl(input.url) &&
+    (isPreviewableUrl(input.url) || matchesLinkPattern) &&
     isPreviewSupportedInRuntime() &&
     input.threadRef.threadId.length > 0;
 
@@ -61,23 +68,29 @@ export async function openTerminalLinkInPreview<E>(
   };
 
   let choice: "open-in-preview" | "open-in-browser" | null;
-  try {
-    choice = await input.localApi.contextMenu.show(
-      [
-        { id: "open-in-preview", label: "Open in preview" },
-        { id: "open-in-browser", label: "Open in browser" },
-      ],
-      input.position,
-    );
-  } catch (cause) {
-    console.error(
-      new TerminalLinkContextMenuShowError({
-        ...errorContext,
-        cause,
-      }),
-    );
-    input.fallbackToBrowser();
-    return;
+  if (matchesLinkPattern) {
+    // Links matching the user's pattern open in the integrated browser
+    // directly - no menu.
+    choice = "open-in-preview";
+  } else {
+    try {
+      choice = await input.localApi.contextMenu.show(
+        [
+          { id: "open-in-preview", label: "Open in preview" },
+          { id: "open-in-browser", label: "Open in browser" },
+        ],
+        input.position,
+      );
+    } catch (cause) {
+      console.error(
+        new TerminalLinkContextMenuShowError({
+          ...errorContext,
+          cause,
+        }),
+      );
+      input.fallbackToBrowser();
+      return;
+    }
   }
 
   if (choice === "open-in-preview") {

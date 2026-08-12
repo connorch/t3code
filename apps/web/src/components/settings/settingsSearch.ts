@@ -185,6 +185,11 @@ export const SETTINGS_SEARCH_ITEMS = [
     targetId: "sidebar-v2",
   },
   {
+    id: "open-links-in-integrated-browser",
+    title: "Open matching links in the integrated browser",
+    to: "/settings/beta",
+  },
+  {
     id: "archive",
     title: "Archived threads",
     to: "/settings/archived",

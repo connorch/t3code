@@ -57,7 +57,7 @@ import {
   type ThreadTerminalGroup,
 } from "../types";
 import { readLocalApi } from "~/localApi";
-import { useClientSettings } from "../hooks/useSettings";
+import { getClientSettings, useClientSettings } from "../hooks/useSettings";
 import { useLocalStorage } from "../hooks/useLocalStorage";
 import { useAttachedTerminalSession } from "../state/terminalSessions";
 import { serverEnvironment } from "../state/server";
@@ -624,6 +624,7 @@ export function TerminalViewport({
             openPreview,
             localApi,
             fallbackToBrowser,
+            previewLinkPattern: getClientSettings().openLinksInPreviewPattern,
           });
           return;
         }

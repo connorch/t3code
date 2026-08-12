@@ -135,6 +135,14 @@ export const DEFAULT_ENVIRONMENT_IDENTIFICATION_MODE: EnvironmentIdentificationM
 export const FontFamilyPreference = Schema.String.check(Schema.isMaxLength(200));
 export type FontFamilyPreference = typeof FontFamilyPreference.Type;
 
+/**
+ * RegExp source (JavaScript syntax). External links whose full URL matches
+ * open in the integrated browser instead of the system browser. Empty means
+ * off. Only meaningful on desktop, where the integrated browser exists.
+ */
+export const OpenLinksInPreviewPattern = Schema.String.check(Schema.isMaxLength(500));
+export type OpenLinksInPreviewPattern = typeof OpenLinksInPreviewPattern.Type;
+
 export const ClientSettingsSchema = Schema.Struct({
   autoOpenPlanSidebar: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   confirmThreadArchive: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
@@ -184,6 +192,9 @@ export const ClientSettingsSchema = Schema.Struct({
       model: TrimmedNonEmptyString,
     }),
   ).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
+  openLinksInPreviewPattern: OpenLinksInPreviewPattern.pipe(
+    Schema.withDecodingDefault(Effect.succeed("")),
+  ),
   providerModelPreferences: Schema.Record(
     ProviderInstanceId,
     Schema.Struct({
@@ -803,6 +814,7 @@ export const ClientSettingsPatch = Schema.Struct({
       }),
     ),
   ),
+  openLinksInPreviewPattern: Schema.optionalKey(OpenLinksInPreviewPattern),
   providerModelPreferences: Schema.optionalKey(
     Schema.Record(
       ProviderInstanceId,

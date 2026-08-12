@@ -85,6 +85,7 @@ import { useAtomCommand } from "../state/use-atom-command";
 import { useAtomQueryRunner } from "../state/use-atom-query-runner";
 import { writeTextToClipboard } from "../hooks/useCopyToClipboard";
 import { isPreviewSupportedInRuntime } from "../previewStateStore";
+import { urlMatchesPreviewLinkPattern } from "../browser/previewLinkPattern";
 import {
   isBrowserPreviewFile,
   openFileInPreview,
@@ -1469,7 +1470,34 @@ function ChatMarkdown({
                 onClick?.(event);
                 if (isSameDocumentLink && href) {
                   handleMarkdownFragmentClick(event, href);
+                  return;
                 }
+                // Beta: plain left-clicks on links matching the user's URL
+                // pattern open in the integrated browser. Modified clicks
+                // (cmd/ctrl/shift/alt) keep the default system-browser
+                // behavior as an escape hatch.
+                if (
+                  !canOpenInPreview ||
+                  !href ||
+                  !faviconHost ||
+                  event.defaultPrevented ||
+                  event.metaKey ||
+                  event.ctrlKey ||
+                  event.shiftKey ||
+                  event.altKey ||
+                  !urlMatchesPreviewLinkPattern(getClientSettings().openLinksInPreviewPattern, href)
+                ) {
+                  return;
+                }
+                event.preventDefault();
+                void (async () => {
+                  const result = await openExternalLinkInPreview(href);
+                  if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
+                    // Fall back to the system browser so the click always
+                    // lands somewhere.
+                    void readLocalApi()?.shell.openExternal(href);
+                  }
+                })();
               }}
               onContextMenu={(event) => {
                 if (!canOpenInPreview || !href || !faviconHost) return;

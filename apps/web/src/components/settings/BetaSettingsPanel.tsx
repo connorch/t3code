@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { SidebarMode } from "@t3tools/contracts/settings";
 
 import {
@@ -34,6 +34,59 @@ const SIDEBAR_MODE_OPTIONS: Record<SidebarMode, { label: string; description: st
 };
 
 const SIDEBAR_MODE_ORDER: readonly SidebarMode[] = ["default", "flat", "connor-1"];
+
+const PREVIEW_LINK_PATTERN_MAX_LENGTH = 500;
+
+function isValidPreviewLinkPattern(source: string): boolean {
+  if (source.length === 0) return true;
+  try {
+    return new RegExp(source) instanceof RegExp;
+  } catch {
+    return false;
+  }
+}
+
+function PreviewLinkPatternInput({
+  value,
+  onCommit,
+}: {
+  value: string;
+  onCommit: (pattern: string) => void;
+}) {
+  // Local draft so a regex can be invalid mid-edit; only valid patterns (or
+  // empty, meaning off) are persisted, and the field snaps back on blur.
+  const [draft, setDraft] = useState(value);
+  useEffect(() => {
+    setDraft(value);
+  }, [value]);
+  const isInvalid = useMemo(() => !isValidPreviewLinkPattern(draft.trim()), [draft]);
+
+  return (
+    <div className="flex w-full flex-col items-end gap-1 sm:w-80">
+      <Input
+        type="text"
+        spellCheck={false}
+        maxLength={PREVIEW_LINK_PATTERN_MAX_LENGTH}
+        placeholder={String.raw`e.g. ^https://github\.com/`}
+        value={draft}
+        onChange={(event) => {
+          const next = event.target.value;
+          setDraft(next);
+          const source = next.trim();
+          if (isValidPreviewLinkPattern(source)) {
+            onCommit(source);
+          }
+        }}
+        onBlur={() => setDraft(value)}
+        aria-invalid={isInvalid || undefined}
+        aria-label="URL pattern for links opened in the integrated browser"
+      />
+      {isInvalid ? (
+        <span className="text-[11px] text-destructive">Invalid regular expression</span>
+      ) : null}
+    </div>
+  );
+}
 
 function AutoSettleDaysInput({
   value,
@@ -80,6 +133,9 @@ export function BetaSettingsPanel() {
   const sidebarMode = useSidebarMode();
   const sidebarAutoSettleAfterDays = useClientSettings(
     (settings) => settings.sidebarAutoSettleAfterDays,
+  );
+  const openLinksInPreviewPattern = useClientSettings(
+    (settings) => settings.openLinksInPreviewPattern,
   );
   const updateSettings = useUpdateClientSettings();
 
@@ -148,6 +204,16 @@ export function BetaSettingsPanel() {
             ) : null}
           </>
         ) : null}
+        <SettingsRow
+          {...searchableSetting("open-links-in-integrated-browser")}
+          description="Links whose URL matches this regular expression open in the integrated browser instead of your system browser. Leave empty to turn off. Desktop app only."
+          control={
+            <PreviewLinkPatternInput
+              value={openLinksInPreviewPattern}
+              onCommit={(pattern) => updateSettings({ openLinksInPreviewPattern: pattern })}
+            />
+          }
+        />
       </SettingsSection>
     </SettingsPageContainer>
   );
