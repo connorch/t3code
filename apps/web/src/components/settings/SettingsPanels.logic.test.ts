@@ -134,6 +134,12 @@ describe("project grouping toggle", () => {
     expect(projectGroupingModeFromToggle(false, "repository_path")).toBe("separate");
     expect(projectGroupingModeFromToggle(true, "repository_path")).toBe("repository_path");
   });
+
+  it("restores worktree grouping when the toggle is cycled", () => {
+    expect(isProjectGroupingEnabled("worktree")).toBe(true);
+    expect(projectGroupingModeFromToggle(false, "worktree")).toBe("separate");
+    expect(projectGroupingModeFromToggle(true, "worktree")).toBe("worktree");
+  });
 });
 
 describe("formatDiagnosticsDescription", () => {

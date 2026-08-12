@@ -172,6 +172,7 @@ const SETTLED_TAIL_PAGE_COUNT = 25;
 const PROJECT_GROUPING_MODE_LABELS: Record<SidebarProjectGroupingMode, string> = {
   repository: "Group by repository",
   repository_path: "Group by repository path",
+  worktree: "Group by worktree",
   separate: "Keep separate",
 };
 
@@ -3354,6 +3355,7 @@ export default function SidebarV2() {
                             value === "inherit" ||
                             value === "repository" ||
                             value === "repository_path" ||
+                            value === "worktree" ||
                             value === "separate"
                           ) {
                             updateProjectGroupingPreference(member, value);
@@ -3385,6 +3387,9 @@ export default function SidebarV2() {
                           </SelectItem>
                           <SelectItem hideIndicator value="repository_path">
                             {PROJECT_GROUPING_MODE_LABELS.repository_path}
+                          </SelectItem>
+                          <SelectItem hideIndicator value="worktree">
+                            {PROJECT_GROUPING_MODE_LABELS.worktree}
                           </SelectItem>
                           <SelectItem hideIndicator value="separate">
                             {PROJECT_GROUPING_MODE_LABELS.separate}
