@@ -1653,6 +1653,20 @@ function ChatViewContent(props: ChatViewProps) {
     });
   }, [activeThreadKey, existingOpenTerminalThreadKeys, terminalUiState.terminalOpen]);
   const latestTurnSettled = isLatestTurnSettled(activeLatestTurn, activeThread?.session ?? null);
+  // Viewing a thread counts as reviewing it: stamp the visit so the sidebar
+  // unread indicators clear, and so later completions have a baseline to
+  // compare against (hasUnseenCompletion treats never-visited threads as
+  // read). Server timestamps only - the local clock can sit ahead of or
+  // behind the server's. A settled turn stamps its completion time; a turn
+  // still in flight stamps its request time, so a thread the user kicks off
+  // and leaves mid-turn still lights up unread when the turn completes.
+  useEffect(() => {
+    if (!isServerThread || activeThreadKey === null || !activeLatestTurn) return;
+    const visitedAt = latestTurnSettled
+      ? activeLatestTurn.completedAt
+      : activeLatestTurn.requestedAt;
+    if (visitedAt) markThreadVisited(activeThreadKey, visitedAt);
+  }, [activeLatestTurn, activeThreadKey, isServerThread, latestTurnSettled, markThreadVisited]);
   const activeProjectRef = activeThread
     ? scopeProjectRef(activeThread.environmentId, activeThread.projectId)
     : null;
