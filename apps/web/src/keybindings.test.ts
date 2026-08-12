@@ -6,6 +6,7 @@ import {
   type KeybindingWhenNode,
   type ResolvedKeybindingsConfig,
 } from "@t3tools/contracts";
+import { DEFAULT_RESOLVED_KEYBINDINGS } from "@t3tools/shared/keybindings";
 import {
   formatShortcutLabel,
   isChatNewShortcut,
@@ -827,5 +828,33 @@ describe("plus key parsing", () => {
         platform: "Linux",
       }),
     );
+  });
+});
+
+describe("default mod+w routing", () => {
+  const cmdW = event({ key: "w", code: "KeyW", metaKey: true });
+  const resolve = (context: Record<string, boolean>) =>
+    resolveShortcutCommand(cmdW, DEFAULT_RESOLVED_KEYBINDINGS, {
+      platform: "MacIntel",
+      context,
+    });
+
+  // The drawer terminal sits inside the chat column and the panel terminal
+  // inside the right panel, so a focused terminal always reports two regions.
+  it("closes the focused terminal, in the drawer or in the right panel", () => {
+    assert.strictEqual(resolve({ terminalFocus: true, chatFocus: true }), "terminal.close");
+    assert.strictEqual(resolve({ terminalFocus: true, rightPanelFocus: true }), "terminal.close");
+  });
+
+  it("closes the focused right-panel tab", () => {
+    assert.strictEqual(resolve({ rightPanelFocus: true }), "rightPanel.closeTab");
+  });
+
+  it("archives the thread from the chat column", () => {
+    assert.strictEqual(resolve({ chatFocus: true }), "thread.archive");
+  });
+
+  it("leaves the window default alone when neither region owns focus", () => {
+    assert.isNull(resolve({}));
   });
 });
