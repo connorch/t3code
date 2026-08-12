@@ -23,6 +23,7 @@ import { serializeComposerFileLink } from "@t3tools/shared/composerTrigger";
 import { createModelSelection, normalizeModelSlug } from "@t3tools/shared/model";
 import {
   memo,
+  type CSSProperties,
   type ReactNode,
   useCallback,
   useEffect,
@@ -227,6 +228,7 @@ import {
 import { formatProviderSkillDisplayName } from "../../providerSkillPresentation";
 import { searchProviderSkills } from "../../providerSkillSearch";
 import { useMediaQuery } from "../../hooks/useMediaQuery";
+import { useResizableHeight } from "../../hooks/useResizableHeight";
 import type { ReviewCommentContext } from "../../reviewCommentContext";
 
 const runtimeModeConfig: Record<
@@ -254,6 +256,11 @@ const runtimeModeConfig: Record<
     icon: LockOpenIcon,
   },
 };
+
+const COMPOSER_EDITOR_HEIGHT_STORAGE_KEY = "t3code:composer-editor-height";
+/** Matches the editor's auto min-height (min-h of 4.375rem). */
+const COMPOSER_EDITOR_MIN_HEIGHT = 70;
+const COMPOSER_EDITOR_MAX_HEIGHT = 800;
 
 const runtimeModeOptions = Object.keys(runtimeModeConfig) as RuntimeMode[];
 const COMPOSER_FLOATING_LAYER_SELECTOR = [
@@ -1034,6 +1041,31 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
    * next draft.
    */
   const pendingImageCompressionsRef = useRef<Map<ThreadId, number>>(new Map());
+
+  // ------------------------------------------------------------------
+  // Prompt editor height (drag handle on the composer's top edge)
+  // ------------------------------------------------------------------
+  const measureComposerEditorHeight = useCallback(
+    () =>
+      composerSurfaceRef.current?.querySelector<HTMLElement>('[data-testid="composer-editor"]')
+        ?.offsetHeight ?? null,
+    [],
+  );
+  const { height: composerEditorHeight, handlers: composerResizeHandlers } = useResizableHeight({
+    storageKey: COMPOSER_EDITOR_HEIGHT_STORAGE_KEY,
+    minHeight: COMPOSER_EDITOR_MIN_HEIGHT,
+    maxHeight: COMPOSER_EDITOR_MAX_HEIGHT,
+    measureRenderedHeight: measureComposerEditorHeight,
+  });
+  // Cap against the viewport too, so a height persisted on a tall window
+  // can't swallow the messages timeline on a short one.
+  const composerEditorHeightStyle =
+    composerEditorHeight === null
+      ? undefined
+      : ({
+          "--composer-editor-min-height": `min(${composerEditorHeight}px, 60svh)`,
+          "--composer-editor-max-height": `min(${composerEditorHeight}px, 60svh)`,
+        } as CSSProperties);
 
   // ------------------------------------------------------------------
   // Derived: composer send state
@@ -2694,7 +2726,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     >
       <div
         className={cn(
-          "group rounded-[22px] p-px transition-colors duration-200",
+          "group relative rounded-[22px] p-px transition-colors duration-200",
           composerProviderState.composerFrameClassName,
         )}
         onDragEnter={onComposerDragEnter}
@@ -2734,6 +2766,21 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
             scheduleComposerCollapseCheck();
           }}
         >
+          {!isComposerCollapsedMobile && (
+            <div
+              role="separator"
+              aria-orientation="horizontal"
+              aria-label="Resize prompt input"
+              title="Drag to resize, double-click to reset"
+              className="group/composer-resize absolute inset-x-0 -top-1 z-20 h-2.5 cursor-row-resize touch-none select-none"
+              {...composerResizeHandlers}
+            >
+              <span
+                aria-hidden
+                className="pointer-events-none absolute left-1/2 top-1/2 h-1 w-12 -translate-x-1/2 -translate-y-1/2 rounded-full bg-transparent transition-colors duration-150 group-hover/composer-resize:bg-border group-active/composer-resize:bg-primary/60"
+              />
+            </div>
+          )}
           {!isComposerCollapsedMobile &&
             (activePendingApproval ? (
               <div className="rounded-t-[19px] border-b border-border/65 bg-muted/20">
@@ -3055,7 +3102,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                 </div>
               )}
 
-            <div className="relative">
+            <div className="relative" style={composerEditorHeightStyle}>
               <ComposerPromptEditor
                 editorRef={composerEditorRef}
                 value={
