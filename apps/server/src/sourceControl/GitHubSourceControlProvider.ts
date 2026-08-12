@@ -30,6 +30,9 @@ function toChangeRequest(summary: GitHubCli.GitHubPullRequestSummary): ChangeReq
     headRefName: summary.headRefName,
     state: summary.state ?? "open",
     updatedAt: Option.none(),
+    ...(summary.isAutoMergeEnabled !== undefined
+      ? { isAutoMergeEnabled: summary.isAutoMergeEnabled }
+      : {}),
     ...(summary.isCrossRepository !== undefined
       ? { isCrossRepository: summary.isCrossRepository }
       : {}),
@@ -139,7 +142,7 @@ export const make = Effect.gen(function* () {
             "--limit",
             String(input.limit ?? 20),
             "--json",
-            "number,title,url,baseRefName,headRefName,state,mergedAt,updatedAt,isCrossRepository,headRepository,headRepositoryOwner",
+            "number,title,url,baseRefName,headRefName,state,mergedAt,updatedAt,autoMergeRequest,isCrossRepository,headRepository,headRepositoryOwner",
           ],
         })
         .pipe(
@@ -295,13 +298,13 @@ export const make = Effect.gen(function* () {
             }),
         ),
       ),
-    enableChangeRequestAutomerge: (input) =>
-      github.enableAutoMergePullRequest(input).pipe(
+    setChangeRequestAutomerge: (input) =>
+      github.setAutoMergePullRequest(input).pipe(
         Effect.mapError(
           (error) =>
             new SourceControlProviderError({
               provider: "github",
-              operation: "enableChangeRequestAutomerge",
+              operation: "setChangeRequestAutomerge",
               command: error.command,
               cwd: input.cwd,
               reference: SourceControlProvider.transportSafeSourceControlErrorValue(

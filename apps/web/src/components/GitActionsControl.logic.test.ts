@@ -150,13 +150,31 @@ describe("when: automerge availability depends on PR and provider", () => {
         label: "Automerge",
         disabled: false,
         icon: "automerge",
-        kind: "enable_automerge",
+        kind: "toggle_automerge",
       },
     );
     assert.deepInclude(items[items.length - 1], {
       id: "commit_push_pr_automerge",
       disabled: true,
     });
+  });
+
+  it("buildMenuItems relabels the automerge item when automerge is already enabled", () => {
+    const items = buildMenuItems(
+      status({
+        pr: { ...openPr, isAutoMergeEnabled: true },
+        sourceControlProvider: githubProvider,
+      }),
+      false,
+    );
+    assert.deepInclude(
+      items.find((item) => item.id === "automerge"),
+      {
+        label: "Disable automerge",
+        disabled: false,
+        kind: "toggle_automerge",
+      },
+    );
   });
 
   it("buildMenuItems disables both automerge items while busy", () => {

@@ -39,7 +39,7 @@ function makeProvider(
     createRepository: () => Effect.succeed(CLONE_URLS),
     getDefaultBranch: () => Effect.succeed(null),
     checkoutChangeRequest: () => unsupported("checkoutChangeRequest"),
-    enableChangeRequestAutomerge: () => unsupported("enableChangeRequestAutomerge"),
+    setChangeRequestAutomerge: () => unsupported("setChangeRequestAutomerge"),
     ...overrides,
   };
 }

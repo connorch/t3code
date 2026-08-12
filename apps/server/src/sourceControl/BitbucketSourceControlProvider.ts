@@ -182,10 +182,10 @@ export const make = Effect.gen(function* () {
               }),
           ),
         ),
-    enableChangeRequestAutomerge: (input) =>
+    setChangeRequestAutomerge: (input) =>
       new SourceControlProviderError({
         provider: "bitbucket",
-        operation: "enableChangeRequestAutomerge",
+        operation: "setChangeRequestAutomerge",
         cwd: input.cwd,
         reference: SourceControlProvider.transportSafeSourceControlErrorValue(input.reference),
         detail: "Automerge is not supported for Bitbucket yet.",

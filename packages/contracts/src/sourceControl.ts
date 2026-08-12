@@ -30,6 +30,7 @@ export const ChangeRequest = Schema.Struct({
   headRefName: TrimmedNonEmptyString,
   state: ChangeRequestState,
   updatedAt: Schema.Option(Schema.DateTimeUtc),
+  isAutoMergeEnabled: Schema.optional(Schema.Boolean),
   isCrossRepository: Schema.optional(Schema.Boolean),
   headRepositoryNameWithOwner: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
   headRepositoryOwnerLogin: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
@@ -103,16 +104,18 @@ export const SourceControlPublishRepositoryResult = Schema.Struct({
 });
 export type SourceControlPublishRepositoryResult = typeof SourceControlPublishRepositoryResult.Type;
 
-export const SourceControlEnableAutomergeInput = Schema.Struct({
+export const SourceControlSetAutomergeInput = Schema.Struct({
   cwd: TrimmedNonEmptyString,
   reference: TrimmedNonEmptyString,
+  enabled: Schema.Boolean,
 });
-export type SourceControlEnableAutomergeInput = typeof SourceControlEnableAutomergeInput.Type;
+export type SourceControlSetAutomergeInput = typeof SourceControlSetAutomergeInput.Type;
 
-export const SourceControlEnableAutomergeResult = Schema.Struct({
+export const SourceControlSetAutomergeResult = Schema.Struct({
   reference: TrimmedNonEmptyString,
+  enabled: Schema.Boolean,
 });
-export type SourceControlEnableAutomergeResult = typeof SourceControlEnableAutomergeResult.Type;
+export type SourceControlSetAutomergeResult = typeof SourceControlSetAutomergeResult.Type;
 
 export const SourceControlDiscoveryStatus = Schema.Literals(["available", "missing"]);
 export type SourceControlDiscoveryStatus = typeof SourceControlDiscoveryStatus.Type;
