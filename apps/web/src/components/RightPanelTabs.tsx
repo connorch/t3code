@@ -1,6 +1,16 @@
 import type { ContextMenuItem, PreviewSessionSnapshot } from "@t3tools/contracts";
 import { getTerminalLabel } from "@t3tools/shared/terminalLabels";
-import { Bot, ClipboardList, FileDiff, Files, Globe2, Plus, TerminalSquare, X } from "lucide-react";
+import {
+  Bot,
+  ClipboardList,
+  FileDiff,
+  Files,
+  Globe2,
+  Plus,
+  TerminalSquare,
+  X,
+  type LucideIcon,
+} from "lucide-react";
 import {
   type MouseEvent as ReactMouseEvent,
   type ReactElement,
@@ -87,112 +97,80 @@ function SurfaceMenuItem(props: {
   return <DisabledReasonTooltip reason={props.disabledReason} trigger={item} />;
 }
 
-function RightPanelEmptyState(props: {
-  onAddBrowser: () => void;
-  onAddTerminal: () => void;
-  onAddDiff: () => void;
-  onAddFiles: () => void;
-  onAddAgents: () => void;
-  browserAvailable: boolean;
-  diffAvailable: boolean;
-  filesAvailable: boolean;
-}) {
-  const actions = [
-    {
-      label: "Browser",
-      description: "Open a local app or URL.",
-      icon: Globe2,
-      available: props.browserAvailable,
-      disabledReason: SURFACE_DISABLED_REASONS.browser,
-      onClick: props.onAddBrowser,
-    },
-    {
-      label: "Terminal",
-      description: "Start a shell in this workspace.",
-      icon: TerminalSquare,
-      available: true,
-      disabledReason: null,
-      onClick: props.onAddTerminal,
-    },
-    {
-      label: "Files",
-      description: "Browse and read workspace files.",
-      icon: Files,
-      available: props.filesAvailable,
-      disabledReason: SURFACE_DISABLED_REASONS.files,
-      onClick: props.onAddFiles,
-    },
-    {
-      label: "Diff",
-      description: "Review changes in this thread.",
-      icon: FileDiff,
-      available: props.diffAvailable,
-      disabledReason: SURFACE_DISABLED_REASONS.diff,
-      onClick: props.onAddDiff,
-    },
-    {
-      label: "Agents",
-      description: "Watch subagents and workflows run.",
-      icon: Bot,
-      available: true,
-      disabledReason: null,
-      onClick: props.onAddAgents,
-    },
-  ] as const;
+/** One launchable surface, shared by the ghost tabs, icon ghosts, and the narrow-panel + menu. */
+interface SurfaceAction {
+  label: string;
+  /** Tooltip and aria-label for the icon-only ghost, e.g. "New terminal". */
+  addLabel: string;
+  description: string;
+  icon: LucideIcon;
+  surfaceKind: RightPanelSurface["kind"];
+  /** Multi-instance surfaces keep their ghost while instances are open; singletons drop it. */
+  multiInstance: boolean;
+  available: boolean;
+  disabledReason: string | null;
+  onClick: () => void;
+}
 
+/** Labeled ghost tab shown in the empty tab strip; clicking it opens the surface in place. */
+function GhostSurfaceTab({ action }: { action: SurfaceAction }) {
+  const Icon = action.icon;
   return (
-    <div className="flex min-h-0 flex-1 items-center justify-center p-6">
-      <div className="w-full max-w-xl">
-        <div className="mb-5 text-center">
-          <h3 className="text-sm font-medium text-foreground">Open a surface</h3>
-          <p className="mt-1 text-xs text-muted-foreground">
-            Choose what to show in the right panel.
-          </p>
-        </div>
-        <div className="grid grid-cols-2 gap-2">
-          {actions.map((action) => {
-            const Icon = action.icon;
-            const content = (
-              <>
-                <Icon className="mb-3 size-5" />
-                <span className="text-sm font-medium">{action.label}</span>
-                <span className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                  {action.description}
-                </span>
-              </>
-            );
-            if (action.available) {
-              return (
-                <button
-                  key={action.label}
-                  type="button"
-                  onClick={action.onClick}
-                  className="flex min-h-28 w-full flex-col items-start rounded-lg border border-border/80 bg-card p-4 text-left transition hover:border-border hover:bg-accent/60 dark:border-transparent dark:shadow-none dark:inset-ring-1 dark:inset-ring-white/5"
-                >
-                  {content}
-                </button>
-              );
-            }
-            const disabledCard = (
-              <button
-                type="button"
-                className="flex min-h-28 w-full cursor-not-allowed flex-col items-start rounded-lg border border-border/80 bg-card p-4 text-left opacity-40 dark:border-transparent dark:shadow-none dark:inset-ring-1 dark:inset-ring-white/5"
-                aria-disabled="true"
-              >
-                {content}
-              </button>
-            );
-            return (
-              <DisabledReasonTooltip
-                key={action.label}
-                reason={action.disabledReason}
-                trigger={disabledCard}
-              />
-            );
-          })}
-        </div>
-      </div>
-    </div>
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <button
+            type="button"
+            onClick={action.available ? action.onClick : undefined}
+            aria-disabled={!action.available}
+            className={cn(
+              "flex h-6 shrink-0 items-center gap-1.5 rounded-md border border-border/70 px-2.5 text-xs text-muted-foreground",
+              action.available
+                ? "hover:bg-accent/60 hover:text-foreground"
+                : "cursor-not-allowed opacity-40",
+            )}
+          >
+            <Icon className="size-3" />
+            {action.label}
+          </button>
+        }
+      />
+      <TooltipPopup side="bottom">
+        {action.available ? action.description : action.disabledReason}
+      </TooltipPopup>
+    </Tooltip>
+  );
+}
+
+/** Icon-only ghost shown after real tabs so surfaces stay one click away in the same spot. */
+function GhostSurfaceIconButton({ action }: { action: SurfaceAction }) {
+  const Icon = action.icon;
+  return (
+    <Tooltip>
+      {/* No delay: the icon-only ghosts are unlabeled, so the tooltip is their label. */}
+      <TooltipTrigger
+        delay={0}
+        render={
+          <button
+            type="button"
+            onClick={action.available ? action.onClick : undefined}
+            aria-disabled={!action.available}
+            aria-label={action.addLabel}
+            className={cn(
+              "flex size-6 shrink-0 items-center justify-center rounded-md border border-border/70 text-muted-foreground",
+              action.available
+                ? "hover:bg-accent/60 hover:text-foreground"
+                : "cursor-not-allowed opacity-40",
+            )}
+          >
+            <Icon className="size-3" />
+          </button>
+        }
+      />
+      <TooltipPopup side="bottom">
+        {action.available ? action.addLabel : action.disabledReason}
+      </TooltipPopup>
+    </Tooltip>
   );
 }
 
@@ -287,6 +265,69 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
   const ownsDesktopTitleBar = isElectron && props.mode === "inline";
   const { resolvedTheme } = useTheme();
   const tabListRef = useRef<HTMLDivElement>(null);
+
+  const surfaceActions: readonly SurfaceAction[] = [
+    {
+      label: "Browser",
+      addLabel: "New browser",
+      description: "Open a local app or URL.",
+      icon: Globe2,
+      surfaceKind: "preview",
+      multiInstance: true,
+      available: props.browserAvailable,
+      disabledReason: SURFACE_DISABLED_REASONS.browser,
+      onClick: props.onAddBrowser,
+    },
+    {
+      label: "Terminal",
+      addLabel: "New terminal",
+      description: "Start a shell in this workspace.",
+      icon: TerminalSquare,
+      surfaceKind: "terminal",
+      multiInstance: true,
+      available: true,
+      disabledReason: null,
+      onClick: props.onAddTerminal,
+    },
+    {
+      label: "Files",
+      addLabel: "Files",
+      description: "Browse and read workspace files.",
+      icon: Files,
+      surfaceKind: "files",
+      multiInstance: false,
+      available: props.filesAvailable,
+      disabledReason: SURFACE_DISABLED_REASONS.files,
+      onClick: props.onAddFiles,
+    },
+    {
+      label: "Diff",
+      addLabel: "Diff",
+      description: "Review changes in this thread.",
+      icon: FileDiff,
+      surfaceKind: "diff",
+      multiInstance: false,
+      available: props.diffAvailable,
+      disabledReason: SURFACE_DISABLED_REASONS.diff,
+      onClick: props.onAddDiff,
+    },
+    {
+      label: "Agents",
+      addLabel: "Agents",
+      description: "Watch subagents and workflows run.",
+      icon: Bot,
+      surfaceKind: "agents",
+      multiInstance: false,
+      available: true,
+      disabledReason: null,
+      onClick: props.onAddAgents,
+    },
+  ];
+  const ghostIconActions = surfaceActions.filter(
+    (action) =>
+      action.multiInstance ||
+      !props.surfaces.some((surface) => surface.kind === action.surfaceKind),
+  );
 
   const handleTabContextMenu = useCallback(
     async (event: ReactMouseEvent, surface: RightPanelSurface) => {
@@ -383,7 +424,10 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
           ref={tabListRef}
           hideScrollbars
           scrollFade
-          className={cn("min-w-0 flex-1 rounded-none", ownsDesktopTitleBar && "drag-region")}
+          className={cn(
+            "@container/tab-strip min-w-0 flex-1 rounded-none",
+            ownsDesktopTitleBar && "drag-region",
+          )}
           data-right-panel-tab-list
         >
           <div className="flex h-full w-max min-w-full items-center gap-1">
@@ -443,66 +487,57 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
                 </div>
               );
             })}
-            {props.surfaces.length > 0 ? (
-              <Menu>
-                <MenuTrigger
-                  className="relative inline-flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
-                  aria-label="Add panel surface"
-                >
-                  <Plus className="size-3.5" />
-                </MenuTrigger>
-                <MenuPopup align="start" side="bottom" sideOffset={6} className="min-w-44">
-                  <SurfaceMenuItem
-                    available={props.browserAvailable}
-                    disabledReason={SURFACE_DISABLED_REASONS.browser}
-                    onClick={props.onAddBrowser}
+            {props.surfaces.length === 0 ? (
+              surfaceActions.map((action) => <GhostSurfaceTab key={action.label} action={action} />)
+            ) : (
+              <>
+                {/* Icon ghosts keep every surface one click away; below @sm they collapse into the + menu. */}
+                <div
+                  className="mx-0.5 hidden h-4 w-px shrink-0 bg-border/70 @sm/tab-strip:block"
+                  aria-hidden
+                />
+                <div className="hidden items-center gap-1 @sm/tab-strip:flex">
+                  {ghostIconActions.map((action) => (
+                    <GhostSurfaceIconButton key={action.label} action={action} />
+                  ))}
+                </div>
+                <Menu>
+                  <MenuTrigger
+                    className="relative inline-flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground @sm/tab-strip:hidden"
+                    aria-label="Add panel surface"
                   >
-                    <Globe2 />
-                    Browser
-                  </SurfaceMenuItem>
-                  <SurfaceMenuItem available onClick={props.onAddTerminal}>
-                    <TerminalSquare />
-                    Terminal
-                  </SurfaceMenuItem>
-                  <SurfaceMenuItem
-                    available={props.filesAvailable}
-                    disabledReason={SURFACE_DISABLED_REASONS.files}
-                    onClick={props.onAddFiles}
-                  >
-                    <Files />
-                    Files
-                  </SurfaceMenuItem>
-                  <SurfaceMenuItem
-                    available={props.diffAvailable}
-                    disabledReason={SURFACE_DISABLED_REASONS.diff}
-                    onClick={props.onAddDiff}
-                  >
-                    <FileDiff />
-                    Diff
-                  </SurfaceMenuItem>
-                  <SurfaceMenuItem available onClick={props.onAddAgents}>
-                    <Bot />
-                    Agents
-                  </SurfaceMenuItem>
-                </MenuPopup>
-              </Menu>
-            ) : null}
+                    <Plus className="size-3.5" />
+                  </MenuTrigger>
+                  <MenuPopup align="start" side="bottom" sideOffset={6} className="min-w-44">
+                    {surfaceActions.map((action) => {
+                      const Icon = action.icon;
+                      return (
+                        <SurfaceMenuItem
+                          key={action.label}
+                          available={action.available}
+                          {...(action.disabledReason !== null
+                            ? { disabledReason: action.disabledReason }
+                            : {})}
+                          onClick={action.onClick}
+                        >
+                          <Icon />
+                          {action.label}
+                        </SurfaceMenuItem>
+                      );
+                    })}
+                  </MenuPopup>
+                </Menu>
+              </>
+            )}
           </div>
         </ScrollArea>
         {props.layoutControls}
       </div>
       <div className="flex min-h-0 flex-1 flex-col" data-right-panel-surface-content>
         {props.activeSurfaceId === null ? (
-          <RightPanelEmptyState
-            onAddBrowser={props.onAddBrowser}
-            onAddTerminal={props.onAddTerminal}
-            onAddDiff={props.onAddDiff}
-            onAddFiles={props.onAddFiles}
-            onAddAgents={props.onAddAgents}
-            browserAvailable={props.browserAvailable}
-            diffAvailable={props.diffAvailable}
-            filesAvailable={props.filesAvailable}
-          />
+          <div className="flex min-h-0 flex-1 items-center justify-center p-6">
+            <p className="text-xs text-muted-foreground/60">No surface open</p>
+          </div>
         ) : (
           props.children
         )}
