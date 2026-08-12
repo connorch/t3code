@@ -449,7 +449,22 @@ const ConnorThreadRow = memo(function ConnorThreadRow(props: {
         onContextMenu={handleContextMenu}
       >
         {title}
-        <span className="ml-auto flex shrink-0 items-center gap-1">
+        {/* Stacked cell: the hover-revealed archive button replaces the
+            status dot / time label instead of sitting next to it. */}
+        <span className="ml-auto grid shrink-0 items-center justify-items-end">
+          <span className="col-start-1 row-start-1 flex items-center transition-opacity group-hover/connor-row:opacity-0">
+            {dot !== null ? (
+              <span
+                role="img"
+                aria-label={THREAD_DOT_LABEL[dot]}
+                className={cn("size-1.5 rounded-full", THREAD_DOT_CLASS[dot])}
+              />
+            ) : (
+              <span className="text-xs tabular-nums text-sidebar-muted-foreground/50">
+                {threadTimeLabel(thread)}
+              </span>
+            )}
+          </span>
           <button
             type="button"
             aria-label="Archive thread"
@@ -458,21 +473,10 @@ const ConnorThreadRow = memo(function ConnorThreadRow(props: {
               event.stopPropagation();
               props.onArchiveThread(threadRef);
             }}
-            className="inline-flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-sm text-sidebar-muted-foreground opacity-0 transition-opacity hover:bg-sidebar-control-surface hover:text-sidebar-foreground focus-visible:opacity-100 group-hover/connor-row:opacity-100"
+            className="col-start-1 row-start-1 inline-flex size-5 cursor-pointer items-center justify-center rounded-sm text-sidebar-muted-foreground opacity-0 transition-opacity hover:bg-sidebar-control-surface hover:text-sidebar-foreground focus-visible:opacity-100 group-hover/connor-row:opacity-100"
           >
             <ArchiveIcon className="size-3.5" />
           </button>
-          {dot !== null ? (
-            <span
-              role="img"
-              aria-label={THREAD_DOT_LABEL[dot]}
-              className={cn("size-1.5 rounded-full", THREAD_DOT_CLASS[dot])}
-            />
-          ) : (
-            <span className="text-xs tabular-nums text-sidebar-muted-foreground/50">
-              {threadTimeLabel(thread)}
-            </span>
-          )}
         </span>
       </div>
     </li>
@@ -622,7 +626,7 @@ function GroupPlusButton(props: {
         event.stopPropagation();
         props.onNewThreadInGroup(props.group);
       }}
-      className="inline-flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-sm text-sidebar-muted-foreground opacity-0 transition-opacity hover:bg-sidebar-control-surface hover:text-sidebar-foreground focus-visible:opacity-100 group-hover/connor-group:opacity-100"
+      className="inline-flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-sm text-sidebar-muted-foreground hover:bg-sidebar-control-surface hover:text-sidebar-foreground"
     >
       <PlusIcon className="size-3.5" />
     </button>
@@ -643,7 +647,7 @@ function GroupArchiveButton(props: {
         event.stopPropagation();
         props.onArchiveGroup(props.group);
       }}
-      className="inline-flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-sm text-sidebar-muted-foreground opacity-0 transition-opacity hover:bg-sidebar-control-surface hover:text-sidebar-foreground focus-visible:opacity-100 group-hover/connor-group:opacity-100"
+      className="inline-flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-sm text-sidebar-muted-foreground hover:bg-sidebar-control-surface hover:text-sidebar-foreground"
     >
       <ArchiveIcon className="size-3.5" />
     </button>
@@ -708,11 +712,19 @@ function StackGroupSection(props: GroupSectionProps) {
               onCommitRename={() => props.onCommitGroupRename(group)}
               onCancelRename={props.onCancelGroupRename}
             />
-            <GroupPlusButton group={group} onNewThreadInGroup={props.onNewThreadInGroup} />
-            {group.kind === "worktree" ? (
-              <GroupArchiveButton group={group} onArchiveGroup={props.onArchiveGroup} />
-            ) : null}
-            <GroupIndicatorGlyph indicator={props.indicator} />
+            {/* Stacked cell: the hover-revealed archive/+ pair replaces the
+                group status indicator instead of sitting next to it. */}
+            <span className="ml-auto grid shrink-0 items-center justify-items-end">
+              <span className="col-start-1 row-start-1 flex items-center transition-opacity group-hover/connor-group:opacity-0">
+                <GroupIndicatorGlyph indicator={props.indicator} />
+              </span>
+              <span className="col-start-1 row-start-1 flex items-center opacity-0 transition-opacity group-hover/connor-group:opacity-100 focus-within:opacity-100">
+                {group.kind === "worktree" ? (
+                  <GroupArchiveButton group={group} onArchiveGroup={props.onArchiveGroup} />
+                ) : null}
+                <GroupPlusButton group={group} onNewThreadInGroup={props.onNewThreadInGroup} />
+              </span>
+            </span>
           </div>
           <div className="flex min-w-0 items-center gap-1.5 text-xs text-sidebar-muted-foreground/70">
             {group.branch ? (
@@ -1711,25 +1723,6 @@ export default function SidebarConnor() {
   );
 
   // ── Archive ───────────────────────────────────────────────────────
-  const handleArchiveThread = useCallback(
-    (threadRef: ScopedThreadRef) => {
-      void (async () => {
-        const result = await archiveThread(threadRef);
-        if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
-          const error = squashAtomCommandFailure(result);
-          toastManager.add(
-            stackedThreadToast({
-              type: "error",
-              title: "Failed to archive thread",
-              description: error instanceof Error ? error.message : "An error occurred.",
-            }),
-          );
-        }
-      })();
-    },
-    [archiveThread],
-  );
-
   const handleArchiveGroup = useCallback(
     (group: ConnorGroup) => {
       if (group.kind !== "worktree") return;
@@ -1770,6 +1763,38 @@ export default function SidebarConnor() {
       })();
     },
     [archiveWorktreeMutation, routeGroupKey, router, worktreeNameByKey],
+  );
+
+  const handleArchiveThread = useCallback(
+    (threadRef: ScopedThreadRef) => {
+      // Archiving a worktree's sole thread archives the whole worktree
+      // instead — the server archives its threads as part of that.
+      const threadKey = scopedThreadKey(threadRef);
+      for (const section of projectSections) {
+        for (const { group } of section.groups) {
+          if (group.kind !== "worktree" || group.threads.length !== 1) continue;
+          const sole = group.threads[0]!;
+          if (scopedThreadKey(scopeThreadRef(sole.environmentId, sole.id)) === threadKey) {
+            handleArchiveGroup(group);
+            return;
+          }
+        }
+      }
+      void (async () => {
+        const result = await archiveThread(threadRef);
+        if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
+          const error = squashAtomCommandFailure(result);
+          toastManager.add(
+            stackedThreadToast({
+              type: "error",
+              title: "Failed to archive thread",
+              description: error instanceof Error ? error.message : "An error occurred.",
+            }),
+          );
+        }
+      })();
+    },
+    [archiveThread, handleArchiveGroup, projectSections],
   );
 
   // ── Click / activate ──────────────────────────────────────────────
