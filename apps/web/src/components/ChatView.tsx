@@ -183,9 +183,11 @@ import { NO_PROVIDER_MODEL_SELECTION } from "../providerInstances";
 import { useClientSettings, useEnvironmentSettings } from "../hooks/useSettings";
 import { useNowMinute } from "../hooks/useNowMinute";
 import { useNewThreadHandler } from "../hooks/useHandleNewThread";
+import { useThreadActions } from "../hooks/useThreadActions";
 import { resolveAppModelSelectionForInstance } from "../modelSelection";
 import { getTerminalFocusOwner } from "../lib/terminalFocus";
-import { preventRepeatedTerminalCloseShortcut } from "../lib/terminalCloseShortcut";
+import { getFocusRegion, trackFocusRegion } from "../lib/focusRegion";
+import { preventRepeatedCloseShortcut } from "../lib/terminalCloseShortcut";
 import { resolveNewDraftStartFromOrigin } from "../lib/chatThreadActions";
 import {
   deriveLogicalProjectKeyFromSettings,
@@ -3430,6 +3432,22 @@ function ChatViewContent(props: ChatViewProps) {
     },
     [activeThreadRef, cleanupRightPanelSurfaces, syncActivePreviewSurface],
   );
+  const { archiveThread } = useThreadActions();
+  /** mod+w from the chat column: archive and hand the user the next thread. */
+  const archiveActiveThread = useCallback(async () => {
+    if (!activeThreadRef || !isServerThread) return;
+    const result = await archiveThread(activeThreadRef);
+    if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
+      const error = squashAtomCommandFailure(result);
+      toastManager.add(
+        stackedThreadToast({
+          type: "error",
+          title: "Failed to archive thread",
+          description: error instanceof Error ? error.message : "An error occurred.",
+        }),
+      );
+    }
+  }, [activeThreadRef, archiveThread, isServerThread]);
   const closeOtherRightPanelSurfaces = useCallback(
     (surface: RightPanelSurface) => {
       if (!activeThreadRef) return;
@@ -4614,9 +4632,11 @@ function ChatViewContent(props: ChatViewProps) {
     terminalUiOpenByThreadRef.current[activeThreadKey] = current;
   }, [activeThreadKey, focusComposer, terminalUiState.terminalOpen]);
 
+  useEffect(() => trackFocusRegion(), []);
+
   useEffect(() => {
     const handler = (event: globalThis.KeyboardEvent) => {
-      if (preventRepeatedTerminalCloseShortcut(event, keybindings)) {
+      if (preventRepeatedCloseShortcut(event, keybindings)) {
         event.stopPropagation();
         return;
       }
@@ -4627,9 +4647,12 @@ function ChatViewContent(props: ChatViewProps) {
       if (event.defaultPrevented && terminalFocusOwner === null) {
         return;
       }
+      const focusRegion = getFocusRegion();
       const shortcutContext = {
         terminalFocus: terminalFocusOwner !== null,
         terminalOpen: Boolean(terminalUiState.terminalOpen),
+        rightPanelFocus: focusRegion === "right-panel",
+        chatFocus: focusRegion === "chat",
         modelPickerOpen: composerRef.current?.isModelPickerOpen() ?? false,
       };
 
@@ -4704,6 +4727,24 @@ function ChatViewContent(props: ChatViewProps) {
         return;
       }
 
+      if (command === "rightPanel.closeTab") {
+        if (!activeRightPanelSurface) return;
+        event.preventDefault();
+        event.stopPropagation();
+        closeRightPanelSurface(activeRightPanelSurface);
+        return;
+      }
+
+      if (command === "thread.archive") {
+        // A draft has nothing to archive; leave the key to the window so the
+        // OS default stays intact rather than silently doing nothing.
+        if (!activeThreadRef || !isServerThread) return;
+        event.preventDefault();
+        event.stopPropagation();
+        void archiveActiveThread();
+        return;
+      }
+
       if (command === "terminal.new") {
         event.preventDefault();
         event.stopPropagation();
@@ -4746,12 +4787,16 @@ function ChatViewContent(props: ChatViewProps) {
     activeProject,
     activeRightPanelSurface,
     addTerminalSurface,
+    archiveActiveThread,
     terminalUiState.terminalOpen,
     terminalUiState.activeTerminalId,
     activeThreadId,
+    activeThreadRef,
+    closeRightPanelSurface,
     closeTerminal,
     closePanelTerminal,
     createNewTerminal,
+    isServerThread,
     setTerminalOpen,
     runProjectScript,
     splitTerminal,
@@ -6077,6 +6122,7 @@ function ChatViewContent(props: ChatViewProps) {
           "flex min-h-0 min-w-0 flex-col overflow-x-hidden",
           rightPanelMaximized ? "w-0 flex-none" : "flex-1",
         )}
+        data-chat-column
         data-chat-column-maximized-away={rightPanelMaximized ? "true" : "false"}
       >
         {/* Top bar */}

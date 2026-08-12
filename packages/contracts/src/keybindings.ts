@@ -55,6 +55,8 @@ const STATIC_KEYBINDING_COMMANDS = [
   "terminal.new",
   "terminal.close",
   "rightPanel.toggle",
+  "rightPanel.closeTab",
+  "thread.archive",
   "diff.toggle",
   "preview.toggle",
   "preview.refresh",

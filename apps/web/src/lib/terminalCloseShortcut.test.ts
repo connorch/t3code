@@ -3,23 +3,33 @@ import { describe, expect, it } from "vite-plus/test";
 import type { ResolvedKeybindingsConfig } from "@t3tools/contracts";
 
 import {
-  preventRepeatedTerminalCloseShortcut,
+  preventRepeatedCloseShortcut,
   preventTerminalCloseShortcut,
   type TerminalCloseShortcutEvent,
 } from "./terminalCloseShortcut";
 
+const modW = {
+  key: "w",
+  metaKey: false,
+  ctrlKey: false,
+  shiftKey: false,
+  altKey: false,
+  modKey: true,
+} as const;
+
 const keybindings = [
   {
     command: "terminal.close",
-    shortcut: {
-      key: "w",
-      metaKey: false,
-      ctrlKey: false,
-      shiftKey: false,
-      altKey: false,
-      modKey: true,
-    },
+    shortcut: modW,
     whenAst: { type: "identifier", name: "terminalFocus" },
+  },
+] satisfies ResolvedKeybindingsConfig;
+
+const archiveOnlyKeybindings = [
+  {
+    command: "thread.archive",
+    shortcut: modW,
+    whenAst: { type: "identifier", name: "chatFocus" },
   },
 ] satisfies ResolvedKeybindingsConfig;
 
@@ -67,27 +77,30 @@ describe("terminal close shortcut guards", () => {
     let browserCloseCount = 0;
     for (const repeat of [true, true, true]) {
       const event = keyboardEvent({ repeat });
-      preventRepeatedTerminalCloseShortcut(event, keybindings, "Linux x86_64");
+      preventRepeatedCloseShortcut(event, keybindings, "Linux x86_64");
       if (!event.defaultPrevented) browserCloseCount += 1;
     }
 
     expect(browserCloseCount).toBe(0);
-    expect(preventRepeatedTerminalCloseShortcut(keyboardEvent(), keybindings, "Linux x86_64")).toBe(
-      false,
-    );
+    expect(preventRepeatedCloseShortcut(keyboardEvent(), keybindings, "Linux x86_64")).toBe(false);
+  });
+
+  it("swallows repeats for any command bound to the window-close key", () => {
+    const repeat = keyboardEvent({ repeat: true });
+
+    expect(preventRepeatedCloseShortcut(repeat, archiveOnlyKeybindings, "Linux x86_64")).toBe(true);
+    expect(repeat.defaultPrevented).toBe(true);
   });
 
   it("leaves a non-repeated window close and unrelated repeats alone", () => {
     const deliberateWindowClose = keyboardEvent({ repeat: false });
     const unrelatedRepeat = keyboardEvent({ key: "q", code: "KeyQ", repeat: true });
 
-    expect(
-      preventRepeatedTerminalCloseShortcut(deliberateWindowClose, keybindings, "Linux x86_64"),
-    ).toBe(false);
-    expect(deliberateWindowClose.defaultPrevented).toBe(false);
-    expect(preventRepeatedTerminalCloseShortcut(unrelatedRepeat, keybindings, "Linux x86_64")).toBe(
+    expect(preventRepeatedCloseShortcut(deliberateWindowClose, keybindings, "Linux x86_64")).toBe(
       false,
     );
+    expect(deliberateWindowClose.defaultPrevented).toBe(false);
+    expect(preventRepeatedCloseShortcut(unrelatedRepeat, keybindings, "Linux x86_64")).toBe(false);
     expect(unrelatedRepeat.defaultPrevented).toBe(false);
   });
 });

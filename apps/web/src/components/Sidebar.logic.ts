@@ -774,6 +774,44 @@ export function getFallbackThreadIdAfterDelete<
     )[0]?.id ?? null
   );
 }
+
+/**
+ * Thread to land on after archiving `archivedThreadId`: the top live thread
+ * sharing its worktree. Archiving is a per-worktree cleanup gesture, so
+ * staying in the worktree beats bouncing to an unrelated draft.
+ *
+ * Null when the thread has no worktree (it lives in the project's own
+ * checkout) or was the worktree's last live thread - callers fall back to
+ * their usual redirect then.
+ */
+export function getWorktreeSiblingThreadIdAfterArchive<
+  T extends Pick<Thread, "id" | "createdAt" | "updatedAt"> &
+    ThreadSortInput & { readonly worktreePath: string | null; readonly archivedAt: string | null },
+>(input: {
+  threads: readonly T[];
+  archivedThreadId: T["id"];
+  sortOrder: SidebarThreadSortOrder;
+}): T["id"] | null {
+  const { archivedThreadId, sortOrder, threads } = input;
+  const archivedThread = threads.find((thread) => thread.id === archivedThreadId);
+  const worktreePath = archivedThread?.worktreePath?.trim();
+  if (!worktreePath) {
+    return null;
+  }
+
+  return (
+    sortThreads(
+      threads.filter(
+        (thread) =>
+          thread.id !== archivedThreadId &&
+          thread.archivedAt === null &&
+          thread.worktreePath?.trim() === worktreePath,
+      ),
+      sortOrder,
+    )[0]?.id ?? null
+  );
+}
+
 export function getProjectSortTimestamp(
   project: SidebarProject,
   projectThreads: readonly ThreadSortInput[],

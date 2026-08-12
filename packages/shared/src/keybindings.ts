@@ -26,6 +26,13 @@ export const DEFAULT_KEYBINDINGS: ReadonlyArray<KeybindingRule> = [
   { key: "mod+shift+d", command: "terminal.splitVertical", when: "terminalFocus" },
   { key: "mod+n", command: "terminal.new", when: "terminalFocus" },
   { key: "mod+w", command: "terminal.close", when: "terminalFocus" },
+  // mod+w is the OS "close window" key. Claiming it for whatever the user is
+  // focused on keeps a stray press from tearing down the whole app: a focused
+  // terminal closes (above), a focused right-panel tab closes, and the chat
+  // archives its thread. Anything else still falls through to the window.
+  // Both panels can host a terminal, so each defers to terminal.close above.
+  { key: "mod+w", command: "rightPanel.closeTab", when: "rightPanelFocus && !terminalFocus" },
+  { key: "mod+w", command: "thread.archive", when: "chatFocus && !terminalFocus" },
   { key: "mod+d", command: "diff.toggle", when: "!terminalFocus" },
   { key: "mod+shift+j", command: "preview.toggle" },
   { key: "mod+r", command: "preview.refresh", when: "previewFocus" },

@@ -8,6 +8,7 @@ import {
   getVisibleSidebarThreadIds,
   resolveAdjacentThreadId,
   getFallbackThreadIdAfterDelete,
+  getWorktreeSiblingThreadIdAfterArchive,
   getVisibleThreadsForProject,
   getProjectSortTimestamp,
   hasUnseenCompletion,
@@ -1216,6 +1217,78 @@ describe("getFallbackThreadIdAfterDelete", () => {
     expect(fallbackThreadId).toBe(ThreadId.make("thread-next"));
   });
 });
+
+describe("getWorktreeSiblingThreadIdAfterArchive", () => {
+  const worktreeThread = (id: string, createdAt: string, worktreePath: string | null) =>
+    makeThread({
+      id: ThreadId.make(id),
+      createdAt,
+      updatedAt: createdAt,
+      worktreePath,
+      messages: [],
+    });
+
+  it("returns the top live thread sharing the archived thread's worktree", () => {
+    const siblingThreadId = getWorktreeSiblingThreadIdAfterArchive({
+      threads: [
+        worktreeThread("thread-archived", "2026-03-09T10:05:00.000Z", "/repo/.t3/worktrees/a"),
+        worktreeThread("thread-sibling-old", "2026-03-09T10:00:00.000Z", "/repo/.t3/worktrees/a"),
+        worktreeThread("thread-sibling-new", "2026-03-09T10:09:00.000Z", "/repo/.t3/worktrees/a"),
+        worktreeThread(
+          "thread-other-worktree",
+          "2026-03-09T10:20:00.000Z",
+          "/repo/.t3/worktrees/b",
+        ),
+        worktreeThread("thread-local-checkout", "2026-03-09T10:30:00.000Z", null),
+      ],
+      archivedThreadId: ThreadId.make("thread-archived"),
+      sortOrder: "created_at",
+    });
+
+    expect(siblingThreadId).toBe(ThreadId.make("thread-sibling-new"));
+  });
+
+  it("ignores already-archived siblings", () => {
+    const siblingThreadId = getWorktreeSiblingThreadIdAfterArchive({
+      threads: [
+        worktreeThread("thread-archived", "2026-03-09T10:05:00.000Z", "/repo/.t3/worktrees/a"),
+        {
+          ...worktreeThread("thread-gone", "2026-03-09T10:09:00.000Z", "/repo/.t3/worktrees/a"),
+          archivedAt: "2026-03-09T10:10:00.000Z",
+        },
+        worktreeThread("thread-live", "2026-03-09T10:00:00.000Z", "/repo/.t3/worktrees/a"),
+      ],
+      archivedThreadId: ThreadId.make("thread-archived"),
+      sortOrder: "created_at",
+    });
+
+    expect(siblingThreadId).toBe(ThreadId.make("thread-live"));
+  });
+
+  it("defers to the caller's default redirect without a worktree or a sibling", () => {
+    const threads = [
+      worktreeThread("thread-lonely", "2026-03-09T10:05:00.000Z", "/repo/.t3/worktrees/a"),
+      worktreeThread("thread-local", "2026-03-09T10:05:00.000Z", null),
+      worktreeThread("thread-local-sibling", "2026-03-09T10:06:00.000Z", null),
+    ];
+
+    expect(
+      getWorktreeSiblingThreadIdAfterArchive({
+        threads,
+        archivedThreadId: ThreadId.make("thread-lonely"),
+        sortOrder: "created_at",
+      }),
+    ).toBeNull();
+    expect(
+      getWorktreeSiblingThreadIdAfterArchive({
+        threads,
+        archivedThreadId: ThreadId.make("thread-local"),
+        sortOrder: "created_at",
+      }),
+    ).toBeNull();
+  });
+});
+
 describe("sortProjectsForSidebar", () => {
   it("sorts projects by the most recent user message across their threads", () => {
     const projects = [

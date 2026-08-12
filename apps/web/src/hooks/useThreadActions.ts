@@ -13,7 +13,10 @@ import { AsyncResult } from "effect/unstable/reactivity";
 import { useRouter } from "@tanstack/react-router";
 import { useCallback, useMemo, useRef } from "react";
 
-import { getFallbackThreadIdAfterDelete } from "../components/Sidebar.logic";
+import {
+  getFallbackThreadIdAfterDelete,
+  getWorktreeSiblingThreadIdAfterArchive,
+} from "../components/Sidebar.logic";
 import { useComposerDraftStore } from "../composerDraftStore";
 import { terminalEnvironment } from "../state/terminal";
 import { threadEnvironment } from "../state/threads";
@@ -194,9 +197,21 @@ export function useThreadActions() {
       }
 
       const currentRouteThreadRef = getCurrentRouteThreadRef();
-      const shouldNavigateToDraft =
+      const shouldNavigateAway =
         currentRouteThreadRef?.threadId === threadRef.threadId &&
         currentRouteThreadRef.environmentId === threadRef.environmentId;
+      // Resolved before the mutation lands so the archived thread is still in
+      // the store to read its worktree from.
+      const siblingThreadId = shouldNavigateAway
+        ? getWorktreeSiblingThreadIdAfterArchive({
+            threads: readEnvironmentThreadRefs(threadRef.environmentId).flatMap((ref) => {
+              const shell = readThreadShell(ref);
+              return shell === null ? [] : [shell];
+            }),
+            archivedThreadId: threadRef.threadId,
+            sortOrder: sidebarThreadSortOrder,
+          })
+        : null;
       const archiveResult = await archiveThreadMutation({
         environmentId: threadRef.environmentId,
         input: { threadId: threadRef.threadId },
@@ -211,9 +226,17 @@ export function useThreadActions() {
       refreshArchivedThreadsForEnvironment(threadRef.environmentId);
       opts.onArchived?.();
 
-      if (shouldNavigateToDraft) {
+      if (shouldNavigateAway) {
         const navigationResult = await settlePromise(() =>
-          handleNewThreadRef.current(scopeProjectRef(thread.environmentId, thread.projectId)),
+          siblingThreadId
+            ? router.navigate({
+                to: "/$environmentId/$threadId",
+                params: buildThreadRouteParams(
+                  scopeThreadRef(threadRef.environmentId, siblingThreadId),
+                ),
+                replace: true,
+              })
+            : handleNewThreadRef.current(scopeProjectRef(thread.environmentId, thread.projectId)),
         );
         if (navigationResult._tag === "Failure") {
           return navigationResult;
@@ -223,7 +246,14 @@ export function useThreadActions() {
 
       return archiveResult;
     },
-    [archiveThreadMutation, getCurrentRouteThreadRef, markThreadVisited, resolveThreadTarget],
+    [
+      archiveThreadMutation,
+      getCurrentRouteThreadRef,
+      markThreadVisited,
+      resolveThreadTarget,
+      router,
+      sidebarThreadSortOrder,
+    ],
   );
 
   const unarchiveThread = useCallback(

@@ -32,6 +32,10 @@ export interface ShortcutMatchContext {
   terminalOpen: boolean;
   previewFocus: boolean;
   previewOpen: boolean;
+  /** Keyboard focus sits in the right panel (its tab bar or the active surface). */
+  rightPanelFocus: boolean;
+  /** Keyboard focus sits in the chat column (timeline, composer, header). */
+  chatFocus: boolean;
   [key: string]: boolean;
 }
 
@@ -120,6 +124,8 @@ function resolveContext(options: ShortcutMatchOptions | undefined): ShortcutMatc
     terminalOpen: false,
     previewFocus: false,
     previewOpen: false,
+    rightPanelFocus: false,
+    chatFocus: false,
     ...options?.context,
   };
 }
@@ -196,6 +202,26 @@ function matchesCommandShortcut(
   options?: ShortcutMatchOptions,
 ): boolean {
   return resolveShortcutCommand(event, keybindings, options) === command;
+}
+
+/**
+ * Whether the event matches the shortcut of any binding for one of `commands`,
+ * ignoring `when` clauses. Used to recognise a key the app owns in *some*
+ * context without knowing which context is live - notably the mod+w guard,
+ * which has to keep suppressing the OS window-close default while the focus
+ * that claimed the first press is already gone.
+ */
+export function matchesAnyCommandShortcut(
+  event: ShortcutEventLike,
+  keybindings: ResolvedKeybindingsConfig,
+  commands: readonly KeybindingCommand[],
+  options?: ShortcutMatchOptions,
+): boolean {
+  const platform = resolvePlatform(options);
+  return keybindings.some(
+    (binding) =>
+      commands.includes(binding.command) && matchesShortcut(event, binding.shortcut, platform),
+  );
 }
 
 export function resolveShortcutCommand(
