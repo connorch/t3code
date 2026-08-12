@@ -830,6 +830,9 @@ function ConnorProjectHeader(props: {
   /** True when the project has no worktrees or threads; hovering the row
    * then explains the emptiness instead of rendering an empty-state line. */
   empty: boolean;
+  /** Worktrees under this project; surfaced as a count only while collapsed,
+   * since expanding the project already shows them. */
+  worktreeCount: number;
   dragHandleProps: ConnorProjectDragHandleProps | null;
   suppressClickAfterDragRef: React.RefObject<boolean>;
   onToggle: (project: SidebarProjectSnapshot) => void;
@@ -911,18 +914,31 @@ function ConnorProjectHeader(props: {
           className="size-3 shrink-0 text-sidebar-muted-foreground/60"
         />
       ) : null}
-      <button
-        type="button"
-        aria-label={`New thread in ${project.displayName}`}
-        title={`New thread in ${project.displayName}`}
-        onClick={(event) => {
-          event.stopPropagation();
-          props.onNewThreadInProject(project);
-        }}
-        className="inline-flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-sm text-sidebar-muted-foreground opacity-0 transition-opacity hover:bg-sidebar-control-surface hover:text-sidebar-foreground focus-visible:opacity-100 group-hover/connor-project:opacity-100"
-      >
-        <PlusIcon className="size-3.5" />
-      </button>
+      {/* The count and the new-thread button share one trailing slot, so the
+       * count can sit flush right and the button simply takes its place on
+       * hover instead of pushing it inward. */}
+      <span className="relative flex size-5 shrink-0 items-center justify-center">
+        {!props.expanded && props.worktreeCount > 0 ? (
+          <span
+            aria-label={`${props.worktreeCount} worktree${props.worktreeCount === 1 ? "" : "s"}`}
+            className="absolute text-xs tabular-nums text-sidebar-muted-foreground/70 transition-opacity group-hover/connor-project:opacity-0"
+          >
+            {props.worktreeCount}
+          </span>
+        ) : null}
+        <button
+          type="button"
+          aria-label={`New thread in ${project.displayName}`}
+          title={`New thread in ${project.displayName}`}
+          onClick={(event) => {
+            event.stopPropagation();
+            props.onNewThreadInProject(project);
+          }}
+          className="absolute inline-flex size-5 cursor-pointer items-center justify-center rounded-sm text-sidebar-muted-foreground opacity-0 transition-opacity hover:bg-sidebar-control-surface hover:text-sidebar-foreground focus-visible:opacity-100 group-hover/connor-project:opacity-100"
+        >
+          <PlusIcon className="size-3.5" />
+        </button>
+      </span>
     </div>
   );
   if (!props.empty) return header;
@@ -2197,6 +2213,9 @@ export default function SidebarConnor() {
                     containsActive={section.containsActive}
                     hidden={section.hidden}
                     empty={section.groups.length === 0}
+                    worktreeCount={
+                      section.groups.filter(({ group }) => group.kind === "worktree").length
+                    }
                     dragHandleProps={dragHandleProps}
                     suppressClickAfterDragRef={suppressProjectClickAfterDragRef}
                     onToggle={handleProjectToggle}
