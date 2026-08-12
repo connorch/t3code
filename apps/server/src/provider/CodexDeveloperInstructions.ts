@@ -148,6 +148,14 @@ In Default mode, strongly prefer making reasonable assumptions and executing the
 ${T3_CODE_BROWSER_TOOL_INSTRUCTIONS}
 </collaboration_mode>`;
 
+// Appended when the session cwd carries the t3code-provisioned `.context/`
+// scratch directory (worktrees get one at creation). Default mode only: Plan
+// Mode forbids writing files, and plans there flow through <proposed_plan>
+// blocks instead.
+const T3_CODE_CONTEXT_DIRECTORY_INSTRUCTIONS = `
+
+<workspace_scratch_dir>If the user asks you to build a plan, or you want somewhere to hand the user files that should not be committed to git, put them in the \`.context\` directory at the repository root. t3code automatically gitignores it.</workspace_scratch_dir>`;
+
 export interface CodexRuntimeInfo {
   readonly model: string;
   readonly reasoningEffort: string;
@@ -161,12 +169,17 @@ function toSingleLine(value: string): string {
 export function buildCodexDeveloperInstructions(
   interactionMode: ProviderInteractionMode,
   runtime: CodexRuntimeInfo,
+  options?: { readonly hasContextDirectory?: boolean },
 ): string {
   const base =
     interactionMode === "plan"
       ? CODEX_PLAN_MODE_DEVELOPER_INSTRUCTIONS
       : CODEX_DEFAULT_MODE_DEVELOPER_INSTRUCTIONS;
-  return `${base}
+  const contextDirectoryNote =
+    interactionMode !== "plan" && options?.hasContextDirectory === true
+      ? T3_CODE_CONTEXT_DIRECTORY_INSTRUCTIONS
+      : "";
+  return `${base}${contextDirectoryNote}
 
 <runtime_info>In case you're asked: you are running in T3 Code through the Codex harness, as ${toSingleLine(runtime.model)} with ${toSingleLine(runtime.reasoningEffort)} reasoning effort. No need to mention this otherwise.</runtime_info>`;
 }

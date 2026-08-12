@@ -179,6 +179,23 @@ describe("buildTurnStartParams", () => {
     });
   });
 
+  it.effect("threads hasContextDirectory into the developer instructions", () =>
+    Effect.gen(function* () {
+      const params = yield* buildTurnStartParams({
+        threadId: "provider-thread-1",
+        runtimeMode: "full-access",
+        prompt: "Go",
+        interactionMode: "default",
+        hasContextDirectory: true,
+      });
+
+      NodeAssert.match(
+        params.collaborationMode?.settings.developer_instructions ?? "",
+        /`\.context` directory/,
+      );
+    }),
+  );
+
   it("reports the same fallback model and effort in settings and instructions", () => {
     const params = Effect.runSync(
       buildTurnStartParams({
@@ -280,6 +297,31 @@ describe("buildCodexDeveloperInstructions", () => {
     });
 
     NodeAssert.notEqual(first, second);
+  });
+
+  it("appends the .context note in default mode when the cwd carries one", () => {
+    const instructions = buildCodexDeveloperInstructions(
+      "default",
+      { model: "gpt-5.3-codex", reasoningEffort: "high" },
+      { hasContextDirectory: true },
+    );
+
+    NodeAssert.match(instructions, /`\.context` directory/);
+  });
+
+  it("omits the .context note in plan mode and when the directory is absent", () => {
+    const planInstructions = buildCodexDeveloperInstructions(
+      "plan",
+      { model: "gpt-5.3-codex", reasoningEffort: "high" },
+      { hasContextDirectory: true },
+    );
+    const withoutDirectory = buildCodexDeveloperInstructions("default", {
+      model: "gpt-5.3-codex",
+      reasoningEffort: "high",
+    });
+
+    NodeAssert.doesNotMatch(planInstructions, /`\.context` directory/);
+    NodeAssert.doesNotMatch(withoutDirectory, /`\.context` directory/);
   });
 
   it("flattens multiline metadata into single-line runtime info", () => {
