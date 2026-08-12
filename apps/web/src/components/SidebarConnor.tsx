@@ -29,6 +29,7 @@ import {
 import type { EnvironmentId, ScopedThreadRef } from "@t3tools/contracts";
 import type { SidebarProjectSortOrder, SidebarThreadSortOrder } from "@t3tools/contracts/settings";
 import {
+  ArchiveIcon,
   ArrowUpDownIcon,
   ChevronRightIcon,
   CircleAlertIcon,
@@ -64,6 +65,8 @@ import {
   threadTraversalDirectionFromCommand,
 } from "../keybindings";
 import { isTerminalFocused } from "../lib/terminalFocus";
+import { refreshArchivedThreadsForEnvironment } from "../lib/archivedThreadsState";
+import { refreshWorktreeArchivesForEnvironment } from "../lib/worktreeArchivesState";
 import { isModelPickerOpen } from "../modelPickerVisibility";
 import { selectThreadTerminalUiState, useTerminalUiStateStore } from "../terminalUiStateStore";
 import { readLocalApi } from "../localApi";
@@ -332,6 +335,7 @@ const ConnorThreadRow = memo(function ConnorThreadRow(props: {
   onThreadClick: (event: ReactMouseEvent, threadRef: ScopedThreadRef) => void;
   onThreadActivate: (threadRef: ScopedThreadRef) => void;
   onContextMenu: (threadRef: ScopedThreadRef, position: { x: number; y: number }) => void;
+  onArchiveThread: (threadRef: ScopedThreadRef) => void;
   onStartRename: (threadRef: ScopedThreadRef, title: string) => void;
   onRenameTitleChange: (title: string) => void;
   onCommitRename: (threadRef: ScopedThreadRef, title: string, originalTitle: string) => void;
@@ -445,7 +449,19 @@ const ConnorThreadRow = memo(function ConnorThreadRow(props: {
         onContextMenu={handleContextMenu}
       >
         {title}
-        <span className="ml-auto flex shrink-0 items-center">
+        <span className="ml-auto flex shrink-0 items-center gap-1">
+          <button
+            type="button"
+            aria-label="Archive thread"
+            title="Archive thread"
+            onClick={(event) => {
+              event.stopPropagation();
+              props.onArchiveThread(threadRef);
+            }}
+            className="inline-flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-sm text-sidebar-muted-foreground opacity-0 transition-opacity hover:bg-sidebar-control-surface hover:text-sidebar-foreground focus-visible:opacity-100 group-hover/connor-row:opacity-100"
+          >
+            <ArchiveIcon className="size-3.5" />
+          </button>
           {dot !== null ? (
             <span
               role="img"
@@ -550,6 +566,7 @@ interface GroupSectionProps {
   onGroupToggle: (group: ConnorGroup) => void;
   onGroupContextMenu: (group: ConnorGroup, position: { x: number; y: number }) => void;
   onNewThreadInGroup: (group: ConnorGroup) => void;
+  onArchiveGroup: (group: ConnorGroup) => void;
   onStartGroupRename: (group: ConnorGroup) => void;
   onRenameNameChange: (name: string) => void;
   onCommitGroupRename: (group: ConnorGroup) => void;
@@ -608,6 +625,27 @@ function GroupPlusButton(props: {
       className="inline-flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-sm text-sidebar-muted-foreground opacity-0 transition-opacity hover:bg-sidebar-control-surface hover:text-sidebar-foreground focus-visible:opacity-100 group-hover/connor-group:opacity-100"
     >
       <PlusIcon className="size-3.5" />
+    </button>
+  );
+}
+
+/** Hover-revealed "archive this worktree" affordance (worktree cards only). */
+function GroupArchiveButton(props: {
+  group: ConnorGroup;
+  onArchiveGroup: (group: ConnorGroup) => void;
+}) {
+  return (
+    <button
+      type="button"
+      aria-label="Archive worktree"
+      title="Archive worktree"
+      onClick={(event) => {
+        event.stopPropagation();
+        props.onArchiveGroup(props.group);
+      }}
+      className="inline-flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-sm text-sidebar-muted-foreground opacity-0 transition-opacity hover:bg-sidebar-control-surface hover:text-sidebar-foreground focus-visible:opacity-100 group-hover/connor-group:opacity-100"
+    >
+      <ArchiveIcon className="size-3.5" />
     </button>
   );
 }
@@ -671,6 +709,9 @@ function StackGroupSection(props: GroupSectionProps) {
               onCancelRename={props.onCancelGroupRename}
             />
             <GroupPlusButton group={group} onNewThreadInGroup={props.onNewThreadInGroup} />
+            {group.kind === "worktree" ? (
+              <GroupArchiveButton group={group} onArchiveGroup={props.onArchiveGroup} />
+            ) : null}
             <GroupIndicatorGlyph indicator={props.indicator} />
           </div>
           <div className="flex min-w-0 items-center gap-1.5 text-xs text-sidebar-muted-foreground/70">
@@ -918,8 +959,11 @@ export default function SidebarConnor() {
   const { isMobile, setOpenMobile } = useSidebar();
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const confirmThreadDelete = useClientSettings((settings) => settings.confirmThreadDelete);
-  const { deleteThread } = useThreadActions();
+  const { deleteThread, archiveThread } = useThreadActions();
   const updateThreadMetadata = useAtomCommand(threadEnvironment.updateMetadata, {
+    reportFailure: false,
+  });
+  const archiveWorktreeMutation = useAtomCommand(vcsEnvironment.archiveWorktree, {
     reportFailure: false,
   });
   const newThreadContext = useHandleNewThread();
@@ -1666,6 +1710,68 @@ export default function SidebarConnor() {
     ],
   );
 
+  // ── Archive ───────────────────────────────────────────────────────
+  const handleArchiveThread = useCallback(
+    (threadRef: ScopedThreadRef) => {
+      void (async () => {
+        const result = await archiveThread(threadRef);
+        if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
+          const error = squashAtomCommandFailure(result);
+          toastManager.add(
+            stackedThreadToast({
+              type: "error",
+              title: "Failed to archive thread",
+              description: error instanceof Error ? error.message : "An error occurred.",
+            }),
+          );
+        }
+      })();
+    },
+    [archiveThread],
+  );
+
+  const handleArchiveGroup = useCallback(
+    (group: ConnorGroup) => {
+      if (group.kind !== "worktree") return;
+      const firstThread = group.threads[0];
+      if (!firstThread) return;
+      const displayName = resolveWorktreeDisplayName(group, worktreeNameByKey);
+      void (async () => {
+        const result = await archiveWorktreeMutation({
+          environmentId: firstThread.environmentId,
+          input: {
+            projectId: firstThread.projectId,
+            worktreePath: group.worktreePath,
+            name: displayName,
+          },
+        });
+        if (result._tag === "Failure") {
+          if (isAtomCommandInterrupted(result)) return;
+          const error = squashAtomCommandFailure(result);
+          toastManager.add(
+            stackedThreadToast({
+              type: "error",
+              title: "Failed to archive worktree",
+              description: error instanceof Error ? error.message : "An error occurred.",
+            }),
+          );
+          return;
+        }
+        refreshArchivedThreadsForEnvironment(firstThread.environmentId);
+        refreshWorktreeArchivesForEnvironment(firstThread.environmentId);
+        toastManager.add({
+          type: "success",
+          title: "Worktree archived",
+          description: displayName,
+        });
+        if (routeGroupKey === group.key) {
+          void router.navigate({ to: "/" });
+        }
+      })();
+    },
+    [archiveWorktreeMutation, routeGroupKey, router, worktreeNameByKey],
+  );
+
   // ── Click / activate ──────────────────────────────────────────────
   const handleThreadClick = useCallback(
     (event: ReactMouseEvent, threadRef: ScopedThreadRef) => {
@@ -1834,6 +1940,7 @@ export default function SidebarConnor() {
           onThreadClick={handleThreadClick}
           onThreadActivate={navigateToThread}
           onContextMenu={handleThreadContextMenu}
+          onArchiveThread={handleArchiveThread}
           onStartRename={startThreadRename}
           onRenameTitleChange={setRenamingTitle}
           onCommitRename={commitThreadRename}
@@ -1844,6 +1951,7 @@ export default function SidebarConnor() {
     [
       cancelThreadRename,
       commitThreadRename,
+      handleArchiveThread,
       handleThreadClick,
       handleThreadContextMenu,
       navigateToThread,
@@ -2070,6 +2178,7 @@ export default function SidebarConnor() {
                           onGroupToggle={handleGroupToggle}
                           onGroupContextMenu={handleGroupContextMenu}
                           onNewThreadInGroup={handleNewThreadInGroup}
+                          onArchiveGroup={handleArchiveGroup}
                           onStartGroupRename={startWorktreeRename}
                           onRenameNameChange={setRenamingWorktreeName}
                           onCommitGroupRename={commitWorktreeRename}
@@ -2141,7 +2250,7 @@ export default function SidebarConnor() {
           )}
         </SidebarGroup>
       </SidebarContent>
-      <SidebarChromeFooter />
+      <SidebarChromeFooter showHistory />
     </>
   );
 }
