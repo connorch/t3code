@@ -67,45 +67,25 @@ describe("ClientSettings environment identification", () => {
   });
 });
 
-describe("ClientSettings sidebar v2", () => {
-  it("defaults the beta off with a three-day auto-settle threshold", () => {
+describe("ClientSettings sidebar", () => {
+  it("defaults to the current sidebar with a three-day auto-settle threshold", () => {
     const settings = decodeClientSettings({});
-    expect(settings.sidebarV2Enabled).toBe(false);
+    expect(settings.sidebarMode).toBe("default");
     expect(settings.sidebarAutoSettleAfterDays).toBe(3);
   });
 
-  it("treats settings written before the beta had a per-channel default as unconfigured", () => {
-    // The stored blob always carries `sidebarV2Enabled`, so only the companion
-    // flag can distinguish "user opted out" from "never touched it".
-    expect(decodeClientSettings({ sidebarV2Enabled: false }).sidebarV2ConfiguredByUser).toBe(false);
-    expect(decodeClientSettings({ sidebarV2Enabled: true }).sidebarV2ConfiguredByUser).toBe(false);
-  });
-
-  it("preserves an explicit beta choice", () => {
-    const settings = decodeClientSettings({
+  it("drops the retired sidebar v2 beta keys, resetting everyone to the default", () => {
+    const decoded = decodeClientSettings({
       sidebarV2Enabled: false,
       sidebarV2ConfiguredByUser: true,
     });
-    expect(settings.sidebarV2Enabled).toBe(false);
-    expect(settings.sidebarV2ConfiguredByUser).toBe(true);
-  });
-
-  it("carries an explicit beta opt-out through the patch the beta toggle writes", () => {
-    const patch = decodeClientSettingsPatch({
-      sidebarV2Enabled: false,
-      sidebarV2ConfiguredByUser: true,
-    });
-    expect(patch.sidebarV2Enabled).toBe(false);
-    expect(patch.sidebarV2ConfiguredByUser).toBe(true);
-  });
-
-  it("defaults the sidebar mode enum to unset so legacy booleans keep deciding", () => {
-    expect(decodeClientSettings({}).sidebarMode).toBeNull();
-    expect(decodeClientSettings({ sidebarV2Enabled: true }).sidebarMode).toBeNull();
+    expect(decoded.sidebarMode).toBe("default");
+    expect(decoded).not.toHaveProperty("sidebarV2Enabled");
+    expect(decoded).not.toHaveProperty("sidebarV2ConfiguredByUser");
   });
 
   it("accepts each sidebar mode and rejects unknown ones", () => {
-    for (const mode of ["default", "flat", "connor-1"] as const) {
+    for (const mode of ["default", "legacy", "connor-1"] as const) {
       expect(decodeClientSettings({ sidebarMode: mode }).sidebarMode).toBe(mode);
       expect(decodeClientSettingsPatch({ sidebarMode: mode }).sidebarMode).toBe(mode);
     }
@@ -113,8 +93,10 @@ describe("ClientSettings sidebar v2", () => {
     expect(() => decodeClientSettingsPatch({ sidebarMode: "connor-4" })).toThrow();
   });
 
-  it("migrates the retired Tree and Focus modes to Stack instead of failing the blob", () => {
+  it("migrates retired mode names instead of failing the blob", () => {
     // A decode failure here would reset every client setting to defaults.
+    // "flat" was this fork's name for the sidebar that is now the default.
+    expect(decodeClientSettings({ sidebarMode: "flat" }).sidebarMode).toBe("default");
     expect(decodeClientSettings({ sidebarMode: "connor-2" }).sidebarMode).toBe("connor-1");
     expect(decodeClientSettings({ sidebarMode: "connor-3" }).sidebarMode).toBe("connor-1");
   });

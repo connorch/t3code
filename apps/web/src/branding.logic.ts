@@ -1,5 +1,3 @@
-import type { SidebarMode } from "@t3tools/contracts/settings";
-
 const NIGHTLY_SERVER_VERSION_PATTERN = /-nightly\.\d{8}\.\d+$/;
 
 export function formatAppDisplayName(input: {
@@ -11,77 +9,6 @@ export function formatAppDisplayName(input: {
   }
 
   return `${input.baseName} (${input.stageLabel})`;
-}
-
-/**
- * Whether the sidebar v2 beta is on by default for a build stage.
- *
- * Nightly and local dev opt in; Alpha and Latest stay on v1. This is resolved
- * from the client's own stage label rather than the connected server's version:
- * v2 only exists in the client, so a stable client on a nightly server has
- * nothing to turn on.
- */
-export function resolveSidebarV2Default(stageLabel: string): boolean {
-  const stage = stageLabel.trim().toLowerCase();
-  return stage === "nightly" || stage === "dev";
-}
-
-/**
- * Resolved sidebar v2 state: an explicit choice if the user has made one,
- * otherwise the default for this build stage.
- *
- * A stored `enabled: true` counts as an explicit choice even without the
- * companion flag. `true` was never the schema default, so it can only have come
- * from the Settings → Beta toggle — settings written before that flag existed
- * would otherwise lose the opt-in and drop such users back to v1 on production.
- * Mirrors how `normalizeDesktopSettingsDocument` treats a legacy stored
- * `updateChannel: "nightly"` as user-configured.
- *
- * `settingsHydrated` guards the startup window: client settings load
- * asynchronously and the pre-hydration snapshot is just the schema defaults, so
- * resolving against it would mount one sidebar and swap it out a tick later,
- * remounting the tree. While hydrating, hold v1 — where both paths already
- * start.
- */
-export function resolveSidebarV2Enabled(input: {
-  readonly enabled: boolean;
-  readonly configuredByUser: boolean;
-  readonly settingsHydrated: boolean;
-  readonly stageLabel: string;
-}): boolean {
-  if (!input.settingsHydrated) {
-    return false;
-  }
-
-  return input.configuredByUser || input.enabled
-    ? input.enabled
-    : resolveSidebarV2Default(input.stageLabel);
-}
-
-/**
- * Resolved sidebar mode: the stored enum when the user has picked one here,
- * otherwise the legacy v2 boolean pair mapped onto its enum equivalent
- * ("flat" for enabled, "default" for disabled) — including the stage default
- * for users who never touched either setting.
- *
- * Held at "default" until client settings hydrate, same as
- * `resolveSidebarV2Enabled`: resolving against the pre-hydration snapshot
- * would mount one sidebar and swap it out a tick later.
- */
-export function resolveSidebarMode(input: {
-  readonly mode: SidebarMode | null;
-  readonly enabled: boolean;
-  readonly configuredByUser: boolean;
-  readonly settingsHydrated: boolean;
-  readonly stageLabel: string;
-}): SidebarMode {
-  if (!input.settingsHydrated) {
-    return "default";
-  }
-  if (input.mode !== null) {
-    return input.mode;
-  }
-  return resolveSidebarV2Enabled(input) ? "flat" : "default";
 }
 
 export function resolveServerBackedAppStageLabel(input: {

@@ -35,6 +35,7 @@ import { ProjectionTurnRepositoryLive } from "../../persistence/Layers/Projectio
 import { isGitRepository } from "../../git/Utils.ts";
 import { OrchestrationEngineService } from "../Services/OrchestrationEngine.ts";
 import { ThreadBackgroundLivenessService } from "../ThreadBackgroundLiveness.ts";
+import { ThreadPlanProgressService } from "../ThreadPlanProgress.ts";
 import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts";
 import {
   ProviderRuntimeIngestionService,
@@ -867,6 +868,7 @@ export function runtimeEventToActivities(
 
 const make = Effect.gen(function* () {
   const threadBackgroundLiveness = yield* ThreadBackgroundLivenessService;
+  const threadPlanProgress = yield* ThreadPlanProgressService;
   const crypto = yield* Crypto.Crypto;
   const orchestrationEngine = yield* OrchestrationEngineService;
   const projectionSnapshotQuery = yield* ProjectionSnapshotQuery;
@@ -1530,8 +1532,14 @@ const make = Effect.gen(function* () {
             if (activeTurnId !== null && eventTurnId !== undefined) {
               return sameId(activeTurnId, eventTurnId);
             }
-            // If no active turn is tracked, accept completion scoped to this thread.
-            return true;
+            // No active turn tracked: accept only completions that name their
+            // turn (covers a real completion whose turn.started was lost). An
+            // untargeted completion cannot prove it belongs to any turn this
+            // thread ran — the known emitter was the Claude resume handshake
+            // (system/init + result(num_turns: 0)), which is not a turn at
+            // all — and applying it here stomps the "starting" lifecycle
+            // state while a turn start is pending.
+            return eventTurnId !== undefined;
           default:
             return true;
         }
@@ -1653,7 +1661,7 @@ const make = Effect.gen(function* () {
 
         const assistantDeliveryMode: AssistantDeliveryMode = yield* Effect.map(
           serverSettingsService.getSettings,
-          (settings) => (settings.enableAssistantStreaming ? "streaming" : "buffered"),
+          (settings) => (settings.enableLegacyTokenStreaming ? "streaming" : "buffered"),
         );
         if (assistantDeliveryMode === "buffered") {
           const spillChunk = yield* appendBufferedAssistantText(assistantMessageId, assistantDelta);
@@ -1689,7 +1697,7 @@ const make = Effect.gen(function* () {
         const detailedThread = yield* getLoadedThreadDetail();
         const assistantDeliveryMode: AssistantDeliveryMode = yield* Effect.map(
           serverSettingsService.getSettings,
-          (settings) => (settings.enableAssistantStreaming ? "streaming" : "buffered"),
+          (settings) => (settings.enableLegacyTokenStreaming ? "streaming" : "buffered"),
         );
         const flushedMessageIds =
           assistantDeliveryMode === "buffered"
@@ -1935,6 +1943,21 @@ const make = Effect.gen(function* () {
           yield* rememberTaskDescription(thread.id, event.payload.taskId, description);
         }
       }
+      // Working-indicator plan progress: current step while the turn runs,
+      // cleared on settle so a finished plan never lingers as stale UI.
+      // Events carrying a turn id that conflicts with the active turn are
+      // stale (superseded turn) and must neither overwrite nor clear the
+      // active turn's progress; session.exited always clears.
+      if (event.type === "session.exited") {
+        threadPlanProgress.clearThreadPlanProgress(thread.id);
+      } else if (!conflictsWithActiveTurn) {
+        if (event.type === "turn.plan.updated") {
+          threadPlanProgress.recordPlanProgress(thread.id, event.payload.plan);
+        } else if (event.type === "turn.completed" || event.type === "turn.aborted") {
+          threadPlanProgress.clearThreadPlanProgress(thread.id);
+        }
+      }
+
       // Sidebar background liveness: fed from the same lifecycle stream,
       // read by the shell query at mapping time (no persistence).
       switch (event.type) {

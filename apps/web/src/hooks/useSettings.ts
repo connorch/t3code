@@ -21,18 +21,25 @@ import {
   type ClientSettingsPatch,
   type ClientSettings,
   DEFAULT_CLIENT_SETTINGS,
+  DEFAULT_SIDEBAR_MODE,
   type EnvironmentIdentificationMode,
   type SidebarMode,
   type UnifiedSettings,
 } from "@t3tools/contracts/settings";
 import { safeErrorLogAttributes } from "@t3tools/client-runtime/errors";
-import { APP_STAGE_LABEL } from "~/branding";
-import { resolveSidebarMode } from "~/branding.logic";
 import { ensureLocalApi } from "~/localApi";
+import {
+  getThemeDefinition,
+  getThemePreviewSidebarArtwork,
+  resolveThemeHalf,
+  subscribeToThemePreview,
+  themeAllowsSidebarArtwork,
+} from "~/themePalette";
 import * as Struct from "effect/Struct";
 import { primaryServerSettingsAtom, serverEnvironment } from "~/state/server";
 import { usePrimaryEnvironment } from "~/state/environments";
 import { useAtomCommand } from "~/state/use-atom-command";
+import { useTheme } from "./useTheme";
 
 const CLIENT_SETTINGS_PERSISTENCE_ERROR_SCOPE = "[CLIENT_SETTINGS]";
 
@@ -227,46 +234,51 @@ export function useClientSettings<T = ClientSettings>(
 export function resolveEnvironmentIdentificationMode(input: {
   mode: EnvironmentIdentificationMode;
   settingsHydrated: boolean;
+  paletteThemeActive?: boolean;
+  paletteThemeAllowsArtwork?: boolean;
 }): EnvironmentIdentificationMode {
   // Avoid briefly rendering the default artwork before a persisted pill/none choice loads.
-  return input.settingsHydrated ? input.mode : "none";
+  if (!input.settingsHydrated) return "none";
+  // Artwork palettes are maintained for built-ins only. Keep an explicit
+  // "none", but use the theme-aware pill for user-controlled palettes.
+  return input.paletteThemeActive && !input.paletteThemeAllowsArtwork && input.mode === "artwork"
+    ? "pill"
+    : input.mode;
 }
 
 export function useEnvironmentIdentificationMode(): EnvironmentIdentificationMode {
   const settingsHydrated = useClientSettingsHydrated();
   const mode = useClientSettingsValue().environmentIdentificationMode;
-  return resolveEnvironmentIdentificationMode({ mode, settingsHydrated });
+  const { resolvedTheme, theme, themeHalves } = useTheme();
+  const previewSidebarArtwork = useSyncExternalStore(
+    subscribeToThemePreview,
+    getThemePreviewSidebarArtwork,
+    () => null,
+  );
+  const activeTheme = resolveThemeHalf(theme, themeHalves, resolvedTheme);
+  const activeThemeDefinition = getThemeDefinition(activeTheme);
+  return resolveEnvironmentIdentificationMode({
+    mode,
+    settingsHydrated,
+    paletteThemeActive: previewSidebarArtwork !== null || activeThemeDefinition !== null,
+    paletteThemeAllowsArtwork: previewSidebarArtwork ?? themeAllowsSidebarArtwork(activeTheme),
+  });
 }
 
 /**
- * Resolved sidebar mode: an explicit choice in Settings → Beta if the user has
- * made one, otherwise the legacy v2 boolean pair (whose stage default keeps
- * nightly/dev on "flat"). Every consumer must read through this rather than
- * `settings.sidebarMode`, which is only meaningful alongside the legacy pair.
+ * Which sidebar renders (Settings → General → Legacy features). Every consumer
+ * must read through this rather than `settings.sidebarMode` directly, for the
+ * hydration guard below.
  *
- * Held at "default" until client settings hydrate. The pre-hydration snapshot
- * is just the schema defaults, so resolving against it would mount one sidebar
- * and then swap it out once persisted settings land — remounting the tree.
+ * Held at the default sidebar until client settings hydrate: the pre-hydration
+ * snapshot is just the schema defaults, so resolving against it could mount one
+ * sidebar and then swap it out once persisted settings land — remounting the
+ * whole tree for everyone instead of only for those on a non-default mode.
  */
 export function useSidebarMode(): SidebarMode {
   const settingsHydrated = useClientSettingsHydrated();
-  const settings = useClientSettingsValue();
-  return useMemo(
-    () =>
-      resolveSidebarMode({
-        mode: settings.sidebarMode,
-        enabled: settings.sidebarV2Enabled,
-        configuredByUser: settings.sidebarV2ConfiguredByUser,
-        settingsHydrated,
-        stageLabel: APP_STAGE_LABEL,
-      }),
-    [
-      settings.sidebarMode,
-      settings.sidebarV2Enabled,
-      settings.sidebarV2ConfiguredByUser,
-      settingsHydrated,
-    ],
-  );
+  const sidebarMode = useClientSettingsValue().sidebarMode;
+  return settingsHydrated ? sidebarMode : DEFAULT_SIDEBAR_MODE;
 }
 
 /** Read current settings for one environment, merged with client-local preferences. */

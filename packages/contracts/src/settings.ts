@@ -3,6 +3,7 @@ import * as Duration from "effect/Duration";
 import * as Schema from "effect/Schema";
 import * as SchemaTransformation from "effect/SchemaTransformation";
 import { TrimmedNonEmptyString, TrimmedString } from "./baseSchemas.ts";
+import { ThreadEnvMode } from "./environment.ts";
 import {
   DEFAULT_TEXT_GENERATION_MODEL,
   DEFAULT_TEXT_GENERATION_REASONING_EFFORT,
@@ -99,15 +100,25 @@ export const TerminalFontSize = Schema.Int.check(
 export type TerminalFontSize = typeof TerminalFontSize.Type;
 export const DEFAULT_TERMINAL_FONT_SIZE: TerminalFontSize = 12;
 
-export const SidebarMode = Schema.Literals(["default", "flat", "connor-1"]);
+/**
+ * Which sidebar renders. Supersedes the upstream `legacySidebarEnabled`
+ * boolean, which only spans two of the three:
+ *
+ * - "default" — the flat thread list that upstream promoted to the default
+ * - "legacy"  — the original per-project thread tree
+ * - "connor-1" — threads grouped by git worktree as accordion cards
+ */
+export const SidebarMode = Schema.Literals(["default", "legacy", "connor-1"]);
 export type SidebarMode = typeof SidebarMode.Type;
 
-// The retired Tree ("connor-2") and Focus ("connor-3") experiments decode to
-// the surviving Stack mode instead of failing the whole settings blob (a
-// decode failure would reset every client setting to defaults).
+// Values retired along the way still decode, rather than failing the whole
+// settings blob (a decode failure would reset every client setting to
+// defaults). "flat" was this fork's name for the sidebar that is now the
+// default; "connor-2"/"connor-3" were the Tree and Focus experiments.
 const StoredSidebarMode = Schema.Literals([
   "default",
   "flat",
+  "legacy",
   "connor-1",
   "connor-2",
   "connor-3",
@@ -117,12 +128,17 @@ const StoredSidebarMode = Schema.Literals([
     SchemaTransformation.transformOrFail({
       decode: (value) =>
         Effect.succeed(
-          value === "connor-2" || value === "connor-3" ? ("connor-1" as const) : value,
+          value === "flat"
+            ? ("default" as const)
+            : value === "connor-2" || value === "connor-3"
+              ? ("connor-1" as const)
+              : value,
         ),
       encode: (value) => Effect.succeed(value),
     }),
   ),
 );
+export const DEFAULT_SIDEBAR_MODE: SidebarMode = "default";
 
 export const EnvironmentIdentificationMode = Schema.Literals(["artwork", "pill", "none"]);
 export type EnvironmentIdentificationMode = typeof EnvironmentIdentificationMode.Type;
@@ -144,7 +160,6 @@ export const OpenLinksInPreviewPattern = Schema.String.check(Schema.isMaxLength(
 export type OpenLinksInPreviewPattern = typeof OpenLinksInPreviewPattern.Type;
 
 export const ClientSettingsSchema = Schema.Struct({
-  autoOpenPlanSidebar: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   confirmThreadArchive: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   confirmThreadDelete: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   dismissedProviderUpdateNotificationKeys: Schema.Array(TrimmedNonEmptyString).pipe(
@@ -204,6 +219,10 @@ export const ClientSettingsSchema = Schema.Struct({
       modelOrder: Schema.Array(Schema.String).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
     }),
   ).pipe(Schema.withDecodingDefault(Effect.succeed({}))),
+  // Legacy plan mode. The composer's Build/Plan toggle was removed from the
+  // default UI; this beta flag restores it (plus the /plan and /default slash
+  // commands) for users who still rely on the old workflow.
+  planModeEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   sidebarAutoSettleAfterDays: Schema.NullOr(SidebarAutoSettleAfterDays).pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_SIDEBAR_AUTO_SETTLE_AFTER_DAYS)),
   ),
@@ -223,21 +242,13 @@ export const ClientSettingsSchema = Schema.Struct({
   sidebarThreadPreviewCount: SidebarThreadPreviewCount.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_SIDEBAR_THREAD_PREVIEW_COUNT)),
   ),
-  // Enum successor to `sidebarV2Enabled`: null means "never chosen here", so
-  // resolution falls back to the legacy boolean pair (and the stage default)
-  // instead of silently resetting users who configured the old toggle.
-  sidebarMode: Schema.NullOr(StoredSidebarMode).pipe(
-    Schema.withDecodingDefault(Effect.succeed(null)),
+  // Replaces upstream's `legacySidebarEnabled` boolean, which cannot express
+  // the third (Connor) sidebar. Like that key, this one is fresh: the old
+  // `sidebarV2Enabled`/`sidebarV2ConfiguredByUser` pair is dropped on decode,
+  // so everyone lands on the new default sidebar once.
+  sidebarMode: StoredSidebarMode.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_SIDEBAR_MODE)),
   ),
-  // Legacy boolean kept dual-written ("flat" ⇔ true) so downgraded builds
-  // still honor the choice. Mirrors mobile's projectGroupingEnabled migration.
-  sidebarV2Enabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
-  // Whether `sidebarV2Enabled` reflects an explicit choice in Settings → Beta.
-  // Client settings persist as a whole blob, so every user who has ever touched
-  // any setting already has `sidebarV2Enabled: false` stored — without this bit
-  // there is no way to tell that apart from "left alone", and a channel-derived
-  // default could never reach them. Mirrors `updateChannelConfiguredByUser`.
-  sidebarV2ConfiguredByUser: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   timestampFormat: TimestampFormat.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_TIMESTAMP_FORMAT)),
   ),
@@ -249,8 +260,9 @@ export const DEFAULT_CLIENT_SETTINGS: ClientSettings = Schema.decodeSync(ClientS
 
 // ── Server Settings (server-authoritative) ────────────────────
 
-export const ThreadEnvMode = Schema.Literals(["local", "worktree"]);
-export type ThreadEnvMode = typeof ThreadEnvMode.Type;
+// Moved to environment.ts so orchestration contracts can use it without an
+// import cycle; re-exported here for compatibility with deep imports.
+export { ThreadEnvMode } from "./environment.ts";
 
 const makeBinaryPathSetting = (fallback: string) =>
   TrimmedString.pipe(
@@ -579,7 +591,12 @@ export const BackgroundActivitySettings = Schema.Struct({
 export type BackgroundActivitySettings = typeof BackgroundActivitySettings.Type;
 
 export const ServerSettings = Schema.Struct({
-  enableAssistantStreaming: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  // Legacy token-by-token assistant output. Deliberately a fresh key (was
+  // `enableAssistantStreaming`): decoding drops the old key, so everyone,
+  // including prior opt-ins, resets to the buffered default.
+  enableLegacyTokenStreaming: Schema.Boolean.pipe(
+    Schema.withDecodingDefault(Effect.succeed(false)),
+  ),
   enableProviderUpdateChecks: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   backgroundActivity: BackgroundActivitySettings,
   // Legacy flat fields retained for old settings files and old clients. New
@@ -742,7 +759,7 @@ const OpenCodeSettingsPatch = Schema.Struct({
 
 export const ServerSettingsPatch = Schema.Struct({
   // Server settings
-  enableAssistantStreaming: Schema.optionalKey(Schema.Boolean),
+  enableLegacyTokenStreaming: Schema.optionalKey(Schema.Boolean),
   enableProviderUpdateChecks: Schema.optionalKey(Schema.Boolean),
   backgroundActivity: Schema.optionalKey(
     Schema.Struct({
@@ -791,7 +808,6 @@ export const ServerSettingsPatch = Schema.Struct({
 export type ServerSettingsPatch = typeof ServerSettingsPatch.Type;
 
 export const ClientSettingsPatch = Schema.Struct({
-  autoOpenPlanSidebar: Schema.optionalKey(Schema.Boolean),
   confirmThreadArchive: Schema.optionalKey(Schema.Boolean),
   confirmThreadDelete: Schema.optionalKey(Schema.Boolean),
   diffIgnoreWhitespace: Schema.optionalKey(Schema.Boolean),
@@ -828,6 +844,7 @@ export const ClientSettingsPatch = Schema.Struct({
       }),
     ),
   ),
+  planModeEnabled: Schema.optionalKey(Schema.Boolean),
   sidebarAutoSettleAfterDays: Schema.optionalKey(Schema.NullOr(SidebarAutoSettleAfterDays)),
   sidebarProjectGroupingMode: Schema.optionalKey(SidebarProjectGroupingMode),
   sidebarProjectGroupingOverrides: Schema.optionalKey(
@@ -836,9 +853,7 @@ export const ClientSettingsPatch = Schema.Struct({
   sidebarProjectSortOrder: Schema.optionalKey(SidebarProjectSortOrder),
   sidebarThreadSortOrder: Schema.optionalKey(SidebarThreadSortOrder),
   sidebarThreadPreviewCount: Schema.optionalKey(SidebarThreadPreviewCount),
-  sidebarMode: Schema.optionalKey(Schema.NullOr(SidebarMode)),
-  sidebarV2Enabled: Schema.optionalKey(Schema.Boolean),
-  sidebarV2ConfiguredByUser: Schema.optionalKey(Schema.Boolean),
+  sidebarMode: Schema.optionalKey(SidebarMode),
   timestampFormat: Schema.optionalKey(TimestampFormat),
   wordWrap: Schema.optionalKey(Schema.Boolean),
 });

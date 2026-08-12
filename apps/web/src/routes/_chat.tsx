@@ -101,7 +101,7 @@ function ChatRouteGlobalShortcuts() {
         if (
           !activeThread &&
           !activeDraftThread &&
-          sidebarMode !== "default" &&
+          sidebarMode !== "legacy" &&
           projectGroupCount > 1
         ) {
           openCommandPalette({ open: "new-thread-in" });
@@ -119,10 +119,10 @@ function ChatRouteGlobalShortcuts() {
       if (command === "chat.new") {
         event.preventDefault();
         event.stopPropagation();
-        // Flat and Connor modes route creation through the command palette
-        // whenever there is a real choice to make; the default sidebar (and
-        // single-project setups) keep the immediate contextual create.
-        if (sidebarMode !== "default" && projectGroupCount > 1) {
+        // The default and Connor sidebars route creation through the command
+        // palette whenever there is a real choice to make; the legacy sidebar
+        // (and single-project setups) keep the immediate contextual create.
+        if (sidebarMode !== "legacy" && projectGroupCount > 1) {
           openCommandPalette({ open: "new-thread-in" });
           return;
         }

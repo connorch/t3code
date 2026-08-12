@@ -1,6 +1,6 @@
 import { formatWorktreePathForDisplay } from "../worktreeCleanup";
 import type { SidebarThreadSummary } from "../types";
-import { hasUnseenCompletion, parseTimestampMs, resolveSidebarV2Status } from "./Sidebar.logic";
+import { hasUnseenCompletion, parseTimestampMs, resolveSidebarThreadStatus } from "./Sidebar.logic";
 
 // ── Connor mode: the worktree is the unit of navigation ─────────────
 // Threads sharing a `worktreePath` collapse into one sidebar group; threads
@@ -201,7 +201,7 @@ export function resolveConnorGroupIndicator<T extends ConnorStatusThread>(
   let hasWorking = false;
   let hasUnread = false;
   for (const thread of threads) {
-    const status = resolveSidebarV2Status(thread);
+    const status = resolveSidebarThreadStatus(thread);
     if (status === "approval") {
       return { kind: "question", tone: "approval" };
     }
@@ -233,7 +233,7 @@ export function resolveConnorThreadDot(
   thread: ConnorStatusThread,
   lastVisitedAt: string | undefined,
 ): ConnorThreadDot {
-  const status = resolveSidebarV2Status(thread);
+  const status = resolveSidebarThreadStatus(thread);
   if (status === "approval") return "approval";
   if (status === "input") return "input";
   if (status === "working" || status === "monitoring") return "working";
