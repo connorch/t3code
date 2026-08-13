@@ -50,7 +50,7 @@ describe("RightPanelTabs", () => {
     expect(html).toContain("Pull request");
     expect(html).toContain("Agents");
     expect(html).toContain("No surface open");
-    expect(html).toContain('data-surface-launcher-keys="BTFDPA"');
+    expect(html).toContain('data-surface-launcher-keys="TFDPBA"');
     expect(html).toContain('aria-keyshortcuts="t"');
     expect(html).not.toContain("Open a surface");
     expect(html).not.toContain("open-surface-body");
