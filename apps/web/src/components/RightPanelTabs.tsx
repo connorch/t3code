@@ -9,9 +9,9 @@ import {
   Plus,
   TerminalSquare,
   X,
+  type LucideIcon,
 } from "lucide-react";
 import {
-  type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
   type ReactElement,
   type ReactNode,
@@ -25,7 +25,7 @@ import { isElectron } from "~/env";
 import type { RightPanelSurface } from "~/rightPanelStore";
 import { cn } from "~/lib/utils";
 import { readLocalApi } from "~/localApi";
-import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
+import { Tooltip, TooltipPopup, TooltipProvider, TooltipTrigger } from "~/components/ui/tooltip";
 import { Kbd } from "~/components/ui/kbd";
 import { Menu, MenuItem, MenuPopup, MenuTrigger } from "~/components/ui/menu";
 import { ScrollArea } from "~/components/ui/scroll-area";
@@ -35,6 +35,12 @@ import { COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS } from "~/workspaceTitlebar";
 
 import { PreviewPanelShell, type PreviewPanelMode } from "./preview/PreviewPanelShell";
 import { PierreEntryIcon } from "./chat/PierreEntryIcon";
+import {
+  emptyGhostTooltip,
+  iconGhostsForOpenSurfaces,
+  shouldClaimSurfaceLauncherKey,
+  type LaunchableSurfaceKind,
+} from "./RightPanelTabs.logic";
 
 interface RightPanelTabsProps {
   mode: PreviewPanelMode;
@@ -68,7 +74,7 @@ interface RightPanelTabsProps {
   pullRequestAvailable: boolean;
   agentsAvailable: boolean;
   pullRequestStatuses?: Readonly<Record<string, PullRequestTabStatus>>;
-  /** Running + waiting subagents; badges the Agents card in the empty state. */
+  /** Running + waiting subagents; badges the Agents ghost in the empty tab strip. */
   liveAgentCount: number;
   children: ReactNode;
 }
@@ -88,28 +94,6 @@ const SURFACE_DISABLED_REASONS = {
   diff: "Diff is only available for server threads in Git repositories.",
   pullRequest: "This thread's branch has no pull request yet.",
   agents: "Agents are only available from a thread.",
-} as const;
-
-/** Overlays that must win over the launcher's letter shortcuts. */
-const LAUNCHER_SHORTCUT_BLOCKING_LAYERS = [
-  '[data-slot="dialog-popup"]',
-  '[data-slot="alert-dialog-popup"]',
-  '[data-slot="command-dialog-popup"]',
-  '[data-slot="menu-popup"]',
-  '[data-slot="select-popup"]',
-  '[data-slot="popover-popup"]',
-  '[data-slot="combobox-popup"]',
-  '[data-slot="autocomplete-popup"]',
-].join(",");
-
-/** One-line unavailability hints for the empty-state cards. */
-const SURFACE_UNAVAILABLE_HINTS = {
-  browser: "Only available in the desktop app.",
-  terminal: "Available when a project is open.",
-  files: "Available when a project is open.",
-  diff: "Available for Git repositories.",
-  pullRequest: "No pull request on this branch yet.",
-  agents: "Available from a thread.",
 } as const;
 
 type TabContextMenuAction = "copy-path" | "close" | "close-others" | "close-to-right" | "close-all";
@@ -142,262 +126,98 @@ function SurfaceMenuItem(props: {
   return <DisabledReasonTooltip reason={props.disabledReason} trigger={item} />;
 }
 
-/**
- * Card launcher shown when the right panel has no surfaces. Keyboard-first
- * without palette chrome: a surface's letter opens it directly from anywhere
- * outside a typing context, and arrows plus Enter work while the launcher is
- * focused. The highlight only appears on hover or arrow use. Unavailable
- * surfaces stay visible with a one-line reason.
- */
-function RightPanelEmptyState(props: {
-  onAddBrowser: () => void;
-  onAddTerminal: () => void;
-  onAddDiff: () => void;
-  onAddFiles: () => void;
-  onAddPullRequest: () => void;
-  onAddAgents: () => void;
-  browserAvailable: boolean;
-  terminalAvailable: boolean;
-  diffAvailable: boolean;
-  filesAvailable: boolean;
-  pullRequestAvailable: boolean;
-  agentsAvailable: boolean;
-  liveAgentCount: number;
-}) {
-  // -1 means no highlight: it only appears on hover or arrow use.
-  const [highlight, setHighlight] = useState(-1);
+/** One launchable surface, shared by the ghost tabs, icon ghosts, and the narrow-panel + menu. */
+interface SurfaceAction {
+  label: string;
+  /** Tooltip and aria-label for the icon-only ghost, e.g. "New terminal". */
+  addLabel: string;
+  description: string;
+  icon: LucideIcon;
+  surfaceKind: LaunchableSurfaceKind;
+  /** Multi-instance surfaces keep their ghost while instances are open; singletons drop it. */
+  multiInstance: boolean;
+  shortcut: string;
+  available: boolean;
+  disabledReason: string | null;
+  onClick: () => void;
+  badgeCount: number;
+}
 
-  const actions = [
-    {
-      label: "Browser",
-      description: "Open a local app or URL.",
-      icon: Globe2,
-      shortcut: "B",
-      available: props.browserAvailable,
-      disabledReason: SURFACE_UNAVAILABLE_HINTS.browser,
-      onClick: props.onAddBrowser,
-      badgeCount: 0,
-    },
-    {
-      label: "Terminal",
-      description: "Start a shell in this workspace.",
-      icon: TerminalSquare,
-      shortcut: "T",
-      available: props.terminalAvailable,
-      disabledReason: SURFACE_UNAVAILABLE_HINTS.terminal,
-      onClick: props.onAddTerminal,
-      badgeCount: 0,
-    },
-    {
-      label: "Files",
-      description: "Browse and read workspace files.",
-      icon: Files,
-      shortcut: "F",
-      available: props.filesAvailable,
-      disabledReason: SURFACE_UNAVAILABLE_HINTS.files,
-      onClick: props.onAddFiles,
-      badgeCount: 0,
-    },
-    {
-      label: "Diff",
-      description: "Review changes in this thread.",
-      icon: FileDiff,
-      shortcut: "D",
-      available: props.diffAvailable,
-      disabledReason: SURFACE_UNAVAILABLE_HINTS.diff,
-      onClick: props.onAddDiff,
-      badgeCount: 0,
-    },
-    {
-      label: "Pull request",
-      description: "Open this branch's pull request.",
-      icon: GitPullRequest,
-      shortcut: "P",
-      available: props.pullRequestAvailable,
-      disabledReason: SURFACE_UNAVAILABLE_HINTS.pullRequest,
-      onClick: props.onAddPullRequest,
-      badgeCount: 0,
-    },
-    {
-      label: "Agents",
-      description: "Follow subagents and workflows.",
-      icon: Bot,
-      shortcut: "A",
-      available: props.agentsAvailable,
-      disabledReason: SURFACE_UNAVAILABLE_HINTS.agents,
-      onClick: props.onAddAgents,
-      badgeCount: props.liveAgentCount,
-    },
-  ] as const;
-
-  type SurfaceAction = (typeof actions)[number];
-
-  const availableActions = actions.filter((action) => action.available);
-  const highlightIndex =
-    availableActions.length === 0 ? -1 : Math.min(highlight, availableActions.length - 1);
-
-  // Letter shortcuts work while the launcher is visible, not only while it
-  // is focused; focus moves around too easily (stray clicks) to carry them.
-  // Capture phase so app-level key handlers cannot swallow the event first;
-  // typing contexts and already-handled events are left alone.
-  const shortcutActionsRef = useRef(availableActions);
-  useEffect(() => {
-    shortcutActionsRef.current = availableActions;
-  });
-  useEffect(() => {
-    const handler = (event: KeyboardEvent) => {
-      if (event.defaultPrevented || event.isComposing) return;
-      if (event.metaKey || event.ctrlKey || event.altKey) return;
-      if (document.querySelector(LAUNCHER_SHORTCUT_BLOCKING_LAYERS)) return;
-      const target = event.target;
-      if (target instanceof HTMLElement) {
-        if (target.closest("input, textarea, select")) return;
-        // An empty contenteditable (the chat composer at rest) does not
-        // count as typing; letters only become text once a draft exists.
-        const editable = target.isContentEditable ? target : target.closest("[contenteditable]");
-        if (editable && (editable.textContent ?? "").trim().length > 0) return;
-      }
-      const action = shortcutActionsRef.current.find(
-        (candidate) => candidate.shortcut.toLowerCase() === event.key.toLowerCase(),
-      );
-      if (!action) return;
-      event.preventDefault();
-      event.stopPropagation();
-      action.onClick();
-    };
-    window.addEventListener("keydown", handler, true);
-    return () => window.removeEventListener("keydown", handler, true);
-  }, []);
-
-  const handleKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
-    if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey) return;
-    if (availableActions.length === 0) return;
-    if (event.key === "ArrowDown" || event.key === "ArrowRight") {
-      event.preventDefault();
-      setHighlight((highlightIndex + 1) % availableActions.length);
-      return;
-    }
-    if (event.key === "ArrowUp" || event.key === "ArrowLeft") {
-      event.preventDefault();
-      setHighlight(
-        highlightIndex === -1
-          ? availableActions.length - 1
-          : (highlightIndex - 1 + availableActions.length) % availableActions.length,
-      );
-      return;
-    }
-    if (event.key === "Enter") {
-      // A focused card button owns its own activation; only open from the
-      // highlight when the container itself has focus.
-      if (event.target instanceof HTMLElement && event.target.closest("button")) return;
-      const action = availableActions[highlightIndex];
-      if (!action) return;
-      event.preventDefault();
-      action.onClick();
-    }
-  };
-
-  // Stable identity so React only runs this callback ref on mount/unmount;
-  // an inline arrow would re-attach and re-focus on every render.
-  const focusOnMount = useCallback((node: HTMLDivElement | null) => {
-    node?.focus();
-  }, []);
-
-  const isHighlighted = (action: SurfaceAction) =>
-    highlightIndex !== -1 && availableActions[highlightIndex] === action;
-
-  const actionIcon = (action: SurfaceAction, iconClassName = "size-4") => {
-    const Icon = action.icon;
-    return (
-      <span className="relative inline-flex shrink-0">
-        <Icon className={iconClassName} />
-        {action.badgeCount > 0 ? (
-          <span
-            aria-hidden
-            className="absolute -top-1.5 -right-2 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-info px-1 text-[9px] font-semibold tabular-nums text-white"
-          >
-            {action.badgeCount}
-          </span>
-        ) : null}
-      </span>
-    );
-  };
-
-  const cardShellClass =
-    "rounded-lg border border-border/80 bg-card dark:border-transparent dark:shadow-none dark:inset-ring-1 dark:inset-ring-white/5";
-  const highlightedCardClass = "bg-accent/60 dark:inset-ring-white/20";
-
+function ActionIcon({ action, className }: { action: SurfaceAction; className: string }) {
+  const Icon = action.icon;
   return (
-    <div
-      ref={focusOnMount}
-      tabIndex={0}
-      onKeyDown={handleKeyDown}
-      aria-label="Open a surface"
-      data-surface-launcher-keys={availableActions.map((action) => action.shortcut).join("")}
-      className={cn(
-        "flex min-h-0 flex-1 items-center justify-center overflow-y-auto px-6 pt-6 outline-none",
-        // The panel topbar sits above this container; matching bottom padding
-        // keeps the cards centered against the full panel, not the leftover.
-        "pb-[calc(var(--workspace-topbar-height)+--spacing(6))]",
-      )}
-    >
-      <div className="relative w-full max-w-lg">
-        <div className="absolute inset-x-0 bottom-full mb-5 text-center">
-          <h3 className="font-medium text-foreground text-sm">Open a surface</h3>
-          <p className="mt-1 text-muted-foreground text-xs">
-            Choose what to show in the right panel.
-          </p>
-        </div>
-        <div className="grid grid-cols-2 gap-2">
-          {actions.map((action) =>
-            action.available ? (
-              <button
-                key={action.label}
-                type="button"
-                onClick={action.onClick}
-                onMouseEnter={() => setHighlight(availableActions.indexOf(action))}
-                onMouseLeave={() =>
-                  setHighlight((current) =>
-                    current === availableActions.indexOf(action) ? -1 : current,
-                  )
-                }
-                className={cn(
-                  "relative flex w-full cursor-pointer flex-col items-start p-4 text-left transition hover:border-border hover:bg-accent/60",
-                  cardShellClass,
-                  isHighlighted(action) && highlightedCardClass,
-                )}
-              >
-                <Kbd className="absolute top-3 right-3">{action.shortcut}</Kbd>
-                <span className="flex items-center gap-2 pe-8">
-                  {actionIcon(action)}
-                  <span className="font-medium text-sm">{action.label}</span>
-                </span>
-                <span className="mt-1.5 text-muted-foreground text-xs leading-relaxed">
-                  {action.description}
-                </span>
-              </button>
-            ) : (
-              <div
-                key={action.label}
-                className={cn(
-                  "relative flex w-full flex-col items-start p-4 opacity-40",
-                  cardShellClass,
-                )}
-              >
-                <Kbd className="absolute top-3 right-3">{action.shortcut}</Kbd>
-                <span className="flex items-center gap-2 pe-8">
-                  {actionIcon(action)}
-                  <span className="font-medium text-sm">{action.label}</span>
-                </span>
-                <span className="mt-1.5 text-muted-foreground text-xs leading-relaxed">
-                  {action.disabledReason}
-                </span>
-              </div>
-            ),
-          )}
-        </div>
-      </div>
-    </div>
+    <span className="relative inline-flex shrink-0">
+      <Icon className={className} />
+      {action.badgeCount > 0 ? (
+        <span
+          aria-hidden
+          className="absolute -top-1.5 -right-2 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-info px-1 text-[9px] font-semibold tabular-nums text-white"
+        >
+          {action.badgeCount}
+        </span>
+      ) : null}
+    </span>
+  );
+}
+
+/** Labeled ghost tab shown in the empty tab strip; clicking it opens the surface in place. */
+function GhostSurfaceTab({ action }: { action: SurfaceAction }) {
+  const tooltip = emptyGhostTooltip(action);
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <button
+            type="button"
+            onClick={action.available ? action.onClick : undefined}
+            aria-disabled={!action.available}
+            {...(action.available ? { "aria-keyshortcuts": action.shortcut.toLowerCase() } : {})}
+            className={cn(
+              "flex h-6 shrink-0 items-center gap-1.5 rounded-md border border-border/70 px-2.5 text-xs text-muted-foreground",
+              action.available
+                ? "cursor-pointer hover:bg-accent/60 hover:text-foreground"
+                : "cursor-not-allowed opacity-40",
+            )}
+          >
+            <ActionIcon action={action} className="size-3" />
+            {action.label}
+          </button>
+        }
+      />
+      <TooltipPopup side="bottom" className="flex items-center gap-1.5">
+        <span>{tooltip.label}</span>
+        {tooltip.shortcut ? <Kbd>{tooltip.shortcut}</Kbd> : null}
+      </TooltipPopup>
+    </Tooltip>
+  );
+}
+
+/** Icon-only ghost shown after real tabs so surfaces stay one click away in the same spot. */
+function GhostSurfaceIconButton({ action }: { action: SurfaceAction }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <button
+            type="button"
+            onClick={action.available ? action.onClick : undefined}
+            aria-disabled={!action.available}
+            aria-label={action.addLabel}
+            className={cn(
+              "flex size-6 shrink-0 items-center justify-center rounded-md border border-border/70 text-muted-foreground",
+              action.available
+                ? "cursor-pointer hover:bg-accent/60 hover:text-foreground"
+                : "cursor-not-allowed opacity-40",
+            )}
+          >
+            <ActionIcon action={action} className="size-3" />
+          </button>
+        }
+      />
+      <TooltipPopup side="bottom">
+        {action.available ? action.addLabel : action.disabledReason}
+      </TooltipPopup>
+    </Tooltip>
   );
 }
 
@@ -506,6 +326,113 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
   const ownsDesktopTitleBar = isElectron && props.mode === "inline";
   const { resolvedTheme } = useTheme();
   const tabListRef = useRef<HTMLDivElement>(null);
+  const isLauncherVisible = props.surfaces.length === 0;
+
+  const surfaceActions: readonly SurfaceAction[] = [
+    {
+      label: "Browser",
+      addLabel: "New browser",
+      description: "Open a local app or URL.",
+      icon: Globe2,
+      surfaceKind: "preview",
+      multiInstance: true,
+      shortcut: "B",
+      available: props.browserAvailable,
+      disabledReason: props.browserAvailable ? null : SURFACE_DISABLED_REASONS.browser,
+      onClick: props.onAddBrowser,
+      badgeCount: 0,
+    },
+    {
+      label: "Terminal",
+      addLabel: "New terminal",
+      description: "Start a shell in this workspace.",
+      icon: TerminalSquare,
+      surfaceKind: "terminal",
+      multiInstance: true,
+      shortcut: "T",
+      available: props.terminalAvailable,
+      disabledReason: props.terminalAvailable ? null : SURFACE_DISABLED_REASONS.terminal,
+      onClick: props.onAddTerminal,
+      badgeCount: 0,
+    },
+    {
+      label: "Files",
+      addLabel: "Files",
+      description: "Browse and read workspace files.",
+      icon: Files,
+      surfaceKind: "files",
+      multiInstance: false,
+      shortcut: "F",
+      available: props.filesAvailable,
+      disabledReason: props.filesAvailable ? null : SURFACE_DISABLED_REASONS.files,
+      onClick: props.onAddFiles,
+      badgeCount: 0,
+    },
+    {
+      label: "Diff",
+      addLabel: "Diff",
+      description: "Review changes in this thread.",
+      icon: FileDiff,
+      surfaceKind: "diff",
+      multiInstance: false,
+      shortcut: "D",
+      available: props.diffAvailable,
+      disabledReason: props.diffAvailable ? null : SURFACE_DISABLED_REASONS.diff,
+      onClick: props.onAddDiff,
+      badgeCount: 0,
+    },
+    {
+      label: "Pull request",
+      addLabel: "Pull request",
+      description: "Open this branch's pull request.",
+      icon: GitPullRequest,
+      surfaceKind: "pull-request",
+      multiInstance: false,
+      shortcut: "P",
+      available: props.pullRequestAvailable,
+      disabledReason: props.pullRequestAvailable ? null : SURFACE_DISABLED_REASONS.pullRequest,
+      onClick: props.onAddPullRequest,
+      badgeCount: 0,
+    },
+    {
+      label: "Agents",
+      addLabel: "Agents",
+      description: "Follow subagents and workflows.",
+      icon: Bot,
+      surfaceKind: "agents",
+      multiInstance: false,
+      shortcut: "A",
+      available: props.agentsAvailable,
+      disabledReason: props.agentsAvailable ? null : SURFACE_DISABLED_REASONS.agents,
+      onClick: props.onAddAgents,
+      badgeCount: props.liveAgentCount,
+    },
+  ];
+  const ghostIconActions = iconGhostsForOpenSurfaces(
+    surfaceActions,
+    props.surfaces.map((surface) => surface.kind),
+  );
+  const availableLauncherActions = surfaceActions.filter((action) => action.available);
+
+  const shortcutActionsRef = useRef(availableLauncherActions);
+  useEffect(() => {
+    shortcutActionsRef.current = availableLauncherActions;
+  });
+  useEffect(() => {
+    if (!isLauncherVisible) return;
+    const handler = (event: KeyboardEvent) => {
+      if (!shouldClaimSurfaceLauncherKey(event)) return;
+      const action = shortcutActionsRef.current.find(
+        (candidate) => candidate.shortcut.toLowerCase() === event.key.toLowerCase(),
+      );
+      if (!action) return;
+      event.preventDefault();
+      event.stopPropagation();
+      action.onClick();
+    };
+    window.addEventListener("keydown", handler, true);
+    return () => window.removeEventListener("keydown", handler, true);
+  }, [isLauncherVisible]);
 
   const handleTabContextMenu = useCallback(
     async (event: ReactMouseEvent, surface: RightPanelSurface) => {
@@ -599,12 +526,22 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
           props.mode === "inline" && props.maximized && COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS,
         )}
         data-right-panel-tabbar
+        {...(isLauncherVisible
+          ? {
+              "data-surface-launcher-keys": availableLauncherActions
+                .map((action) => action.shortcut)
+                .join(""),
+            }
+          : {})}
       >
         <ScrollArea
           ref={tabListRef}
           hideScrollbars
           scrollFade
-          className={cn("min-w-0 flex-1 rounded-none", ownsDesktopTitleBar && "drag-region")}
+          className={cn(
+            "@container/tab-strip min-w-0 flex-1 rounded-none",
+            ownsDesktopTitleBar && "drag-region",
+          )}
           data-right-panel-tab-list
         >
           <div className="flex h-full w-max min-w-full items-center gap-1">
@@ -665,87 +602,59 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
                 </div>
               );
             })}
-            {props.surfaces.length > 0 ? (
-              <Menu>
-                <MenuTrigger
-                  className="cursor-pointer relative inline-flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
-                  aria-label="Add panel surface"
-                >
-                  <Plus className="size-3.5" />
-                </MenuTrigger>
-                <MenuPopup align="start" side="bottom" sideOffset={6} className="min-w-44">
-                  <SurfaceMenuItem
-                    available={props.browserAvailable}
-                    disabledReason={SURFACE_DISABLED_REASONS.browser}
-                    onClick={props.onAddBrowser}
+            {isLauncherVisible ? (
+              surfaceActions.map((action) => <GhostSurfaceTab key={action.label} action={action} />)
+            ) : (
+              <>
+                {/* Icon ghosts keep every surface one click away; below @xs they collapse into the + menu. */}
+                <div
+                  className="mx-0.5 hidden h-4 w-px shrink-0 bg-border/70 @xs/tab-strip:block"
+                  aria-hidden
+                />
+                <TooltipProvider delay={0}>
+                  <div className="hidden items-center gap-1 @xs/tab-strip:flex">
+                    {ghostIconActions.map((action) => (
+                      <GhostSurfaceIconButton key={action.label} action={action} />
+                    ))}
+                  </div>
+                </TooltipProvider>
+                <Menu>
+                  <MenuTrigger
+                    className="cursor-pointer relative inline-flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground @xs/tab-strip:hidden"
+                    aria-label="Add panel surface"
                   >
-                    <Globe2 />
-                    Browser
-                  </SurfaceMenuItem>
-                  <SurfaceMenuItem
-                    available={props.terminalAvailable}
-                    disabledReason={SURFACE_DISABLED_REASONS.terminal}
-                    onClick={props.onAddTerminal}
-                  >
-                    <TerminalSquare />
-                    Terminal
-                  </SurfaceMenuItem>
-                  <SurfaceMenuItem
-                    available={props.filesAvailable}
-                    disabledReason={SURFACE_DISABLED_REASONS.files}
-                    onClick={props.onAddFiles}
-                  >
-                    <Files />
-                    Files
-                  </SurfaceMenuItem>
-                  <SurfaceMenuItem
-                    available={props.diffAvailable}
-                    disabledReason={SURFACE_DISABLED_REASONS.diff}
-                    onClick={props.onAddDiff}
-                  >
-                    <FileDiff />
-                    Diff
-                  </SurfaceMenuItem>
-                  <SurfaceMenuItem
-                    available={props.pullRequestAvailable}
-                    disabledReason={SURFACE_DISABLED_REASONS.pullRequest}
-                    onClick={props.onAddPullRequest}
-                  >
-                    <GitPullRequest />
-                    Pull request
-                  </SurfaceMenuItem>
-                  <SurfaceMenuItem
-                    available={props.agentsAvailable}
-                    disabledReason={SURFACE_DISABLED_REASONS.agents}
-                    onClick={props.onAddAgents}
-                  >
-                    <Bot />
-                    Agents
-                  </SurfaceMenuItem>
-                </MenuPopup>
-              </Menu>
-            ) : null}
+                    <Plus className="size-3.5" />
+                  </MenuTrigger>
+                  <MenuPopup align="start" side="bottom" sideOffset={6} className="min-w-44">
+                    {surfaceActions.map((action) => {
+                      const Icon = action.icon;
+                      return (
+                        <SurfaceMenuItem
+                          key={action.label}
+                          available={action.available}
+                          {...(action.disabledReason !== null
+                            ? { disabledReason: action.disabledReason }
+                            : {})}
+                          onClick={action.onClick}
+                        >
+                          <Icon />
+                          {action.label}
+                        </SurfaceMenuItem>
+                      );
+                    })}
+                  </MenuPopup>
+                </Menu>
+              </>
+            )}
           </div>
         </ScrollArea>
         {props.layoutControls}
       </div>
       <div className="flex min-h-0 flex-1 flex-col" data-right-panel-surface-content>
         {props.activeSurfaceId === null ? (
-          <RightPanelEmptyState
-            onAddBrowser={props.onAddBrowser}
-            onAddTerminal={props.onAddTerminal}
-            onAddDiff={props.onAddDiff}
-            onAddFiles={props.onAddFiles}
-            onAddPullRequest={props.onAddPullRequest}
-            onAddAgents={props.onAddAgents}
-            browserAvailable={props.browserAvailable}
-            terminalAvailable={props.terminalAvailable}
-            diffAvailable={props.diffAvailable}
-            filesAvailable={props.filesAvailable}
-            pullRequestAvailable={props.pullRequestAvailable}
-            agentsAvailable={props.agentsAvailable}
-            liveAgentCount={props.liveAgentCount}
-          />
+          <div className="flex min-h-0 flex-1 items-center justify-center p-6">
+            <p className="text-muted-foreground/60 text-xs">No surface open</p>
+          </div>
         ) : (
           props.children
         )}
