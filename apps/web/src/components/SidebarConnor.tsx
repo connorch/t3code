@@ -501,8 +501,10 @@ function WorktreeName(props: {
   useEffect(() => {
     if (props.isRenaming) committedRef.current = false;
   }, [props.isRenaming]);
+  // Auto width, not flex-1: the remote-machine glyph sits immediately after the
+  // name rather than being pushed to the far end of the row.
   if (!props.isRenaming) {
-    return <span className={cn("min-w-0 flex-1 truncate", props.className)}>{props.name}</span>;
+    return <span className={cn("min-w-0 truncate", props.className)}>{props.name}</span>;
   }
   return (
     <input
@@ -583,11 +585,17 @@ interface GroupSectionProps {
 
 function useGroupHeaderInteractions(props: GroupSectionProps) {
   const { group } = props;
+  // With no chevron on the row, the row itself is the expand affordance:
+  // opening a worktree navigates into it, clicking the open one closes it.
+  const activate = () => {
+    if (props.expanded) props.onGroupToggle(group);
+    else props.onGroupClick(group);
+  };
   const handleClick = (event: ReactMouseEvent) => {
     if (props.isRenaming) return;
     if ((event.target as HTMLElement).closest("button, a, input")) return;
     if (isTrailingDoubleClick(event.detail)) return;
-    props.onGroupClick(group);
+    activate();
   };
   const handleDoubleClick = (event: ReactMouseEvent) => {
     if (props.isRenaming || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
@@ -606,7 +614,7 @@ function useGroupHeaderInteractions(props: GroupSectionProps) {
     if (event.target !== event.currentTarget) return;
     if (event.key !== "Enter" && event.key !== " ") return;
     event.preventDefault();
-    props.onGroupClick(group);
+    activate();
   };
   const location = group.worktreePath ?? "Root checkout";
   const headerTitle = `${location}${group.branch ? ` (${group.branch})` : ""}`;
@@ -675,115 +683,87 @@ function StackGroupSection(props: GroupSectionProps) {
     gitStatus: gitStatusQuery.data ?? null,
   });
   return (
-    <li className="list-none py-0.5">
+    <li className="list-none py-px">
+      {/* Card chrome is the expanded worktree's focus treatment; collapsed
+          worktrees are plain rows. The transparent border keeps both states
+          on the same geometry so expanding never nudges the row by 1px. */}
       <section
         className={cn(
-          "overflow-hidden rounded-lg border transition-colors",
-          props.expanded
-            ? "border-sidebar-border bg-sidebar-row-hover/35"
-            : "border-sidebar-border/60",
+          "overflow-hidden rounded-lg border border-transparent transition-colors",
+          props.expanded && "border-sidebar-border bg-sidebar-row-hover/35",
         )}
       >
         <div
           role="button"
           tabIndex={0}
           data-testid={`sidebar-connor-group-${group.key}`}
+          aria-expanded={props.expanded}
           title={interactions.headerTitle}
           className={cn(
-            // -1px start padding compensates the card border so the name
-            // sits exactly on the project-title alignment line.
-            "group/connor-group flex w-full cursor-pointer flex-col gap-0.5 ps-[calc(--spacing(2)-1px)] pe-2.5 py-2 text-left outline-none select-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring",
-            !props.expanded && "hover:bg-sidebar-row-hover",
+            // -1px start padding compensates the card border so the branch
+            // glyph sits exactly on the project-favicon alignment line.
+            "group/connor-group flex h-7 w-full cursor-pointer items-center gap-1.5 ps-[calc(--spacing(2)-1px)] pe-2.5 text-left outline-none select-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring",
+            !props.expanded && "rounded-lg hover:bg-sidebar-row-hover",
           )}
           onClick={interactions.handleClick}
           onDoubleClick={interactions.handleDoubleClick}
           onKeyDown={interactions.handleKeyDown}
           onContextMenu={interactions.handleContextMenu}
         >
-          <div className="flex min-w-0 items-center gap-2">
-            <WorktreeName
-              name={props.name}
-              isRenaming={props.isRenaming}
-              renamingName={props.renamingName}
+          {group.branch ? (
+            <GitBranchIcon
+              aria-hidden
               className={cn(
-                "text-sm",
-                props.containsActive
-                  ? "font-medium text-sidebar-foreground"
-                  : "font-medium text-sidebar-foreground/85",
+                "size-3 shrink-0 text-sidebar-muted-foreground/70",
+                groupPr?.state === "open" && "text-success-foreground",
+                groupPr?.state === "merged" && "text-merged-foreground",
               )}
-              onRenameNameChange={props.onRenameNameChange}
-              onCommitRename={() => props.onCommitGroupRename(group)}
-              onCancelRename={props.onCancelGroupRename}
             />
-            {/* Stacked cell: archive/+ replace the status glyph on hover.
-                The glyph lives in a size-5 slot matching the + button so
-                they share a center; -me-1.5 cancels ghost-button padding
-                so the icons optically match the left inset. pointer-events-none
-                on the glyph: hover opacity (< 1) would otherwise promote it
-                above the buttons and swallow their clicks. */}
-            <span className="-me-1.5 ml-auto grid shrink-0 items-center justify-items-end">
-              <span className="pointer-events-none col-start-1 row-start-1 inline-flex size-5 items-center justify-center transition-opacity group-hover/connor-group:opacity-0">
-                <GroupIndicatorGlyph indicator={props.indicator} />
-              </span>
-              <span className="col-start-1 row-start-1 flex items-center opacity-0 transition-opacity group-hover/connor-group:opacity-100 focus-within:opacity-100">
-                {group.kind === "worktree" ? (
-                  <GroupArchiveButton group={group} onArchiveGroup={props.onArchiveGroup} />
-                ) : null}
-                <GroupPlusButton group={group} onNewThreadInGroup={props.onNewThreadInGroup} />
-              </span>
+          ) : null}
+          <WorktreeName
+            name={props.name}
+            isRenaming={props.isRenaming}
+            renamingName={props.renamingName}
+            className={cn(
+              "text-sm font-medium",
+              props.containsActive ? "text-sidebar-foreground" : "text-sidebar-foreground/85",
+            )}
+            onRenameNameChange={props.onRenameNameChange}
+            onCommitRename={() => props.onCommitGroupRename(group)}
+            onCancelRename={props.onCancelGroupRename}
+          />
+          {props.remoteEnvironmentLabel ? (
+            <RemoteEnvironmentGlyph label={props.remoteEnvironmentLabel} />
+          ) : null}
+          {/* Stacked cell: archive/+ replace the status glyph on hover.
+              The glyph lives in a size-5 slot matching the + button so
+              they share a center; -me-1.5 cancels ghost-button padding
+              so the icons optically match the left inset. pointer-events-none
+              on the glyph: hover opacity (< 1) would otherwise promote it
+              above the buttons and swallow their clicks. */}
+          <span className="-me-1.5 ml-auto grid shrink-0 items-center justify-items-end">
+            <span className="pointer-events-none col-start-1 row-start-1 inline-flex size-5 items-center justify-center transition-opacity group-hover/connor-group:opacity-0">
+              <GroupIndicatorGlyph indicator={props.indicator} />
             </span>
-          </div>
-          <div className="flex min-w-0 items-center gap-1.5 text-xs text-sidebar-muted-foreground/70">
-            {group.branch ? (
-              <GitBranchIcon
-                aria-hidden
-                className={cn(
-                  "size-3 shrink-0",
-                  groupPr?.state === "open" && "text-success-foreground",
-                  groupPr?.state === "merged" && "text-merged-foreground",
-                )}
-              />
-            ) : null}
-            {props.remoteEnvironmentLabel ? (
-              <RemoteEnvironmentGlyph label={props.remoteEnvironmentLabel} />
-            ) : null}
-            <span className="min-w-0 truncate">
-              {group.branch ?? (group.kind === "local" ? "local checkout" : "worktree")}
+            <span className="col-start-1 row-start-1 flex items-center opacity-0 transition-opacity group-hover/connor-group:opacity-100 focus-within:opacity-100">
+              {group.kind === "worktree" ? (
+                <GroupArchiveButton group={group} onArchiveGroup={props.onArchiveGroup} />
+              ) : null}
+              <GroupPlusButton group={group} onNewThreadInGroup={props.onNewThreadInGroup} />
             </span>
-            {/* Stacked cell: the hover-revealed expand chevron replaces the
-                thread count instead of sitting next to it. The count is
-                pointer-events-none: its hover opacity (< 1) promotes it
-                above the sibling button in paint order, where it would
-                otherwise swallow the button's clicks. */}
-            <span className="group/connor-expand -me-1.5 ml-auto grid size-5 shrink-0 items-center justify-items-center">
-              <span
-                aria-label={`${group.threads.length} thread${group.threads.length === 1 ? "" : "s"}`}
-                className="pointer-events-none col-start-1 row-start-1 tabular-nums transition-opacity group-hover/connor-group:opacity-0 group-focus-within/connor-expand:opacity-0"
-              >
-                {group.threads.length}
-              </span>
-              <button
-                type="button"
-                aria-label={props.expanded ? "Collapse worktree" : "Expand worktree"}
-                aria-expanded={props.expanded}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  props.onGroupToggle(group);
-                }}
-                className="col-start-1 row-start-1 inline-flex size-5 cursor-pointer items-center justify-center rounded-sm text-sidebar-muted-foreground opacity-0 transition-opacity hover:bg-sidebar-control-surface hover:text-sidebar-foreground focus-visible:opacity-100 group-hover/connor-group:opacity-100"
-              >
-                <ChevronRightIcon
-                  aria-hidden
-                  className={cn("size-3.5 transition-transform", props.expanded && "rotate-90")}
-                />
-              </button>
-            </span>
-          </div>
+          </span>
         </div>
         {props.expanded ? (
-          <ul className="flex flex-col gap-px border-t border-sidebar-border/60 p-1">
-            {props.displayThreads.map((thread) => props.renderThreadRow(thread))}
-          </ul>
+          <>
+            {/* Start inset lines the branch up under the worktree name:
+                header inset + the branch glyph's width + its gap. */}
+            <div className="truncate ps-[calc(--spacing(2)+--spacing(3)+--spacing(1.5)-1px)] pe-2.5 pb-1 text-xs text-sidebar-muted-foreground/70">
+              {group.branch ?? (group.kind === "local" ? "local checkout" : "worktree")}
+            </div>
+            <ul className="flex flex-col gap-px p-1 pt-0">
+              {props.displayThreads.map((thread) => props.renderThreadRow(thread))}
+            </ul>
+          </>
         ) : null}
       </section>
     </li>
