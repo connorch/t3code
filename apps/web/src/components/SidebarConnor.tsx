@@ -768,7 +768,10 @@ function StackGroupSection(props: GroupSectionProps) {
             <div className="truncate ps-[calc(--spacing(1)+--spacing(4)+--spacing(1.5)-1px)] pe-2.5 pb-1 text-xs text-sidebar-muted-foreground/70">
               {group.branch ?? (group.kind === "local" ? "local checkout" : "worktree")}
             </div>
-            <ul className="flex flex-col gap-px p-1 pt-0">
+            {/* Same start line as the branch, less the thread row's own px-2,
+                so thread titles sit under the worktree title rather than
+                outdenting past it. */}
+            <ul className="flex flex-col gap-px p-1 pt-0 ps-[calc(--spacing(1)+--spacing(4)+--spacing(1.5)---spacing(2)-1px)]">
               {props.displayThreads.map((thread) => props.renderThreadRow(thread))}
             </ul>
           </>
