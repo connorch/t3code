@@ -125,6 +125,7 @@ import { ProjectFavicon } from "./ProjectFavicon";
 import { resolveThreadPr } from "./ThreadStatusIndicators";
 import { stackedThreadToast, toastManager } from "./ui/toast";
 import { Button } from "./ui/button";
+import { Collapsible, CollapsiblePanel } from "./ui/collapsible";
 import { Input } from "./ui/input";
 import {
   Menu,
@@ -686,12 +687,18 @@ function StackGroupSection(props: GroupSectionProps) {
     <li className="list-none py-px">
       {/* Card chrome is the expanded worktree's focus treatment; collapsed
           worktrees are plain rows. The transparent border keeps both states
-          on the same geometry so expanding never nudges the row by 1px. */}
-      <section
-        className={cn(
-          "overflow-hidden rounded-lg border border-transparent transition-colors",
-          props.expanded && "border-sidebar-border bg-sidebar-row-hover/35",
-        )}
+          on the same geometry so expanding never nudges the row by 1px.
+          Colors share the panel's 200ms so the chrome lands with the height. */}
+      <Collapsible
+        open={props.expanded}
+        render={
+          <section
+            className={cn(
+              "overflow-hidden rounded-lg border border-transparent transition-colors duration-200",
+              props.expanded && "border-sidebar-border bg-sidebar-row-hover/35",
+            )}
+          />
+        }
       >
         <div
           role="button"
@@ -761,22 +768,22 @@ function StackGroupSection(props: GroupSectionProps) {
             </span>
           </span>
         </div>
-        {props.expanded ? (
-          <>
-            {/* Start inset lines the branch up under the worktree name:
-                header inset + the glyph slot + its gap. */}
-            <div className="truncate ps-[calc(--spacing(1)+--spacing(4)+--spacing(1.5)-1px)] pe-2.5 pb-1 text-xs text-sidebar-muted-foreground/70">
-              {group.branch ?? (group.kind === "local" ? "local checkout" : "worktree")}
-            </div>
-            {/* Same start line as the branch, less the thread row's own px-2,
-                so thread titles sit under the worktree title rather than
-                outdenting past it. */}
-            <ul className="flex flex-col gap-px p-1 pt-0 ps-[calc(--spacing(1)+--spacing(4)+--spacing(1.5)---spacing(2)-1px)]">
-              {props.displayThreads.map((thread) => props.renderThreadRow(thread))}
-            </ul>
-          </>
-        ) : null}
-      </section>
+        {/* The panel owns mount and unmount, so the threads stay rendered for
+            the length of the closing slide instead of vanishing on click. */}
+        <CollapsiblePanel className="motion-reduce:transition-none">
+          {/* Start inset lines the branch up under the worktree name:
+              header inset + the glyph slot + its gap. */}
+          <div className="truncate ps-[calc(--spacing(1)+--spacing(4)+--spacing(1.5)-1px)] pe-2.5 pb-1 text-xs text-sidebar-muted-foreground/70">
+            {group.branch ?? (group.kind === "local" ? "local checkout" : "worktree")}
+          </div>
+          {/* Same start line as the branch, less the thread row's own px-2,
+              so thread titles sit under the worktree title rather than
+              outdenting past it. */}
+          <ul className="flex flex-col gap-px p-1 pt-0 ps-[calc(--spacing(1)+--spacing(4)+--spacing(1.5)---spacing(2)-1px)]">
+            {props.displayThreads.map((thread) => props.renderThreadRow(thread))}
+          </ul>
+        </CollapsiblePanel>
+      </Collapsible>
     </li>
   );
 }
