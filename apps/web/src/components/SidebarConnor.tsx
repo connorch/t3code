@@ -745,7 +745,11 @@ function StackGroupSection(props: GroupSectionProps) {
             <span className="pointer-events-none col-start-1 row-start-1 inline-flex size-5 items-center justify-center transition-opacity group-hover/connor-group:opacity-0">
               <GroupIndicatorGlyph indicator={props.indicator} />
             </span>
-            <span className="col-start-1 row-start-1 flex items-center opacity-0 transition-opacity group-hover/connor-group:opacity-100 focus-within:opacity-100">
+            {/* Zero-width until revealed, so the idle row only reserves the
+                status glyph's slot and the name runs that much further right.
+                Width snaps rather than transitions: animating it would reflow
+                the truncated name on every frame of the hover. */}
+            <span className="col-start-1 row-start-1 flex w-0 items-center overflow-hidden opacity-0 transition-opacity group-hover/connor-group:w-auto group-hover/connor-group:opacity-100 focus-within:w-auto focus-within:opacity-100">
               {group.kind === "worktree" ? (
                 <GroupArchiveButton group={group} onArchiveGroup={props.onArchiveGroup} />
               ) : null}
