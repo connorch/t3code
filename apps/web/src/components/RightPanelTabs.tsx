@@ -330,19 +330,6 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
 
   const surfaceActions: readonly SurfaceAction[] = [
     {
-      label: "Browser",
-      addLabel: "New browser",
-      description: "Open a local app or URL.",
-      icon: Globe2,
-      surfaceKind: "preview",
-      multiInstance: true,
-      shortcut: "B",
-      available: props.browserAvailable,
-      disabledReason: props.browserAvailable ? null : SURFACE_DISABLED_REASONS.browser,
-      onClick: props.onAddBrowser,
-      badgeCount: 0,
-    },
-    {
       label: "Terminal",
       addLabel: "New terminal",
       description: "Start a shell in this workspace.",
@@ -392,6 +379,19 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
       available: props.pullRequestAvailable,
       disabledReason: props.pullRequestAvailable ? null : SURFACE_DISABLED_REASONS.pullRequest,
       onClick: props.onAddPullRequest,
+      badgeCount: 0,
+    },
+    {
+      label: "Browser",
+      addLabel: "New browser",
+      description: "Open a local app or URL.",
+      icon: Globe2,
+      surfaceKind: "preview",
+      multiInstance: true,
+      shortcut: "B",
+      available: props.browserAvailable,
+      disabledReason: props.browserAvailable ? null : SURFACE_DISABLED_REASONS.browser,
+      onClick: props.onAddBrowser,
       badgeCount: 0,
     },
     {
