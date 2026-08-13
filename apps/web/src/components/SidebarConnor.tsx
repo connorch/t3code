@@ -700,9 +700,9 @@ function StackGroupSection(props: GroupSectionProps) {
           aria-expanded={props.expanded}
           title={interactions.headerTitle}
           className={cn(
-            // -1px start padding compensates the card border so the branch
-            // glyph sits exactly on the project-favicon alignment line.
-            "group/connor-group flex h-7 w-full cursor-pointer items-center gap-1.5 ps-[calc(--spacing(2)-1px)] pe-2.5 text-left outline-none select-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring",
+            // Same px-1 inset as the project header, less 1px for the card
+            // border, so worktree rows start on the project row's edge.
+            "group/connor-group flex h-7 w-full cursor-pointer items-center gap-1.5 ps-[calc(--spacing(1)-1px)] pe-2.5 text-left outline-none select-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring",
             !props.expanded && "rounded-lg hover:bg-sidebar-row-hover",
           )}
           onClick={interactions.handleClick}
@@ -710,23 +710,27 @@ function StackGroupSection(props: GroupSectionProps) {
           onKeyDown={interactions.handleKeyDown}
           onContextMenu={interactions.handleContextMenu}
         >
-          {group.branch ? (
-            <GitBranchIcon
-              aria-hidden
-              className={cn(
-                "size-3 shrink-0 text-sidebar-muted-foreground/70",
-                groupPr?.state === "open" && "text-success-foreground",
-                groupPr?.state === "merged" && "text-merged-foreground",
-              )}
-            />
-          ) : null}
+          {/* Branch glyph sits in the project favicon's size-4 slot, kept even
+              when there is no branch, so every title shares one start line. */}
+          <span className="flex size-4 shrink-0 items-center justify-center">
+            {group.branch ? (
+              <GitBranchIcon
+                aria-hidden
+                className={cn(
+                  "size-3 text-sidebar-muted-foreground/70",
+                  groupPr?.state === "open" && "text-success-foreground",
+                  groupPr?.state === "merged" && "text-merged-foreground",
+                )}
+              />
+            ) : null}
+          </span>
           <WorktreeName
             name={props.name}
             isRenaming={props.isRenaming}
             renamingName={props.renamingName}
             className={cn(
               "text-sm font-medium",
-              props.containsActive ? "text-sidebar-foreground" : "text-sidebar-foreground/85",
+              props.containsActive ? "text-sidebar-foreground" : "text-sidebar-muted-foreground",
             )}
             onRenameNameChange={props.onRenameNameChange}
             onCommitRename={() => props.onCommitGroupRename(group)}
@@ -760,8 +764,8 @@ function StackGroupSection(props: GroupSectionProps) {
         {props.expanded ? (
           <>
             {/* Start inset lines the branch up under the worktree name:
-                header inset + the branch glyph's width + its gap. */}
-            <div className="truncate ps-[calc(--spacing(2)+--spacing(3)+--spacing(1.5)-1px)] pe-2.5 pb-1 text-xs text-sidebar-muted-foreground/70">
+                header inset + the glyph slot + its gap. */}
+            <div className="truncate ps-[calc(--spacing(1)+--spacing(4)+--spacing(1.5)-1px)] pe-2.5 pb-1 text-xs text-sidebar-muted-foreground/70">
               {group.branch ?? (group.kind === "local" ? "local checkout" : "worktree")}
             </div>
             <ul className="flex flex-col gap-px p-1 pt-0">
@@ -2218,10 +2222,10 @@ export default function SidebarConnor() {
                     onContextMenu={handleProjectContextMenu}
                   />
                   {section.expanded && section.groups.length > 0 ? (
-                    // ps-4.5 (18px) + the rows' own 8px inset lines their text
-                    // up with the project title (4px padding + 16px icon slot
-                    // + 6px gap = 26px).
-                    <ul className="flex flex-col gap-px ps-4.5 pb-1">
+                    // No start inset: worktree rows repeat the project row's
+                    // own geometry (4px padding + 16px icon slot + 6px gap),
+                    // so both levels share one icon and title alignment line.
+                    <ul className="flex flex-col gap-px pb-1">
                       {section.groups.map(({ group, displayThreads }) => (
                         <StackGroupSection
                           key={group.key}
