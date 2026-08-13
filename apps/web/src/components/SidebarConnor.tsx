@@ -749,24 +749,34 @@ function StackGroupSection(props: GroupSectionProps) {
             <span className="min-w-0 truncate">
               {group.branch ?? (group.kind === "local" ? "local checkout" : "worktree")}
             </span>
-            <span className="ml-auto shrink-0 tabular-nums">
-              {group.threads.length === 1 ? "1 thread" : `${group.threads.length} threads`}
+            {/* Stacked cell: the hover-revealed expand chevron replaces the
+                thread count instead of sitting next to it. The count is
+                pointer-events-none: its hover opacity (< 1) promotes it
+                above the sibling button in paint order, where it would
+                otherwise swallow the button's clicks. */}
+            <span className="group/connor-expand ml-auto grid size-5 shrink-0 items-center justify-items-center">
+              <span
+                aria-label={`${group.threads.length} thread${group.threads.length === 1 ? "" : "s"}`}
+                className="pointer-events-none col-start-1 row-start-1 tabular-nums transition-opacity group-hover/connor-group:opacity-0 group-focus-within/connor-expand:opacity-0"
+              >
+                {group.threads.length}
+              </span>
+              <button
+                type="button"
+                aria-label={props.expanded ? "Collapse worktree" : "Expand worktree"}
+                aria-expanded={props.expanded}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  props.onGroupToggle(group);
+                }}
+                className="col-start-1 row-start-1 inline-flex size-5 cursor-pointer items-center justify-center rounded-sm text-sidebar-muted-foreground opacity-0 transition-opacity hover:bg-sidebar-control-surface hover:text-sidebar-foreground focus-visible:opacity-100 group-hover/connor-group:opacity-100"
+              >
+                <ChevronRightIcon
+                  aria-hidden
+                  className={cn("size-3.5 transition-transform", props.expanded && "rotate-90")}
+                />
+              </button>
             </span>
-            <button
-              type="button"
-              aria-label={props.expanded ? "Collapse worktree" : "Expand worktree"}
-              aria-expanded={props.expanded}
-              onClick={(event) => {
-                event.stopPropagation();
-                props.onGroupToggle(group);
-              }}
-              className="inline-flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-sm text-sidebar-muted-foreground hover:bg-sidebar-control-surface hover:text-sidebar-foreground"
-            >
-              <ChevronRightIcon
-                aria-hidden
-                className={cn("size-3.5 transition-transform", props.expanded && "rotate-90")}
-              />
-            </button>
           </div>
         </div>
         {props.expanded ? (
