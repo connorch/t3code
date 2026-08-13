@@ -715,13 +715,14 @@ function StackGroupSection(props: GroupSectionProps) {
               onCommitRename={() => props.onCommitGroupRename(group)}
               onCancelRename={props.onCancelGroupRename}
             />
-            {/* Stacked cell: the hover-revealed archive/+ pair replaces the
-                group status indicator instead of sitting next to it. The
-                indicator is pointer-events-none: its hover opacity (< 1)
-                promotes it above the sibling buttons in paint order, where it
-                would otherwise swallow their clicks. */}
-            <span className="ml-auto grid shrink-0 items-center justify-items-end">
-              <span className="pointer-events-none col-start-1 row-start-1 flex items-center transition-opacity group-hover/connor-group:opacity-0">
+            {/* Stacked cell: archive/+ replace the status glyph on hover.
+                The glyph lives in a size-5 slot matching the + button so
+                they share a center; -me-1.5 cancels ghost-button padding
+                so the icons optically match the left inset. pointer-events-none
+                on the glyph: hover opacity (< 1) would otherwise promote it
+                above the buttons and swallow their clicks. */}
+            <span className="-me-1.5 ml-auto grid shrink-0 items-center justify-items-end">
+              <span className="pointer-events-none col-start-1 row-start-1 inline-flex size-5 items-center justify-center transition-opacity group-hover/connor-group:opacity-0">
                 <GroupIndicatorGlyph indicator={props.indicator} />
               </span>
               <span className="col-start-1 row-start-1 flex items-center opacity-0 transition-opacity group-hover/connor-group:opacity-100 focus-within:opacity-100">
@@ -754,7 +755,7 @@ function StackGroupSection(props: GroupSectionProps) {
                 pointer-events-none: its hover opacity (< 1) promotes it
                 above the sibling button in paint order, where it would
                 otherwise swallow the button's clicks. */}
-            <span className="group/connor-expand ml-auto grid size-5 shrink-0 items-center justify-items-center">
+            <span className="group/connor-expand -me-1.5 ml-auto grid size-5 shrink-0 items-center justify-items-center">
               <span
                 aria-label={`${group.threads.length} thread${group.threads.length === 1 ? "" : "s"}`}
                 className="pointer-events-none col-start-1 row-start-1 tabular-nums transition-opacity group-hover/connor-group:opacity-0 group-focus-within/connor-expand:opacity-0"
