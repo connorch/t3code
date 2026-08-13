@@ -541,6 +541,32 @@ describe("rightPanelStore", () => {
     });
   });
 
+  it("moveSurface reorders open surfaces without changing the active surface", () => {
+    useRightPanelStore.getState().open(refA, "diff");
+    useRightPanelStore.getState().open(refA, "files");
+    useRightPanelStore.getState().openTerminal(refA, "term-1");
+
+    useRightPanelStore.getState().moveSurface(refA, "terminal:term-1", "diff");
+
+    const state = selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, refA);
+    expect(state.surfaces.map((surface) => surface.id)).toEqual([
+      "terminal:term-1",
+      "diff",
+      "files",
+    ]);
+    expect(state.activeSurfaceId).toBe("terminal:term-1");
+  });
+
+  it("moveSurface ignores unknown surface ids", () => {
+    useRightPanelStore.getState().open(refA, "diff");
+    useRightPanelStore.getState().open(refA, "files");
+
+    useRightPanelStore.getState().moveSurface(refA, "diff", "agents");
+
+    const state = selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, refA);
+    expect(state.surfaces.map((surface) => surface.id)).toEqual(["diff", "files"]);
+  });
+
   it("tracks one surface per terminal session", () => {
     useRightPanelStore.getState().openTerminal(refA, "term-1");
     useRightPanelStore.getState().openTerminal(refA, "term-2");

@@ -15,6 +15,7 @@ function render(overrides: Partial<Parameters<typeof RightPanelTabs>[0]> = {}) {
       previewSessions={{}}
       terminalLabelsById={new Map()}
       onActivate={noop}
+      onReorderSurface={noop}
       onCloseSurface={noop}
       onCloseOtherSurfaces={noop}
       onCloseSurfacesToRight={noop}
