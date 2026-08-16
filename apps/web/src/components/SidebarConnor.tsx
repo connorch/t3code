@@ -85,12 +85,13 @@ import { useCopyToClipboard } from "../hooks/useCopyToClipboard";
 import { useNowMinute } from "../hooks/useNowMinute";
 import { getProjectOrderKey, selectProjectGroupingSettings } from "../logicalProject";
 import { sortThreads } from "../lib/threadSort";
+import { buildThreadTranscriptBlock } from "../lib/threadTranscript";
 import {
   buildSidebarProjectSnapshots,
   type SidebarProjectSnapshot,
 } from "../sidebarProjectGrouping";
 import { useEnvironments, usePrimaryEnvironmentId } from "../state/environments";
-import { useProjects, useThreadShells } from "../state/entities";
+import { readThreadDetail, useProjects, useThreadShells } from "../state/entities";
 import { useEnvironmentQuery } from "../state/query";
 import { vcsEnvironment } from "../state/vcs";
 import { primaryServerKeybindingsAtom } from "../state/server";
@@ -1068,6 +1069,23 @@ export default function SidebarConnor() {
         }),
       ),
   });
+  const { copyToClipboard: copyTranscriptToClipboard } = useCopyToClipboard<{ title: string }>({
+    target: "thread transcript",
+    onCopy: ({ title }) =>
+      toastManager.add({
+        type: "success",
+        title: "Transcript copied",
+        description: `Paste it into another thread's composer to attach "${title}".`,
+      }),
+    onError: (error) =>
+      toastManager.add(
+        stackedThreadToast({
+          type: "error",
+          title: "Failed to copy transcript",
+          description: error instanceof Error ? error.message : "An error occurred.",
+        }),
+      ),
+  });
 
   const routeTarget = useParams({
     strict: false,
@@ -1544,6 +1562,12 @@ export default function SidebarConnor() {
           thread.worktreePath ??
           projectCwdByKey.get(`${thread.environmentId}:${thread.projectId}`) ??
           null;
+        // Sidebar rows hold shells; the transcript needs the full detail,
+        // which is only loaded for threads that have been opened.
+        const transcriptMessages =
+          readThreadDetail(threadRef)?.messages.filter(
+            (message) => !message.streaming && message.text.trim().length > 0,
+          ) ?? [];
         const clicked = await settlePromise(() =>
           api.contextMenu.show(
             [
@@ -1554,6 +1578,12 @@ export default function SidebarConnor() {
               { id: "mark-unread", label: "Mark unread" },
               { id: "copy-path", label: "Copy path", icon: "copy" },
               ...(thread.branch ? [{ id: "copy-branch", label: "Copy branch", icon: "copy" }] : []),
+              {
+                id: "copy-transcript",
+                label: "Copy transcript",
+                icon: "copy",
+                disabled: transcriptMessages.length === 0,
+              },
               { id: "delete", label: "Delete", destructive: true, icon: "trash" },
             ],
             position,
@@ -1607,6 +1637,16 @@ export default function SidebarConnor() {
           case "copy-branch":
             if (thread.branch) copyBranchToClipboard(thread.branch, { branch: thread.branch });
             return;
+          case "copy-transcript": {
+            if (transcriptMessages.length === 0) return;
+            const block = buildThreadTranscriptBlock({
+              title: thread.title,
+              branch: thread.branch ?? null,
+              messages: transcriptMessages,
+            });
+            copyTranscriptToClipboard(block, { title: thread.title });
+            return;
+          }
           case "delete": {
             if (confirmThreadDelete) {
               const confirmed = await settlePromise(() =>
@@ -1641,6 +1681,7 @@ export default function SidebarConnor() {
       confirmThreadDelete,
       copyBranchToClipboard,
       copyPathToClipboard,
+      copyTranscriptToClipboard,
       deleteThread,
       markThreadUnread,
       newThreadContext,
