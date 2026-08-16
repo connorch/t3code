@@ -300,8 +300,12 @@ export function showContextMenuFallback<T extends string>(
     document.addEventListener("contextmenu", onContextMenu, true);
     openMenu(items, position?.x ?? 0, position?.y ?? 0, 0);
 
-    requestAnimationFrame(() => {
+    // Deliberately not requestAnimationFrame: rAF never fires in hidden tabs
+    // (e.g. agent-driven QA through the collaborative browser), which would
+    // leave the menu permanently un-clickable there. A short timer keeps the
+    // same-gesture click protection on a clock that always runs.
+    setTimeout(() => {
       canDismissFromPointer = true;
-    });
+    }, 50);
   });
 }

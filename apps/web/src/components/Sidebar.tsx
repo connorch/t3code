@@ -104,7 +104,7 @@ import { useCopyToClipboard } from "../hooks/useCopyToClipboard";
 import { useLocalStorage } from "../hooks/useLocalStorage";
 import { useNowMinute } from "../hooks/useNowMinute";
 import { useEnvironments, usePrimaryEnvironmentId } from "../state/environments";
-import { useProjects, useThreadShells } from "../state/entities";
+import { readThreadDetail, useProjects, useThreadShells } from "../state/entities";
 import { environmentServerConfigsAtom, primaryServerKeybindingsAtom } from "../state/server";
 import { vcsEnvironment } from "../state/vcs";
 import { threadEnvironment } from "../state/threads";
@@ -119,6 +119,7 @@ import { formatRelativeTimeLabel, parseTimestampDate } from "../timestampFormat"
 import type { SidebarThreadSummary } from "../types";
 import { cn } from "~/lib/utils";
 import { buildThreadActionMenuItems } from "./threadActionMenu.logic";
+import { buildThreadTranscriptBlock } from "../lib/threadTranscript";
 import {
   buildBulkTitleRegenerationContextMenuItem,
   formatWorkingDurationLabel,
@@ -1671,6 +1672,25 @@ export default function Sidebar() {
       );
     },
   });
+  const { copyToClipboard: copyTranscriptToClipboard } = useCopyToClipboard<{ title: string }>({
+    target: "thread transcript",
+    onCopy: ({ title }) => {
+      toastManager.add({
+        type: "success",
+        title: "Transcript copied",
+        description: `Paste it into another thread's composer to attach "${title}".`,
+      });
+    },
+    onError: (error) => {
+      toastManager.add(
+        stackedThreadToast({
+          type: "error",
+          title: "Failed to copy transcript",
+          description: error instanceof Error ? error.message : "An error occurred.",
+        }),
+      );
+    },
+  });
   const [projectScopeMenuOpen, setProjectScopeMenuOpen] = useState(false);
   const newThreadContext = useHandleNewThread();
   const openAddProjectCommandPalette = useCallback(
@@ -2953,10 +2973,17 @@ export default function Sidebar() {
         const isPinned = thread.pinnedAt != null;
         // Presets resolve at menu-open time (same as the popover).
         const snoozePresets = resolveSnoozePresets(new Date(), timestampFormat);
+        // Sidebar rows hold shells; the transcript needs the full detail,
+        // which is only loaded for threads that have been opened.
+        const transcriptMessages =
+          readThreadDetail(threadRef)?.messages.filter(
+            (message) => !message.streaming && message.text.trim().length > 0,
+          ) ?? [];
         const clicked = await settlePromise(() =>
           api.contextMenu.show(
             buildThreadActionMenuItems({
               branch: thread.branch ?? null,
+              hasTranscript: transcriptMessages.length > 0,
               isPinned,
               isSettled,
               isSnoozed,
@@ -3065,6 +3092,16 @@ export default function Sidebar() {
           case "copy-thread-id":
             copyThreadIdToClipboard(thread.id, { threadId: thread.id });
             return;
+          case "copy-transcript": {
+            if (transcriptMessages.length === 0) return;
+            const block = buildThreadTranscriptBlock({
+              title: thread.title,
+              branch: thread.branch ?? null,
+              messages: transcriptMessages,
+            });
+            copyTranscriptToClipboard(block, { title: thread.title });
+            return;
+          }
           case "delete": {
             if (confirmThreadDelete) {
               const confirmed = await settlePromise(() =>
@@ -3108,6 +3145,7 @@ export default function Sidebar() {
       copyBranchToClipboard,
       copyPathToClipboard,
       copyThreadIdToClipboard,
+      copyTranscriptToClipboard,
       deleteThread,
       handleMultiSelectContextMenu,
       markThreadUnread,

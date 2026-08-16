@@ -81,6 +81,8 @@ import { ComposerPendingTerminalContextChip } from "./chat/ComposerPendingTermin
 import { formatProviderSkillDisplayName } from "~/providerSkillPresentation";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
 import { registerComposerInlineTokenPaste } from "./composerInlineTokenPaste";
+import { registerComposerTranscriptPaste } from "./composerTranscriptPaste";
+import { type ThreadTranscriptDraft } from "~/lib/threadTranscript";
 
 const COMPOSER_EDITOR_HMR_KEY = `composer-editor-${Math.random().toString(36).slice(2)}`;
 const SURROUND_SYMBOLS: [string, string][] = [
@@ -897,6 +899,12 @@ interface ComposerPromptEditorProps {
     event: KeyboardEvent,
   ) => boolean;
   onPaste: React.ClipboardEventHandler<HTMLElement>;
+  /**
+   * When set, pasted `<thread_transcript>` blocks are intercepted before
+   * Lexical's plain-text paste and handed here instead of entering the
+   * editor as raw text.
+   */
+  onPasteTranscripts?: (transcripts: ThreadTranscriptDraft[]) => void;
   editorRef: React.RefObject<ComposerPromptEditorHandle | null>;
 }
 
@@ -1259,6 +1267,24 @@ function ComposerInlineTokenPastePlugin() {
   return null;
 }
 
+function ComposerTranscriptPastePlugin(props: {
+  onPasteTranscripts: (transcripts: ThreadTranscriptDraft[]) => void;
+}) {
+  const [editor] = useLexicalComposerContext();
+  const onPasteTranscriptsRef = useRef(props.onPasteTranscripts);
+  onPasteTranscriptsRef.current = props.onPasteTranscripts;
+
+  useEffect(
+    () =>
+      registerComposerTranscriptPaste(editor, (transcripts) =>
+        onPasteTranscriptsRef.current(transcripts),
+      ),
+    [editor],
+  );
+
+  return null;
+}
+
 function ComposerSurroundSelectionPlugin(props: {
   terminalContexts: ReadonlyArray<TerminalContextDraft>;
   skills: ReadonlyArray<ServerProviderSkill>;
@@ -1537,6 +1563,7 @@ function ComposerPromptEditorInner({
   onChange,
   onCommandKeyDown,
   onPaste,
+  onPasteTranscripts,
   editorRef,
 }: ComposerPromptEditorProps) {
   const [editor] = useLexicalComposerContext();
@@ -1781,6 +1808,9 @@ function ComposerPromptEditorInner({
         <ComposerInlineTokenSelectionNormalizePlugin />
         <ComposerInlineTokenBackspacePlugin />
         <ComposerInlineTokenPastePlugin />
+        {onPasteTranscripts ? (
+          <ComposerTranscriptPastePlugin onPasteTranscripts={onPasteTranscripts} />
+        ) : null}
         <ComposerChipSelectionPlugin />
         <HistoryPlugin />
       </div>
@@ -1800,6 +1830,7 @@ export function ComposerPromptEditor({
   onChange,
   onCommandKeyDown,
   onPaste,
+  onPasteTranscripts,
   editorRef,
 }: ComposerPromptEditorProps) {
   const initialValueRef = useRef(value);
@@ -1838,6 +1869,7 @@ export function ComposerPromptEditor({
         onPaste={onPaste}
         editorRef={editorRef}
         {...(onCommandKeyDown ? { onCommandKeyDown } : {})}
+        {...(onPasteTranscripts ? { onPasteTranscripts } : {})}
         {...(className ? { className } : {})}
       />
     </LexicalComposer>
