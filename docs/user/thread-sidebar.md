@@ -22,3 +22,13 @@ pill** fallback because their colors are not controlled by T3 Code.
 To generate a fresh title from the conversation, open a thread's context menu and choose
 **Regenerate title**. While T3 Code is generating it, the action reads **Regenerating…** and cannot
 be selected again. The option is hidden when the connected environment needs a server update.
+
+## Reusing a conversation in another thread
+
+Choose **Copy transcript** from a thread's context menu to copy the conversation to your
+clipboard. Paste it into another thread's composer on web or desktop and it becomes a compact
+transcript card instead of raw text; send the message and the agent receives the full
+conversation as context. Remove the card before sending if you change your mind.
+
+The action is available once the thread's messages are loaded, so open a thread first if the menu
+item is grayed out in the sidebar.

@@ -4,6 +4,7 @@ import { buildThreadActionMenuItems, type ThreadActionMenuState } from "./thread
 
 const baseState: ThreadActionMenuState = {
   branch: null,
+  hasTranscript: false,
   isPinned: false,
   isSettled: false,
   isSnoozed: false,
@@ -26,7 +27,25 @@ describe("buildThreadActionMenuItems", () => {
         ...baseState,
         supports: { settlement: false, snooze: false, pinning: false, titleRegeneration: false },
       }),
-    ).toEqual(["rename", "mark-unread", "copy-path", "copy-thread-id", "delete"]);
+    ).toEqual([
+      "rename",
+      "mark-unread",
+      "copy-path",
+      "copy-thread-id",
+      "copy-transcript",
+      "delete",
+    ]);
+  });
+
+  it("disables copy-transcript until the thread detail is loaded", () => {
+    const disabled = buildThreadActionMenuItems(baseState).find(
+      (item) => item.id === "copy-transcript",
+    );
+    expect(disabled?.disabled).toBe(true);
+    const enabled = buildThreadActionMenuItems({ ...baseState, hasTranscript: true }).find(
+      (item) => item.id === "copy-transcript",
+    );
+    expect(enabled?.disabled).toBe(false);
   });
 
   it("includes branch items only for threads with a branch", () => {

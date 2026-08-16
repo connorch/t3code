@@ -160,6 +160,12 @@ beforeEach(() => {
     callback(0);
     return 0;
   });
+  // The pointer-selection guard arms via setTimeout; run it synchronously so
+  // menus are immediately interactive unless a test overrides this stub.
+  vi.stubGlobal("setTimeout", (callback: () => void) => {
+    callback();
+    return 0;
+  });
   vi.stubGlobal(
     "MouseEvent",
     class extends FakeDomEvent {
@@ -197,8 +203,8 @@ describe("showContextMenuFallback", () => {
   });
 
   it("ignores a click from the gesture that opened the menu", async () => {
-    let enablePointerSelection: ((time: number) => void) | undefined;
-    vi.stubGlobal("requestAnimationFrame", (callback: (time: number) => void) => {
+    let enablePointerSelection: (() => void) | undefined;
+    vi.stubGlobal("setTimeout", (callback: () => void) => {
       enablePointerSelection = callback;
       return 0;
     });
@@ -207,7 +213,7 @@ describe("showContextMenuFallback", () => {
     const renameButton = findButton("Rename");
 
     renameButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    enablePointerSelection?.(0);
+    enablePointerSelection?.();
     renameButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
 
     await expect(selectionPromise).resolves.toBe("rename");

@@ -27,8 +27,10 @@ import {
   readEnvironmentSupportsSettlement,
   readEnvironmentSupportsSnooze,
   readEnvironmentSupportsTitleRegeneration,
+  readThreadDetail,
   readThreadShell,
 } from "../state/entities";
+import { buildThreadTranscriptBlock } from "../lib/threadTranscript";
 import { readLocalApi } from "../localApi";
 import { useUiStateStore } from "../uiStateStore";
 import { useCopyToClipboard } from "./useCopyToClipboard";
@@ -101,6 +103,17 @@ export function useThreadActionMenu(input: {
     },
     onError: (error) => failureToast("Failed to copy thread ID", error),
   });
+  const { copyToClipboard: copyTranscriptToClipboard } = useCopyToClipboard<{ title: string }>({
+    target: "thread transcript",
+    onCopy: ({ title }) => {
+      toastManager.add({
+        type: "success",
+        title: "Transcript copied",
+        description: `Paste it into another thread's composer to attach "${title}".`,
+      });
+    },
+    onError: (error) => failureToast("Failed to copy transcript", error),
+  });
 
   const openMenu = useCallback(
     (position: { x: number; y: number }) => {
@@ -121,8 +134,14 @@ export function useThreadActionMenu(input: {
         };
         const isRegeneratingTitle = thread.titleRegeneration != null;
         const snoozePresets = resolveSnoozePresets(now, timestampFormat);
+        const threadDetail = readThreadDetail(threadRef);
+        const transcriptMessages =
+          threadDetail?.messages.filter(
+            (message) => !message.streaming && message.text.trim().length > 0,
+          ) ?? [];
         const items = buildThreadActionMenuItems({
           branch: thread.branch ?? null,
+          hasTranscript: transcriptMessages.length > 0,
           isPinned: thread.pinnedAt != null,
           isSettled:
             supports.settlement &&
@@ -251,6 +270,16 @@ export function useThreadActionMenu(input: {
           case "copy-thread-id":
             copyThreadIdToClipboard(thread.id, { threadId: thread.id });
             return;
+          case "copy-transcript": {
+            if (transcriptMessages.length === 0) return;
+            const block = buildThreadTranscriptBlock({
+              title: thread.title,
+              branch: thread.branch ?? null,
+              messages: transcriptMessages,
+            });
+            copyTranscriptToClipboard(block, { title: thread.title });
+            return;
+          }
           case "delete": {
             if (confirmThreadDelete) {
               const confirmed = await settlePromise(() =>
@@ -289,6 +318,7 @@ export function useThreadActionMenu(input: {
       copyBranchToClipboard,
       copyPathToClipboard,
       copyThreadIdToClipboard,
+      copyTranscriptToClipboard,
       deleteThread,
       handleNewThread,
       markThreadUnread,

@@ -45,6 +45,7 @@ import {
   elementContextDedupKey,
   newElementContextId,
 } from "./lib/elementContext";
+import { type ThreadTranscriptDraft } from "./lib/threadTranscript";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 import { useShallow } from "zustand/react/shallow";
@@ -125,12 +126,20 @@ const PersistedElementContextDraft = Schema.Struct({
 });
 type PersistedElementContextDraft = typeof PersistedElementContextDraft.Type;
 
+const PersistedThreadTranscriptDraft = Schema.Struct({
+  id: Schema.String,
+  title: Schema.String,
+  messageCount: Schema.Number,
+  block: Schema.String,
+});
+
 const PersistedComposerThreadDraftState = Schema.Struct({
   prompt: Schema.String,
   attachments: Schema.Array(PersistedComposerImageAttachment),
   terminalContexts: Schema.optionalKey(Schema.Array(PersistedTerminalContextDraft)),
   elementContexts: Schema.optionalKey(Schema.Array(PersistedElementContextDraft)),
   previewAnnotations: Schema.optionalKey(Schema.Array(PreviewAnnotationPayloadSchema)),
+  transcripts: Schema.optionalKey(Schema.Array(PersistedThreadTranscriptDraft)),
   reviewComments: Schema.optionalKey(Schema.Array(ReviewCommentContextSchema)),
   // Keyed by `ProviderInstanceId` (open branded slug) so custom provider
   // instances (e.g. `codex_personal`) round-trip alongside the built-in
@@ -261,6 +270,12 @@ export interface ComposerThreadDraftState {
    */
   elementContexts: ElementContextDraft[];
   previewAnnotations: PreviewAnnotationPayload[];
+  /**
+   * Pasted `<thread_transcript>` blocks held as cards. Like preview
+   * annotations they are plain prompt text at send time; the card is only a
+   * composer affordance.
+   */
+  transcripts: ThreadTranscriptDraft[];
   reviewComments: ReviewCommentContext[];
   /**
    * Per-instance model selection. Keyed by `ProviderInstanceId` (open
@@ -298,6 +313,7 @@ export function composerDraftHasUserContent(
     draft.terminalContexts.length > 0 ||
     draft.elementContexts.length > 0 ||
     draft.previewAnnotations.length > 0 ||
+    draft.transcripts.length > 0 ||
     draft.reviewComments.length > 0
   );
 }
@@ -508,6 +524,15 @@ interface ComposerDraftStoreState {
     annotations: ReadonlyArray<PreviewAnnotationPayload>,
   ) => void;
   removePreviewAnnotation: (threadRef: ComposerThreadTarget, annotationId: string) => void;
+  addTranscripts: (
+    threadRef: ComposerThreadTarget,
+    transcripts: ReadonlyArray<ThreadTranscriptDraft>,
+  ) => void;
+  setTranscripts: (
+    threadRef: ComposerThreadTarget,
+    transcripts: ReadonlyArray<ThreadTranscriptDraft>,
+  ) => void;
+  removeTranscript: (threadRef: ComposerThreadTarget, transcriptId: string) => void;
   addReviewComment: (threadRef: ComposerThreadTarget, comment: ReviewCommentContext) => void;
   setReviewComments: (
     threadRef: ComposerThreadTarget,
@@ -598,12 +623,14 @@ const EMPTY_PERSISTED_ATTACHMENTS: PersistedComposerImageAttachment[] = [];
 const EMPTY_TERMINAL_CONTEXTS: TerminalContextDraft[] = [];
 const EMPTY_ELEMENT_CONTEXTS: ElementContextDraft[] = [];
 const EMPTY_PREVIEW_ANNOTATIONS: PreviewAnnotationPayload[] = [];
+const EMPTY_TRANSCRIPTS: ThreadTranscriptDraft[] = [];
 const EMPTY_REVIEW_COMMENTS: ReviewCommentContext[] = [];
 Object.freeze(EMPTY_IMAGES);
 Object.freeze(EMPTY_IDS);
 Object.freeze(EMPTY_PERSISTED_ATTACHMENTS);
 Object.freeze(EMPTY_ELEMENT_CONTEXTS);
 Object.freeze(EMPTY_PREVIEW_ANNOTATIONS);
+Object.freeze(EMPTY_TRANSCRIPTS);
 Object.freeze(EMPTY_REVIEW_COMMENTS);
 const EMPTY_MODEL_SELECTION_BY_PROVIDER: Partial<Record<ProviderDriverKind, ModelSelection>> =
   Object.freeze({});
@@ -620,6 +647,7 @@ const EMPTY_THREAD_DRAFT = Object.freeze<ComposerThreadDraftState>({
   terminalContexts: EMPTY_TERMINAL_CONTEXTS,
   elementContexts: EMPTY_ELEMENT_CONTEXTS,
   previewAnnotations: EMPTY_PREVIEW_ANNOTATIONS,
+  transcripts: EMPTY_TRANSCRIPTS,
   reviewComments: EMPTY_REVIEW_COMMENTS,
   modelSelectionByProvider: EMPTY_MODEL_SELECTION_BY_PROVIDER,
   activeProvider: null,
@@ -642,6 +670,7 @@ export function createEmptyThreadDraft(): ComposerThreadDraftState {
     terminalContexts: [],
     elementContexts: [],
     previewAnnotations: [],
+    transcripts: [],
     reviewComments: [],
     modelSelectionByProvider: {},
     activeProvider: null,
@@ -715,6 +744,7 @@ function shouldRemoveDraft(draft: ComposerThreadDraftState): boolean {
     draft.terminalContexts.length === 0 &&
     draft.elementContexts.length === 0 &&
     draft.previewAnnotations.length === 0 &&
+    draft.transcripts.length === 0 &&
     draft.reviewComments.length === 0 &&
     Object.keys(draft.modelSelectionByProvider).length === 0 &&
     draft.activeProvider === null &&
@@ -1894,6 +1924,7 @@ function partializeComposerDraftStoreState(
       draft.terminalContexts.length === 0 &&
       draft.elementContexts.length === 0 &&
       draft.previewAnnotations.length === 0 &&
+      draft.transcripts.length === 0 &&
       draft.reviewComments.length === 0 &&
       !hasModelData &&
       draft.runtimeMode === null &&
@@ -1939,6 +1970,11 @@ function partializeComposerDraftStoreState(
             previewAnnotations: draft.previewAnnotations.map(
               (annotation) => ({ ...annotation }) as DeepMutable<PreviewAnnotationPayload>,
             ),
+          }
+        : {}),
+      ...(draft.transcripts.length > 0
+        ? {
+            transcripts: draft.transcripts.map((transcript) => ({ ...transcript })),
           }
         : {}),
       ...(draft.reviewComments.length > 0
@@ -2197,6 +2233,7 @@ function toHydratedThreadDraft(
       })) ?? [],
     previewAnnotations:
       persistedDraft.previewAnnotations?.map((annotation) => ({ ...annotation })) ?? [],
+    transcripts: persistedDraft.transcripts?.map((transcript) => ({ ...transcript })) ?? [],
     reviewComments: persistedDraft.reviewComments?.map((comment) => ({ ...comment })) ?? [],
     modelSelectionByProvider,
     activeProvider,
@@ -3311,6 +3348,53 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
             return { draftsByThreadKey: nextDraftsByThreadKey };
           });
         },
+        addTranscripts: (threadRef, transcripts) => {
+          const threadKey = resolveComposerDraftKey(get(), threadRef);
+          if (!threadKey || transcripts.length === 0) return;
+          set((state) => {
+            const existing = state.draftsByThreadKey[threadKey] ?? createEmptyThreadDraft();
+            const incomingIds = new Set(transcripts.map((transcript) => transcript.id));
+            const kept = existing.transcripts.filter(
+              (transcript) => !incomingIds.has(transcript.id),
+            );
+            return {
+              draftsByThreadKey: {
+                ...state.draftsByThreadKey,
+                [threadKey]: { ...existing, transcripts: [...kept, ...transcripts] },
+              },
+            };
+          });
+        },
+        setTranscripts: (threadRef, transcripts) => {
+          const threadKey = resolveComposerDraftKey(get(), threadRef);
+          if (!threadKey) return;
+          set((state) => {
+            const existing = state.draftsByThreadKey[threadKey] ?? createEmptyThreadDraft();
+            return {
+              draftsByThreadKey: {
+                ...state.draftsByThreadKey,
+                [threadKey]: { ...existing, transcripts: [...transcripts] },
+              },
+            };
+          });
+        },
+        removeTranscript: (threadRef, transcriptId) => {
+          const threadKey = resolveComposerDraftKey(get(), threadRef);
+          if (!threadKey || !transcriptId) return;
+          set((state) => {
+            const current = state.draftsByThreadKey[threadKey];
+            if (!current) return state;
+            const transcripts = current.transcripts.filter(
+              (transcript) => transcript.id !== transcriptId,
+            );
+            if (transcripts.length === current.transcripts.length) return state;
+            const nextDraft = { ...current, transcripts };
+            const nextDraftsByThreadKey = { ...state.draftsByThreadKey };
+            if (shouldRemoveDraft(nextDraft)) delete nextDraftsByThreadKey[threadKey];
+            else nextDraftsByThreadKey[threadKey] = nextDraft;
+            return { draftsByThreadKey: nextDraftsByThreadKey };
+          });
+        },
         addReviewComment: (threadRef, comment) => {
           const threadKey = resolveComposerDraftKey(get(), threadRef);
           if (!threadKey || !isReviewCommentContext(comment)) return;
@@ -3434,6 +3518,7 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
               terminalContexts: [],
               elementContexts: [],
               previewAnnotations: [],
+              transcripts: [],
               reviewComments: [],
             };
             const nextDraftsByThreadKey = { ...state.draftsByThreadKey };

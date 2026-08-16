@@ -56,6 +56,7 @@ import {
   HammerIcon,
   MessageCircleIcon,
   MousePointerClickIcon,
+  MessagesSquareIcon,
   PaintbrushIcon,
   MinusIcon,
   SquarePenIcon,
@@ -102,6 +103,10 @@ import {
   extractTrailingPreviewAnnotation,
   type ParsedPreviewAnnotation,
 } from "~/lib/previewAnnotation";
+import {
+  extractTrailingThreadTranscript,
+  type ParsedThreadTranscript,
+} from "~/lib/threadTranscript";
 import { cn } from "~/lib/utils";
 import { useUiStateStore } from "~/uiStateStore";
 import { type TimestampFormat } from "@t3tools/contracts/settings";
@@ -976,6 +981,16 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
     ...displayedUserMessage.elementContexts,
     ...elementContextState.contexts,
   ];
+  // Transcripts append innermost at send time, so they surface last once
+  // every other trailing block has been stripped.
+  const threadTranscripts: ParsedThreadTranscript[] = [];
+  let userBodyText = elementContextState.promptText;
+  while (true) {
+    const extractedTranscript = extractTrailingThreadTranscript(userBodyText);
+    if (!extractedTranscript.transcript) break;
+    threadTranscripts.unshift(extractedTranscript.transcript);
+    userBodyText = extractedTranscript.promptText;
+  }
   const previewImages = userImages.filter((image) => image.name.startsWith("preview-annotation-"));
   const regularImages = userImages.filter((image) => !image.name.startsWith("preview-annotation-"));
   const canRevertAgentWork = typeof row.revertTurnCount === "number";
@@ -1033,8 +1048,11 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
             ))}
           </div>
         ) : null}
+        {threadTranscripts.map((transcript) => (
+          <UserMessageThreadTranscriptCard key={transcript.id} transcript={transcript} />
+        ))}
         <CollapsibleUserMessageBody
-          text={elementContextState.promptText}
+          text={userBodyText}
           terminalContexts={terminalContexts}
           skills={ctx.skills}
           markdownCwd={ctx.markdownCwd}
@@ -1532,6 +1550,25 @@ const UserMessageElementContextChip = memo(function UserMessageElementContextChi
     </Tooltip>
   );
 });
+
+function UserMessageThreadTranscriptCard(props: { transcript: ParsedThreadTranscript }) {
+  return (
+    <div className="mb-2 flex max-w-full items-center overflow-hidden rounded-lg border border-border/70 bg-background/70">
+      <span className="grid size-10 shrink-0 place-items-center border-r border-border/70 text-message-action">
+        <MessagesSquareIcon className="size-3.5" />
+      </span>
+      <div className="min-w-0 px-2.5 py-2">
+        <div className="max-w-80 truncate text-foreground text-xs font-medium">
+          {props.transcript.title}
+        </div>
+        <div className="mt-1 text-secondary-label text-[10px]">
+          Transcript · {props.transcript.messageCount}{" "}
+          {props.transcript.messageCount === 1 ? "message" : "messages"}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function UserMessagePreviewAnnotationCard(props: {
   annotation: ParsedPreviewAnnotation;

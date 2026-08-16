@@ -21,10 +21,17 @@ export type ThreadActionMenuId =
   | "copy-path"
   | "copy-branch"
   | "copy-thread-id"
+  | "copy-transcript"
   | "delete";
 
 export interface ThreadActionMenuState {
   readonly branch: string | null;
+  /**
+   * Whether the thread's full detail (messages) is loaded locally. Sidebar
+   * rows only hold shells, so "Copy transcript" stays disabled there until
+   * the thread has been opened.
+   */
+  readonly hasTranscript: boolean;
   readonly isPinned: boolean;
   readonly isSettled: boolean;
   readonly isSnoozed: boolean;
@@ -102,6 +109,12 @@ export function buildThreadActionMenuItems(
     { id: "copy-path", label: "Copy path", icon: "copy" },
     ...(state.branch ? [{ id: "copy-branch" as const, label: "Copy branch", icon: "copy" }] : []),
     { id: "copy-thread-id", label: "Copy thread ID", icon: "copy" },
+    {
+      id: "copy-transcript",
+      label: "Copy transcript",
+      icon: "copy",
+      disabled: !state.hasTranscript,
+    },
     { id: "delete", label: "Delete", destructive: true, icon: "trash" },
   ];
 }
