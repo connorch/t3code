@@ -22,12 +22,13 @@ import {
 } from "@t3tools/contracts";
 import { PREVIEW_VIEWPORT_PRESETS } from "@t3tools/shared/previewViewport";
 import { InfoIcon } from "lucide-react";
-import type { ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 
 import { ScreenRotationIcon } from "~/browser/ScreenRotationIcon";
 import { isElectron } from "../../env";
 
 import { Button } from "../ui/button";
+import { Input } from "../ui/input";
 import { NumberField, NumberFieldGroup, NumberFieldInput } from "../ui/number-field";
 import {
   Select,
@@ -427,6 +428,82 @@ function BrowserAutoShowFloatingPreviewSetting({ disabled }: { readonly disabled
   );
 }
 
+// Mirrors the schema bound on OpenLinksInPreviewPattern in contracts.
+const PREVIEW_LINK_PATTERN_MAX_LENGTH = 500;
+
+function isValidPreviewLinkPattern(source: string): boolean {
+  if (source.length === 0) return true;
+  try {
+    return new RegExp(source) instanceof RegExp;
+  } catch {
+    return false;
+  }
+}
+
+function PreviewLinkPatternInput({
+  value,
+  disabled,
+  onCommit,
+}: {
+  value: string;
+  disabled: boolean;
+  onCommit: (pattern: string) => void;
+}) {
+  // Local draft so a regex can be invalid mid-edit; only valid patterns (or
+  // empty, meaning off) are persisted, and the field snaps back on blur.
+  const [draft, setDraft] = useState(value);
+  useEffect(() => {
+    setDraft(value);
+  }, [value]);
+  const isInvalid = useMemo(() => !isValidPreviewLinkPattern(draft.trim()), [draft]);
+
+  return (
+    <div className="flex w-full flex-col items-end gap-1 sm:w-80">
+      <Input
+        type="text"
+        spellCheck={false}
+        disabled={disabled}
+        maxLength={PREVIEW_LINK_PATTERN_MAX_LENGTH}
+        placeholder={String.raw`e.g. ^https://github\.com/`}
+        value={draft}
+        onChange={(event) => {
+          const next = event.target.value;
+          setDraft(next);
+          const source = next.trim();
+          if (isValidPreviewLinkPattern(source)) {
+            onCommit(source);
+          }
+        }}
+        onBlur={() => setDraft(value)}
+        aria-invalid={isInvalid || undefined}
+        aria-label="URL pattern for links opened in the integrated browser"
+      />
+      {isInvalid ? (
+        <span className="text-[11px] text-destructive">Invalid regular expression</span>
+      ) : null}
+    </div>
+  );
+}
+
+function OpenLinksInPreviewSetting({ disabled }: { readonly disabled: boolean }) {
+  const pattern = useClientSettings((settings) => settings.openLinksInPreviewPattern);
+  const updateSettings = useUpdatePrimarySettings();
+
+  return (
+    <SettingsRow
+      {...searchableSetting("open-links-in-integrated-browser")}
+      description="Links whose URL matches this regular expression open in the integrated browser instead of your system browser. Leave empty to turn off."
+      control={
+        <PreviewLinkPatternInput
+          value={pattern}
+          disabled={disabled}
+          onCommit={(next) => updateSettings({ openLinksInPreviewPattern: next })}
+        />
+      }
+    />
+  );
+}
+
 /**
  * Frames the client-local preview defaults as one unavailable block.
  *
@@ -462,6 +539,7 @@ export function IntegrationsSettingsPanel() {
       <BrowserZoomSetting disabled={previewDefaultsDisabled} />
       <BrowserAppearanceSetting disabled={previewDefaultsDisabled} />
       <BrowserAutoShowFloatingPreviewSetting disabled={previewDefaultsDisabled} />
+      <OpenLinksInPreviewSetting disabled={previewDefaultsDisabled} />
     </>
   );
 

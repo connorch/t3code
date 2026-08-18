@@ -247,7 +247,8 @@ export const SETTINGS_SEARCH_ITEMS = [
   {
     id: "open-links-in-integrated-browser",
     title: "Open matching links in the integrated browser",
-    to: "/settings/general",
+    to: "/settings/integrations",
+    targetId: "browser",
   },
   {
     id: "archive",
