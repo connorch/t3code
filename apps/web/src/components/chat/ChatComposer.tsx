@@ -2781,19 +2781,25 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           }}
         >
           {!isComposerCollapsedMobile && (
-            <div
-              role="separator"
-              aria-orientation="horizontal"
-              aria-label="Resize prompt input"
-              title="Drag to resize, double-click to reset"
-              className="group/composer-resize absolute inset-x-0 -top-1 z-20 h-2.5 cursor-row-resize touch-none select-none"
-              {...composerResizeHandlers}
-            >
-              <span
-                aria-hidden
-                className="pointer-events-none absolute left-1/2 top-1/2 h-1 w-12 -translate-x-1/2 -translate-y-1/2 rounded-full bg-transparent transition-colors duration-150 group-hover/composer-resize:bg-border group-active/composer-resize:bg-primary/60"
-              />
-            </div>
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <div
+                    role="separator"
+                    aria-orientation="horizontal"
+                    aria-label="Resize prompt input"
+                    className="group/composer-resize absolute inset-x-0 -top-1 z-20 h-2.5 cursor-row-resize touch-none select-none"
+                    {...composerResizeHandlers}
+                  />
+                }
+              >
+                <span
+                  aria-hidden
+                  className="pointer-events-none absolute left-1/2 top-1/2 h-1 w-12 -translate-x-1/2 -translate-y-1/2 rounded-full bg-transparent transition-colors duration-150 group-hover/composer-resize:bg-border group-active/composer-resize:bg-primary/60"
+                />
+              </TooltipTrigger>
+              <TooltipPopup side="top">Drag to resize, double-click to reset</TooltipPopup>
+            </Tooltip>
           )}
           {!isComposerCollapsedMobile &&
             (activePendingApproval ? (

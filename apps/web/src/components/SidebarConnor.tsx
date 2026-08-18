@@ -418,18 +418,27 @@ const ConnorThreadRow = memo(function ConnorThreadRow(props: {
       className="min-w-0 flex-1 rounded-sm border border-input bg-card px-1 text-sm text-card-foreground outline-none focus:border-foreground"
     />
   ) : (
-    <span
-      className={cn(
-        "min-w-0 flex-1 truncate",
-        props.isActive
-          ? "font-medium text-sidebar-foreground"
-          : dot !== null
-            ? "text-sidebar-foreground/90"
-            : "text-sidebar-muted-foreground/80 group-hover/connor-row:text-sidebar-foreground",
-      )}
-    >
-      {thread.title}
-    </span>
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <span
+            className={cn(
+              "min-w-0 flex-1 truncate",
+              props.isActive
+                ? "font-medium text-sidebar-foreground"
+                : dot !== null
+                  ? "text-sidebar-foreground/90"
+                  : "text-sidebar-muted-foreground/80 group-hover/connor-row:text-sidebar-foreground",
+            )}
+          />
+        }
+      >
+        {thread.title}
+      </TooltipTrigger>
+      <TooltipPopup side="right" className="max-w-80">
+        {thread.title}
+      </TooltipPopup>
+    </Tooltip>
   );
 
   return (
@@ -438,7 +447,6 @@ const ConnorThreadRow = memo(function ConnorThreadRow(props: {
         role="button"
         tabIndex={0}
         data-testid={`sidebar-connor-thread-${thread.id}`}
-        title={thread.title}
         className={cn(
           "group/connor-row flex h-8 w-full cursor-pointer items-center gap-2 rounded-md px-2 text-left text-sm outline-none select-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring",
           props.isActive
@@ -470,18 +478,24 @@ const ConnorThreadRow = memo(function ConnorThreadRow(props: {
               </span>
             )}
           </span>
-          <button
-            type="button"
-            aria-label="Archive thread"
-            title="Archive thread"
-            onClick={(event) => {
-              event.stopPropagation();
-              props.onArchiveThread(threadRef);
-            }}
-            className="col-start-1 row-start-1 inline-flex size-5 cursor-pointer items-center justify-center rounded-sm text-sidebar-muted-foreground opacity-0 transition-opacity hover:bg-sidebar-control-surface hover:text-sidebar-foreground focus-visible:opacity-100 group-hover/connor-row:opacity-100"
-          >
-            <ArchiveIcon className="size-3.5" />
-          </button>
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <button
+                  type="button"
+                  aria-label="Archive thread"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    props.onArchiveThread(threadRef);
+                  }}
+                  className="col-start-1 row-start-1 inline-flex size-5 cursor-pointer items-center justify-center rounded-sm text-sidebar-muted-foreground opacity-0 transition-opacity hover:bg-sidebar-control-surface hover:text-sidebar-foreground focus-visible:opacity-100 group-hover/connor-row:opacity-100"
+                />
+              }
+            >
+              <ArchiveIcon className="size-3.5" />
+            </TooltipTrigger>
+            <TooltipPopup side="top">Archive thread</TooltipPopup>
+          </Tooltip>
         </span>
       </div>
     </li>
@@ -495,6 +509,8 @@ function WorktreeName(props: {
   isRenaming: boolean;
   renamingName: string;
   className?: string;
+  /** Shown as a styled tooltip over the name (worktree path plus branch). */
+  tooltip?: string;
   onRenameNameChange: (name: string) => void;
   onCommitRename: () => void;
   onCancelRename: () => void;
@@ -506,7 +522,16 @@ function WorktreeName(props: {
   // Auto width, not flex-1: the remote-machine glyph sits immediately after the
   // name rather than being pushed to the far end of the row.
   if (!props.isRenaming) {
-    return <span className={cn("min-w-0 truncate", props.className)}>{props.name}</span>;
+    const name = <span className={cn("min-w-0 truncate", props.className)}>{props.name}</span>;
+    if (props.tooltip === undefined) return name;
+    return (
+      <Tooltip>
+        <TooltipTrigger render={name} />
+        <TooltipPopup side="right" className="max-w-80">
+          {props.tooltip}
+        </TooltipPopup>
+      </Tooltip>
+    );
   }
   return (
     <input
@@ -544,12 +569,7 @@ function RemoteEnvironmentGlyph({ label }: { label: string }) {
     <Tooltip>
       <TooltipTrigger
         render={
-          // The empty title suppresses the card's native tooltip over the icon.
-          <span
-            title=""
-            aria-label={`Runs on ${label}`}
-            className="inline-flex shrink-0 items-center"
-          />
+          <span aria-label={`Runs on ${label}`} className="inline-flex shrink-0 items-center" />
         }
       >
         <CloudIcon aria-hidden className="size-3" />
@@ -631,18 +651,24 @@ function GroupPlusButton(props: {
   const label =
     props.group.kind === "local" ? "New thread in this checkout" : "New thread in this worktree";
   return (
-    <button
-      type="button"
-      aria-label={label}
-      title={label}
-      onClick={(event) => {
-        event.stopPropagation();
-        props.onNewThreadInGroup(props.group);
-      }}
-      className="inline-flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-sm text-sidebar-muted-foreground hover:bg-sidebar-control-surface hover:text-sidebar-foreground"
-    >
-      <PlusIcon className="size-3.5" />
-    </button>
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <button
+            type="button"
+            aria-label={label}
+            onClick={(event) => {
+              event.stopPropagation();
+              props.onNewThreadInGroup(props.group);
+            }}
+            className="inline-flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-sm text-sidebar-muted-foreground hover:bg-sidebar-control-surface hover:text-sidebar-foreground"
+          />
+        }
+      >
+        <PlusIcon className="size-3.5" />
+      </TooltipTrigger>
+      <TooltipPopup side="top">{label}</TooltipPopup>
+    </Tooltip>
   );
 }
 
@@ -652,18 +678,24 @@ function GroupArchiveButton(props: {
   onArchiveGroup: (group: ConnorGroup) => void;
 }) {
   return (
-    <button
-      type="button"
-      aria-label="Archive worktree"
-      title="Archive worktree"
-      onClick={(event) => {
-        event.stopPropagation();
-        props.onArchiveGroup(props.group);
-      }}
-      className="inline-flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-sm text-sidebar-muted-foreground hover:bg-sidebar-control-surface hover:text-sidebar-foreground"
-    >
-      <ArchiveIcon className="size-3.5" />
-    </button>
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <button
+            type="button"
+            aria-label="Archive worktree"
+            onClick={(event) => {
+              event.stopPropagation();
+              props.onArchiveGroup(props.group);
+            }}
+            className="inline-flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-sm text-sidebar-muted-foreground hover:bg-sidebar-control-surface hover:text-sidebar-foreground"
+          />
+        }
+      >
+        <ArchiveIcon className="size-3.5" />
+      </TooltipTrigger>
+      <TooltipPopup side="top">Archive worktree</TooltipPopup>
+    </Tooltip>
   );
 }
 
@@ -706,7 +738,6 @@ function StackGroupSection(props: GroupSectionProps) {
           tabIndex={0}
           data-testid={`sidebar-connor-group-${group.key}`}
           aria-expanded={props.expanded}
-          title={interactions.headerTitle}
           className={cn(
             // Same px-1 inset as the project header, less 1px for the card
             // border, so worktree rows start on the project row's edge.
@@ -736,6 +767,7 @@ function StackGroupSection(props: GroupSectionProps) {
             name={props.name}
             isRenaming={props.isRenaming}
             renamingName={props.renamingName}
+            tooltip={interactions.headerTitle}
             className={cn(
               "text-sm font-medium",
               props.containsActive ? "text-sidebar-foreground" : "text-sidebar-muted-foreground",
@@ -856,7 +888,6 @@ function ConnorProjectHeader(props: {
       tabIndex={0}
       data-testid={`sidebar-connor-project-${project.projectKey}`}
       aria-expanded={props.expanded}
-      title={props.empty ? undefined : project.workspaceRoot}
       ref={dragHandleProps?.setActivatorNodeRef}
       {...(dragHandleProps ? dragHandleProps.attributes : {})}
       {...(dragHandleProps ? dragHandleProps.listeners : {})}
@@ -905,18 +936,33 @@ function ConnorProjectHeader(props: {
           )}
         />
       </span>
-      <span
-        className={cn(
-          "min-w-0 flex-1 truncate text-sm font-medium",
-          props.hidden
-            ? "text-sidebar-muted-foreground/70"
-            : props.containsActive || props.expanded
-              ? "text-sidebar-foreground"
-              : "text-sidebar-foreground/80",
+      {/* The workspace-root tooltip anchors to the name, not the whole row,
+          so it never stacks with the hover-revealed new-thread button's own
+          tooltip. Empty projects skip it: their entire header is already a
+          "No threads yet" tooltip trigger. */}
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <span
+              className={cn(
+                "min-w-0 flex-1 truncate text-sm font-medium",
+                props.hidden
+                  ? "text-sidebar-muted-foreground/70"
+                  : props.containsActive || props.expanded
+                    ? "text-sidebar-foreground"
+                    : "text-sidebar-foreground/80",
+              )}
+            />
+          }
+        >
+          {project.displayName}
+        </TooltipTrigger>
+        {props.empty ? null : (
+          <TooltipPopup side="right" className="max-w-80">
+            {project.workspaceRoot}
+          </TooltipPopup>
         )}
-      >
-        {project.displayName}
-      </span>
+      </Tooltip>
       {props.hidden ? (
         <EyeOffIcon
           role="img"
@@ -936,18 +982,24 @@ function ConnorProjectHeader(props: {
             {props.worktreeCount}
           </span>
         ) : null}
-        <button
-          type="button"
-          aria-label={`New thread in ${project.displayName}`}
-          title={`New thread in ${project.displayName}`}
-          onClick={(event) => {
-            event.stopPropagation();
-            props.onNewThreadInProject(project);
-          }}
-          className="absolute inline-flex size-5 cursor-pointer items-center justify-center rounded-sm text-sidebar-muted-foreground opacity-0 transition-opacity hover:bg-sidebar-control-surface hover:text-sidebar-foreground focus-visible:opacity-100 group-hover/connor-project:opacity-100"
-        >
-          <PlusIcon className="size-3.5" />
-        </button>
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <button
+                type="button"
+                aria-label={`New thread in ${project.displayName}`}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  props.onNewThreadInProject(project);
+                }}
+                className="absolute inline-flex size-5 cursor-pointer items-center justify-center rounded-sm text-sidebar-muted-foreground opacity-0 transition-opacity hover:bg-sidebar-control-surface hover:text-sidebar-foreground focus-visible:opacity-100 group-hover/connor-project:opacity-100"
+              />
+            }
+          >
+            <PlusIcon className="size-3.5" />
+          </TooltipTrigger>
+          <TooltipPopup side="top">{`New thread in ${project.displayName}`}</TooltipPopup>
+        </Tooltip>
       </span>
     </div>
   );
