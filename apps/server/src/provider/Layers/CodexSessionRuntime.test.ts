@@ -305,6 +305,7 @@ describe("buildCodexDeveloperInstructions", () => {
     const instructions = buildCodexDeveloperInstructions(
       "default",
       { model: "gpt-5.3-codex", reasoningEffort: "high" },
+      true,
       { hasContextDirectory: true },
     );
 
@@ -315,6 +316,7 @@ describe("buildCodexDeveloperInstructions", () => {
     const planInstructions = buildCodexDeveloperInstructions(
       "plan",
       { model: "gpt-5.3-codex", reasoningEffort: "high" },
+      true,
       { hasContextDirectory: true },
     );
     const withoutDirectory = buildCodexDeveloperInstructions("default", {

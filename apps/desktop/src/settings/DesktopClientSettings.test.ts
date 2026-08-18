@@ -47,6 +47,7 @@ const clientSettings: ClientSettings = {
   sidebarProjectSortOrder: "manual",
   sidebarThreadSortOrder: "created_at",
   sidebarThreadPreviewCount: 6,
+  threadCompletionChime: "bubble",
   timestampFormat: "24-hour",
   wordWrap: true,
 };
