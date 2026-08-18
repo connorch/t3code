@@ -143,6 +143,11 @@ import {
 } from "./settingsLayout";
 import { searchableSetting } from "./settingsSearch";
 import { ProjectFavicon } from "../ProjectFavicon";
+import {
+  playThreadCompletionChime,
+  THREAD_COMPLETION_CHIME_OPTIONS,
+  threadCompletionChimeLabel,
+} from "../../lib/threadCompletionChimes";
 
 const ENVIRONMENT_IDENTIFICATION_LABELS: Record<EnvironmentIdentificationMode, string> = {
   artwork: "Artwork",
@@ -1986,6 +1991,49 @@ export function GeneralSettingsPanel() {
             }
           />
         ) : null}
+
+        <SettingsRow
+          {...searchableSetting("thread-completion-chime")}
+          description="Play a sound on this device whenever an agent finishes a turn. Picking a sound previews it."
+          resetAction={
+            settings.threadCompletionChime !== DEFAULT_UNIFIED_SETTINGS.threadCompletionChime ? (
+              <SettingResetButton
+                label="completion sound"
+                onClick={() =>
+                  updateSettings({
+                    threadCompletionChime: DEFAULT_UNIFIED_SETTINGS.threadCompletionChime,
+                  })
+                }
+              />
+            ) : null
+          }
+          control={
+            <Select
+              value={settings.threadCompletionChime}
+              onValueChange={(value) => {
+                const option = THREAD_COMPLETION_CHIME_OPTIONS.find(
+                  (candidate) => candidate.id === value,
+                );
+                if (!option) return;
+                updateSettings({ threadCompletionChime: option.id });
+                playThreadCompletionChime(option.id);
+              }}
+            >
+              <SelectTrigger className="w-full sm:w-40" aria-label="Completion sound">
+                <SelectValue>
+                  {threadCompletionChimeLabel(settings.threadCompletionChime)}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectPopup align="end" alignItemWithTrigger={false}>
+                {THREAD_COMPLETION_CHIME_OPTIONS.map((option) => (
+                  <SelectItem hideIndicator key={option.id} value={option.id}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectPopup>
+            </Select>
+          }
+        />
 
         <SettingsRow
           {...searchableSetting("time-format")}

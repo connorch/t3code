@@ -14,6 +14,15 @@ import { ProviderInstanceConfig, ProviderInstanceId } from "./providerInstance.t
 
 // ── Client Settings (local-only) ───────────────────────────────
 
+/**
+ * Sound played on the local device when a thread's turn reaches a terminal
+ * state. Device-local by design: a chime belongs to the machine you are sitting
+ * at, not to every paired client. "none" is silence, and the default.
+ */
+export const ThreadCompletionChime = Schema.Literals(["none", "bubble", "pop"]);
+export type ThreadCompletionChime = typeof ThreadCompletionChime.Type;
+export const DEFAULT_THREAD_COMPLETION_CHIME: ThreadCompletionChime = "none";
+
 export const TimestampFormat = Schema.Literals(["locale", "12-hour", "24-hour"]);
 export type TimestampFormat = typeof TimestampFormat.Type;
 export const DEFAULT_TIMESTAMP_FORMAT: TimestampFormat = "locale";
@@ -252,6 +261,9 @@ export const ClientSettingsSchema = Schema.Struct({
   // so everyone lands on the new default sidebar once.
   sidebarMode: StoredSidebarMode.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_SIDEBAR_MODE)),
+  ),
+  threadCompletionChime: ThreadCompletionChime.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_THREAD_COMPLETION_CHIME)),
   ),
   timestampFormat: TimestampFormat.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_TIMESTAMP_FORMAT)),
@@ -860,6 +872,7 @@ export const ClientSettingsPatch = Schema.Struct({
   sidebarThreadSortOrder: Schema.optionalKey(SidebarThreadSortOrder),
   sidebarThreadPreviewCount: Schema.optionalKey(SidebarThreadPreviewCount),
   sidebarMode: Schema.optionalKey(SidebarMode),
+  threadCompletionChime: Schema.optionalKey(ThreadCompletionChime),
   timestampFormat: Schema.optionalKey(TimestampFormat),
   wordWrap: Schema.optionalKey(Schema.Boolean),
 });
