@@ -44,6 +44,23 @@ export function emptyGhostTooltip(action: {
 }
 
 /**
+ * A focused editable is a typing context whether or not it has text yet: an
+ * empty chat composer at rest is still where the user's next keystrokes are
+ * meant to land, and claiming launcher letters from it would redirect prompts
+ * into whatever surface opens. The `:not` clause lets `closest` see past
+ * non-editable islands (`contenteditable="false"`) to an editable host around
+ * them, matching ComposerPendingUserInputPanel's typing guard.
+ */
+export function surfaceShortcutTargetsTypingContext(
+  target: { closest(selectors: string): unknown } | null,
+): boolean {
+  return (
+    target?.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"])') !=
+    null
+  );
+}
+
+/**
  * Letter shortcuts work while the empty launcher is visible, not only while it
  * is focused. Typing contexts, modifier chords, and already-handled events
  * are left alone.
@@ -54,10 +71,11 @@ export function shouldClaimSurfaceLauncherKey(event: KeyboardEvent): boolean {
   if (typeof document !== "undefined" && document.querySelector(LAUNCHER_SHORTCUT_BLOCKING_LAYERS))
     return false;
   const target = event.target;
-  if (typeof HTMLElement !== "undefined" && target instanceof HTMLElement) {
-    if (target.closest("input, textarea, select")) return false;
-    const editable = target.isContentEditable ? target : target.closest("[contenteditable]");
-    if (editable && (editable.textContent ?? "").trim().length > 0) return false;
-  }
+  if (
+    typeof Element !== "undefined" &&
+    target instanceof Element &&
+    surfaceShortcutTargetsTypingContext(target)
+  )
+    return false;
   return true;
 }

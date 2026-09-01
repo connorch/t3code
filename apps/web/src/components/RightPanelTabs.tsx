@@ -14,7 +14,6 @@ import {
   TerminalSquare,
   Volume2,
   VolumeOff,
-  X,
   type LucideIcon,
 } from "lucide-react";
 import {
@@ -46,12 +45,15 @@ import { PreviewPanelShell, type PreviewPanelMode } from "./preview/PreviewPanel
 import { FaviconImage } from "./preview/PreviewFaviconIcon";
 import { previewBridge } from "./preview/previewBridge";
 import { PierreEntryIcon } from "./chat/PierreEntryIcon";
+import { PanelTabCloseButton } from "~/components/ui/panel-tab-close-button";
 import {
   emptyGhostTooltip,
   iconGhostsForOpenSurfaces,
   shouldClaimSurfaceLauncherKey,
   type LaunchableSurfaceKind,
 } from "./RightPanelTabs.logic";
+
+export { surfaceShortcutTargetsTypingContext } from "./RightPanelTabs.logic";
 
 interface RightPanelTabsProps {
   mode: PreviewPanelMode;
@@ -346,29 +348,21 @@ function SortableSurfaceTab(props: {
         isDragging && "relative z-10 opacity-80",
       )}
     >
-      <button
-        type="button"
-        className="cursor-pointer group/close relative flex size-4 shrink-0 items-center justify-center rounded-sm hover:bg-muted"
-        aria-label={`Close ${props.title}`}
-        onClick={props.onClose}
-      >
-        <span className="relative flex size-3 items-center justify-center group-hover/tab:hidden group-focus-visible/close:hidden">
-          <SurfaceIcon
-            surface={props.surface}
-            sessions={props.sessions}
-            desktopByTabId={props.desktopByTabId}
-            theme={props.theme}
-            pullRequestStatuses={props.pullRequestStatuses}
+      <PanelTabCloseButton label={`Close ${props.title}`} onClick={props.onClose}>
+        <SurfaceIcon
+          surface={props.surface}
+          sessions={props.sessions}
+          desktopByTabId={props.desktopByTabId}
+          theme={props.theme}
+          pullRequestStatuses={props.pullRequestStatuses}
+        />
+        {props.pending ? (
+          <span
+            className="absolute -right-0.5 -bottom-0.5 size-1.5 rounded-full bg-current"
+            aria-hidden
           />
-          {props.pending ? (
-            <span
-              className="absolute -right-0.5 -bottom-0.5 size-1.5 rounded-full bg-current"
-              aria-hidden
-            />
-          ) : null}
-        </span>
-        <X className="hidden size-3 group-hover/tab:block group-focus-visible/close:block" />
-      </button>
+        ) : null}
+      </PanelTabCloseButton>
       {props.audio === "none" || !props.audioRuntimeTabId ? null : (
         <Tooltip>
           <TooltipTrigger
