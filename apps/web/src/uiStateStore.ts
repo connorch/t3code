@@ -1,9 +1,11 @@
 import { Debouncer } from "@tanstack/react-pacer";
+import type { PullRequestMergeMethod } from "@t3tools/contracts";
 import { create } from "zustand";
 import { normalizeProjectPathForComparison } from "./lib/projectPaths";
 
 export const PERSISTED_STATE_KEY = "t3code:ui-state:v1";
-const THREAD_CHANGED_FILES_EXPANSION_VERSION = 1;
+// Version 1 stored card visibility, not folder expansion.
+const THREAD_CHANGED_FILES_EXPANSION_VERSION = 2;
 const LEGACY_PERSISTED_STATE_KEYS = [
   "t3code:renderer-state:v8",
   "t3code:renderer-state:v7",
@@ -25,12 +27,14 @@ export interface PersistedUiState {
   expandedProjectCwds?: string[];
   projectOrderCwds?: string[];
   defaultAdvertisedEndpointKey?: string | null;
-  threadChangedFilesExpansionVersion?: typeof THREAD_CHANGED_FILES_EXPANSION_VERSION;
+  sidebarProjectScopeKey?: string | null;
+  threadChangedFilesExpansionVersion?: number;
   threadChangedFilesExpandedById?: Record<string, Record<string, boolean>>;
   worktreeNameByKey?: Record<string, string>;
   worktreeLastThreadKeyByKey?: Record<string, string>;
   projectHiddenById?: Record<string, boolean>;
   connorShowHiddenProjects?: boolean;
+  pullRequestMergeMethod?: string;
 }
 
 export interface UiProjectState {
@@ -38,6 +42,10 @@ export interface UiProjectState {
   projectOrder: string[];
   /** Projects parked out of sight; keyed like projectExpandedById. */
   projectHiddenById: Record<string, boolean>;
+  // Logical project key the sidebar list is scoped to, or null for "all
+  // projects". Lives here so routes that unmount the sidebar (Settings)
+  // cannot reset the filter.
+  sidebarProjectScopeKey: string | null;
 }
 
 export interface UiThreadState {
@@ -60,11 +68,17 @@ export interface UiEndpointState {
   defaultAdvertisedEndpointKey: string | null;
 }
 
-export interface UiState extends UiProjectState, UiThreadState, UiEndpointState, UiWorktreeState {}
+export interface UiPullRequestState {
+  pullRequestMergeMethod: PullRequestMergeMethod;
+}
+
+export interface UiState
+  extends UiProjectState, UiThreadState, UiEndpointState, UiPullRequestState, UiWorktreeState {}
 
 const initialState: UiState = {
   projectExpandedById: {},
   projectOrder: [],
+  sidebarProjectScopeKey: null,
   threadLastVisitedAtById: {},
   threadChangedFilesExpandedById: {},
   defaultAdvertisedEndpointKey: null,
@@ -72,6 +86,7 @@ const initialState: UiState = {
   worktreeLastThreadKeyByKey: {},
   projectHiddenById: {},
   connorShowHiddenProjects: false,
+  pullRequestMergeMethod: "merge",
 };
 
 const LEGACY_PROJECT_CWD_PREFERENCE_PREFIX = "legacy-project-cwd:";
@@ -116,6 +131,10 @@ function sanitizeStringRecord(value: unknown): Record<string, string> {
   );
 }
 
+function sanitizeOptionalKey(value: unknown): string | null {
+  return typeof value === "string" && value.length > 0 ? value : null;
+}
+
 function sanitizeTimestampRecord(value: unknown): Record<string, string> {
   if (!value || typeof value !== "object") {
     return {};
@@ -129,6 +148,10 @@ function sanitizeTimestampRecord(value: unknown): Record<string, string> {
         Number.isFinite(Date.parse(entry[1])),
     ),
   );
+}
+
+function isPullRequestMergeMethod(value: unknown): value is PullRequestMergeMethod {
+  return value === "merge" || value === "squash" || value === "rebase";
 }
 
 export function parsePersistedState(parsed: PersistedUiState): UiState {
@@ -163,11 +186,11 @@ export function parsePersistedState(parsed: PersistedUiState): UiState {
       parsed.threadChangedFilesExpansionVersion === THREAD_CHANGED_FILES_EXPANSION_VERSION
         ? sanitizePersistedThreadChangedFilesExpanded(parsed.threadChangedFilesExpandedById)
         : {},
-    defaultAdvertisedEndpointKey:
-      typeof parsed.defaultAdvertisedEndpointKey === "string" &&
-      parsed.defaultAdvertisedEndpointKey.length > 0
-        ? parsed.defaultAdvertisedEndpointKey
-        : null,
+    defaultAdvertisedEndpointKey: sanitizeOptionalKey(parsed.defaultAdvertisedEndpointKey),
+    sidebarProjectScopeKey: sanitizeOptionalKey(parsed.sidebarProjectScopeKey),
+    pullRequestMergeMethod: isPullRequestMergeMethod(parsed.pullRequestMergeMethod)
+      ? parsed.pullRequestMergeMethod
+      : initialState.pullRequestMergeMethod,
     worktreeNameByKey: sanitizeStringRecord(parsed.worktreeNameByKey),
     worktreeLastThreadKeyByKey: sanitizeStringRecord(parsed.worktreeLastThreadKeyByKey),
     projectHiddenById: sanitizeBooleanRecord(parsed.projectHiddenById),
@@ -242,12 +265,14 @@ export function persistState(state: UiState): void {
         projectOrder: state.projectOrder,
         threadLastVisitedAtById: state.threadLastVisitedAtById,
         defaultAdvertisedEndpointKey: state.defaultAdvertisedEndpointKey,
+        sidebarProjectScopeKey: state.sidebarProjectScopeKey,
         threadChangedFilesExpansionVersion: THREAD_CHANGED_FILES_EXPANSION_VERSION,
         threadChangedFilesExpandedById: state.threadChangedFilesExpandedById,
         worktreeNameByKey: state.worktreeNameByKey,
         worktreeLastThreadKeyByKey: state.worktreeLastThreadKeyByKey,
         projectHiddenById: state.projectHiddenById,
         connorShowHiddenProjects: state.connorShowHiddenProjects,
+        pullRequestMergeMethod: state.pullRequestMergeMethod,
       } satisfies PersistedUiState),
     );
     if (!legacyKeysCleanedUp) {
@@ -377,6 +402,23 @@ export function setDefaultAdvertisedEndpointKey(state: UiState, key: string | nu
   };
 }
 
+export function setSidebarProjectScopeKey(state: UiState, projectKey: string | null): UiState {
+  const nextKey = sanitizeOptionalKey(projectKey);
+  if (state.sidebarProjectScopeKey === nextKey) {
+    return state;
+  }
+  return {
+    ...state,
+    sidebarProjectScopeKey: nextKey,
+  };
+}
+
+function setPullRequestMergeMethod(state: UiState, method: PullRequestMergeMethod): UiState {
+  return state.pullRequestMergeMethod === method
+    ? state
+    : { ...state, pullRequestMergeMethod: method };
+}
+
 export function resolveProjectExpanded(
   projectExpandedById: Readonly<Record<string, boolean>>,
   preferenceKeys: readonly string[],
@@ -504,6 +546,8 @@ interface UiStateStore extends UiState {
   setDefaultAdvertisedEndpointKey: (key: string | null) => void;
   setWorktreeName: (worktreeKey: string, name: string | null) => void;
   setWorktreeLastThreadKey: (worktreeKey: string, threadKey: string) => void;
+  setSidebarProjectScopeKey: (projectKey: string | null) => void;
+  setPullRequestMergeMethod: (method: PullRequestMergeMethod) => void;
   setProjectExpanded: (projectIds: string | readonly string[], expanded: boolean) => void;
   setProjectHidden: (projectIds: string | readonly string[], hidden: boolean) => void;
   setConnorShowHiddenProjects: (show: boolean) => void;
@@ -527,6 +571,9 @@ export const useUiStateStore = create<UiStateStore>((set) => ({
   setWorktreeName: (worktreeKey, name) => set((state) => setWorktreeName(state, worktreeKey, name)),
   setWorktreeLastThreadKey: (worktreeKey, threadKey) =>
     set((state) => setWorktreeLastThreadKey(state, worktreeKey, threadKey)),
+  setSidebarProjectScopeKey: (projectKey) =>
+    set((state) => setSidebarProjectScopeKey(state, projectKey)),
+  setPullRequestMergeMethod: (method) => set((state) => setPullRequestMergeMethod(state, method)),
   setProjectExpanded: (projectIds, expanded) =>
     set((state) => setProjectExpanded(state, projectIds, expanded)),
   setProjectHidden: (projectIds, hidden) =>

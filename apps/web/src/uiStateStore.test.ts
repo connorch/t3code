@@ -16,6 +16,7 @@ import {
   setDefaultAdvertisedEndpointKey,
   setProjectExpanded,
   setProjectHidden,
+  setSidebarProjectScopeKey,
   setThreadChangedFilesExpanded,
   type UiState,
 } from "./uiStateStore";
@@ -24,6 +25,7 @@ function makeUiState(overrides: Partial<UiState> = {}): UiState {
   return {
     projectExpandedById: {},
     projectOrder: [],
+    sidebarProjectScopeKey: null,
     threadLastVisitedAtById: {},
     threadChangedFilesExpandedById: {},
     defaultAdvertisedEndpointKey: null,
@@ -31,6 +33,7 @@ function makeUiState(overrides: Partial<UiState> = {}): UiState {
     worktreeLastThreadKeyByKey: {},
     projectHiddenById: {},
     connorShowHiddenProjects: false,
+    pullRequestMergeMethod: "merge",
     ...overrides,
   };
 }
@@ -170,9 +173,30 @@ describe("uiStateStore pure functions", () => {
       defaultAdvertisedEndpointKey: null,
     });
   });
+
+  it("stores the sidebar project scope and resets it to all projects", () => {
+    const scoped = setSidebarProjectScopeKey(makeUiState(), "github.com/pingdotgg/t3code");
+
+    expect(scoped.sidebarProjectScopeKey).toBe("github.com/pingdotgg/t3code");
+    expect(setSidebarProjectScopeKey(scoped, "github.com/pingdotgg/t3code")).toBe(scoped);
+    expect(setSidebarProjectScopeKey(scoped, null).sidebarProjectScopeKey).toBeNull();
+    expect(setSidebarProjectScopeKey(scoped, "").sidebarProjectScopeKey).toBeNull();
+  });
 });
 
 describe("parsePersistedState", () => {
+  it("hydrates the last selected pull request merge method", () => {
+    const parsed = parsePersistedState({
+      pullRequestMergeMethod: "squash",
+    });
+    const invalid = parsePersistedState({
+      pullRequestMergeMethod: "fast-forward",
+    });
+
+    expect(parsed.pullRequestMergeMethod).toBe("squash");
+    expect(invalid.pullRequestMergeMethod).toBe("merge");
+  });
+
   it("hydrates raw UI-owned state without server entities", () => {
     const parsed = parsePersistedState({
       projectExpandedById: {
@@ -185,7 +209,7 @@ describe("parsePersistedState", () => {
         invalid: "not-a-date",
       },
       defaultAdvertisedEndpointKey: "desktop-core:lan:http",
-      threadChangedFilesExpansionVersion: 1,
+      threadChangedFilesExpansionVersion: 2,
       threadChangedFilesExpandedById: {
         "environment:thread-1": {
           "turn-1": false,
@@ -203,6 +227,8 @@ describe("parsePersistedState", () => {
         "environment:thread-1": "2026-02-25T12:35:00.000Z",
       },
       defaultAdvertisedEndpointKey: "desktop-core:lan:http",
+      sidebarProjectScopeKey: null,
+      pullRequestMergeMethod: "merge",
       threadChangedFilesExpandedById: {
         "environment:thread-1": {
           "turn-1": false,
@@ -216,8 +242,9 @@ describe("parsePersistedState", () => {
     });
   });
 
-  it("ignores changed-file expansion values saved with legacy folder semantics", () => {
+  it.each([undefined, 1])("ignores changed-file expansion version %s", (version) => {
     const parsed = parsePersistedState({
+      ...(version === undefined ? {} : { threadChangedFilesExpansionVersion: version }),
       threadChangedFilesExpandedById: {
         "environment:thread-1": {
           "turn-1": false,
@@ -326,7 +353,8 @@ describe("uiStateStore persistence", () => {
         "environment:thread-1": "2026-02-25T12:35:00.000Z",
       },
       defaultAdvertisedEndpointKey: "desktop-core:lan:http",
-      threadChangedFilesExpansionVersion: 1,
+      sidebarProjectScopeKey: null,
+      threadChangedFilesExpansionVersion: 2,
       threadChangedFilesExpandedById: {
         "environment:thread-1": {
           "turn-1": false,
@@ -337,10 +365,23 @@ describe("uiStateStore persistence", () => {
       worktreeLastThreadKeyByKey: {},
       projectHiddenById: {},
       connorShowHiddenProjects: false,
+      pullRequestMergeMethod: "merge",
     });
     expect(parsePersistedState(persisted)).toEqual({
       ...state,
     });
+  });
+
+  it("restores the sidebar project scope across reloads", () => {
+    persistState(makeUiState({ sidebarProjectScopeKey: "github.com/pingdotgg/t3code" }));
+
+    const persisted = JSON.parse(
+      localStorageStub.getItem(PERSISTED_STATE_KEY) ?? "{}",
+    ) as PersistedUiState;
+
+    expect(parsePersistedState(persisted).sidebarProjectScopeKey).toBe(
+      "github.com/pingdotgg/t3code",
+    );
   });
 
   it("drops the temporary expanded-only migration fallback when rewriting state", () => {

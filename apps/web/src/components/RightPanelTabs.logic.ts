@@ -14,7 +14,7 @@ export const LAUNCHER_SHORTCUT_BLOCKING_LAYERS = [
 
 export type LaunchableSurfaceKind = Extract<
   RightPanelKind,
-  "preview" | "terminal" | "files" | "diff" | "pull-request" | "agents"
+  "preview" | "terminal" | "files" | "diff" | "pull-request" | "pull-requests" | "agents" | "device"
 >;
 
 export interface LaunchableSurface {

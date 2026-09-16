@@ -1,5 +1,5 @@
 /**
- * Matches URLs against the Beta "open matching links in the integrated
+ * Matches URLs against the "open matching links in the integrated
  * browser" setting (`openLinksInPreviewPattern`). The pattern is a
  * user-supplied RegExp source; an empty or invalid pattern matches nothing.
  * The compiled RegExp is cached per pattern since every link click consults

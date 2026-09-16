@@ -96,6 +96,102 @@ it.layer(TestLayer, { excludeTestServices: true })("WorkspaceEntries", (it) => {
   });
 
   describe("list", () => {
+    it.effect("lists immediate children including ignored and empty directories", () =>
+      Effect.gen(function* () {
+        const cwd = yield* makeTempDir({ git: true });
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        yield* writeTextFile(cwd, "tracked.txt");
+        yield* git(cwd, ["add", "tracked.txt"]);
+        yield* writeTextFile(cwd, ".gitignore", "node_modules/\n.env\ntracked.txt\n");
+        yield* writeTextFile(cwd, ".env", "secret=value");
+        yield* writeTextFile(cwd, "node_modules/pkg/index.js");
+        yield* writeTextFile(cwd, "src/index.ts");
+        yield* fileSystem.makeDirectory(path.join(cwd, "empty"));
+
+        const workspaceEntries = yield* WorkspaceEntries.WorkspaceEntries;
+        const root = yield* workspaceEntries.list({ cwd, directoryPath: "" });
+        expect(root.entries).toEqual(
+          expect.arrayContaining([
+            { path: ".env", kind: "file", ignored: true },
+            { path: "node_modules", kind: "directory", ignored: true },
+            { path: "src", kind: "directory" },
+            { path: "empty", kind: "directory" },
+            { path: "tracked.txt", kind: "file" },
+          ]),
+        );
+        expect(root.entries.some((entry) => entry.path.includes("/"))).toBe(false);
+        expect(root.entries.some((entry) => entry.path === ".git")).toBe(false);
+        expect(root.truncated).toBe(false);
+        expect(yield* workspaceEntries.list({ cwd, directoryPath: "node_modules/pkg" })).toEqual({
+          entries: [{ path: "node_modules/pkg/index.js", kind: "file", ignored: true }],
+          truncated: false,
+        });
+        expect(yield* workspaceEntries.list({ cwd, directoryPath: "empty" })).toEqual({
+          entries: [],
+          truncated: false,
+        });
+      }),
+    );
+
+    it.effect(
+      "rejects directory traversal, git internals, and symlinks outside the workspace",
+      () =>
+        Effect.gen(function* () {
+          const cwd = yield* makeTempDir();
+          const outside = yield* makeTempDir();
+          const fileSystem = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          yield* writeTextFile(cwd, ".git/HEAD");
+          const platform = yield* HostProcessPlatform;
+          if (platform !== "win32") yield* fileSystem.symlink(outside, path.join(cwd, "external"));
+          const workspaceEntries = yield* WorkspaceEntries.WorkspaceEntries;
+          for (const directoryPath of [
+            "../",
+            outside,
+            ".git",
+            "missing",
+            ...(platform !== "win32" ? ["external"] : []),
+          ]) {
+            const error = yield* workspaceEntries.list({ cwd, directoryPath }).pipe(Effect.flip);
+            expect(error._tag).toBe("WorkspaceEntriesReadDirectoryError");
+          }
+        }),
+    );
+
+    it.effect(
+      "browses a workspace with more than 25,000 entries without truncation",
+      () =>
+        Effect.gen(function* () {
+          const cwd = yield* makeTempDir();
+          const fileSystem = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          for (let directory = 0; directory < 26; directory++) {
+            const directoryPath = path.join(cwd, `folder-${directory}`);
+            yield* fileSystem.makeDirectory(directoryPath);
+            yield* Effect.forEach(
+              Array.from({ length: 1000 }, (_, i) => i),
+              (i) => fileSystem.writeFileString(path.join(directoryPath, `file-${i}.txt`), ""),
+              { concurrency: 32, discard: true },
+            );
+          }
+          const workspaceEntries = yield* WorkspaceEntries.WorkspaceEntries;
+          const root = yield* workspaceEntries.list({ cwd, directoryPath: "" });
+          expect(root.entries).toHaveLength(26);
+          expect(root.truncated).toBe(false);
+          for (const directory of root.entries) {
+            const result = yield* workspaceEntries.list({ cwd, directoryPath: directory.path });
+            expect(result.entries).toHaveLength(1000);
+            expect(result.truncated).toBe(false);
+            expect(result.entries).toContainEqual({
+              path: `${directory.path}/file-999.txt`,
+              kind: "file",
+            });
+          }
+        }),
+      60_000,
+    );
+
     it.effect("returns the complete cached workspace index", () =>
       Effect.gen(function* () {
         const cwd = yield* makeTempDir();
@@ -191,23 +287,6 @@ it.layer(TestLayer, { excludeTestServices: true })("WorkspaceEntries", (it) => {
       }),
     );
 
-    it.effect("ranks searchable gitignored files with regular file matches", () =>
-      Effect.gen(function* () {
-        const cwd = yield* makeTempDir({
-          prefix: "t3code-workspace-gitignored-ranking-",
-          git: true,
-        });
-        yield* writeTextFile(cwd, ".gitignore", ".env\n");
-        yield* writeTextFile(cwd, ".env", "SECRET=1\n");
-        yield* writeTextFile(cwd, "src/environment.ts", "export {};");
-
-        const result = yield* searchWorkspaceEntries({ cwd, query: ".en", limit: 5 });
-
-        expect(result.entries[0]).toEqual({ path: ".env", kind: "file", ignored: true });
-        expect(result.entries.some((entry) => entry.path === "src/environment.ts")).toBe(true);
-      }),
-    );
-
     it.effect("tracks truncation without sorting every fuzzy match", () =>
       Effect.gen(function* () {
         const cwd = yield* makeTempDir({ prefix: "t3code-workspace-fuzzy-limit-" });
@@ -235,7 +314,10 @@ it.layer(TestLayer, { excludeTestServices: true })("WorkspaceEntries", (it) => {
           kind: "file",
         });
 
-        expect(result.entries).toEqual([{ path: "src/index.ts", kind: "file" }]);
+        // Native ranking can put either matching file first.
+        expect(result.entries).toHaveLength(1);
+        expect(result.entries[0]?.kind).toBe("file");
+        expect(["src/index.ts", "src/internal.ts"]).toContain(result.entries[0]?.path);
         expect(result.truncated).toBe(true);
       }),
     );
@@ -278,40 +360,27 @@ it.layer(TestLayer, { excludeTestServices: true })("WorkspaceEntries", (it) => {
       }),
     );
 
-    it.effect("includes gitignored paths for git repositories with ignored metadata", () =>
+    it.effect("excludes gitignored paths for git repositories", () =>
       Effect.gen(function* () {
         const cwd = yield* makeTempDir({ prefix: "t3code-workspace-gitignore-", git: true });
-        yield* writeTextFile(cwd, ".gitignore", "ignored.txt\nignored-dir/\n.git/\n");
+        yield* writeTextFile(cwd, ".gitignore", ".convex/\nconvex/\nignored.txt\n");
         yield* writeTextFile(cwd, "src/keep.ts", "export {};");
         yield* writeTextFile(cwd, "ignored.txt", "ignore me");
-        yield* writeTextFile(cwd, "ignored-dir/nested.json", "{}");
-        yield* writeTextFile(cwd, ".git/should-not-appear.txt", "nope");
+        yield* writeTextFile(cwd, ".convex/local-storage/data.json", "{}");
+        yield* writeTextFile(cwd, "convex/UOoS-l/convex_local_storage/modules/data.json", "{}");
 
         const result = yield* searchWorkspaceEntries({ cwd, query: "", limit: 100 });
-        const entryByPath = new Map(result.entries.map((entry) => [entry.path, entry]));
+        const paths = result.entries.map((entry) => entry.path);
 
-        expect(entryByPath.get("src")).toMatchObject({ path: "src", kind: "directory" });
-        expect(entryByPath.get("src")?.ignored).toBeUndefined();
-        expect(entryByPath.get("src/keep.ts")).toMatchObject({
-          path: "src/keep.ts",
-          kind: "file",
-        });
-        expect(entryByPath.get("src/keep.ts")?.ignored).toBeUndefined();
-        expect(entryByPath.get("ignored.txt")).toEqual({
-          path: "ignored.txt",
-          kind: "file",
-          ignored: true,
-        });
-        expect(entryByPath.get("ignored-dir/nested.json")).toEqual({
-          path: "ignored-dir/nested.json",
-          kind: "file",
-          ignored: true,
-        });
-        expect(result.entries.some((entry) => entry.path.startsWith(".git/"))).toBe(false);
+        expect(paths).toContain("src");
+        expect(paths).toContain("src/keep.ts");
+        expect(paths).not.toContain("ignored.txt");
+        expect(paths.some((entryPath) => entryPath.startsWith(".convex/"))).toBe(false);
+        expect(paths.some((entryPath) => entryPath.startsWith("convex/"))).toBe(false);
       }),
     );
 
-    it.effect("marks tracked paths that match ignore rules as ignored", () =>
+    it.effect("excludes tracked paths that match ignore rules", () =>
       Effect.gen(function* () {
         const cwd = yield* makeTempDir({
           prefix: "t3code-workspace-tracked-gitignore-",
@@ -323,76 +392,11 @@ it.layer(TestLayer, { excludeTestServices: true })("WorkspaceEntries", (it) => {
         yield* writeTextFile(cwd, ".gitignore", ".convex/\n");
 
         const result = yield* searchWorkspaceEntries({ cwd, query: "", limit: 100 });
-        const entryByPath = new Map(result.entries.map((entry) => [entry.path, entry]));
+        const paths = result.entries.map((entry) => entry.path);
 
-        expect(entryByPath.get("src")).toMatchObject({ path: "src", kind: "directory" });
-        expect(entryByPath.get("src/keep.ts")).toMatchObject({
-          path: "src/keep.ts",
-          kind: "file",
-        });
-        expect(entryByPath.get(".convex/local-storage/data.json")).toEqual({
-          path: ".convex/local-storage/data.json",
-          kind: "file",
-          ignored: true,
-        });
-      }),
-    );
-
-    it.effect("does not supplement huge ignored junk directories", () =>
-      Effect.gen(function* () {
-        const cwd = yield* makeTempDir({ prefix: "t3code-workspace-ignored-junk-", git: true });
-        yield* writeTextFile(
-          cwd,
-          ".gitignore",
-          [
-            "node_modules/",
-            "bower_components/",
-            "dist/",
-            "build/",
-            "out/",
-            ".output/",
-            ".svelte-kit/",
-            ".vite/",
-            ".venv/",
-            "dist-electron/",
-            ".electron-runtime/",
-            "ignored.txt",
-            "",
-          ].join("\n"),
-        );
-        yield* writeTextFile(cwd, "node_modules/pkg/index.js", "module.exports = {};");
-        yield* writeTextFile(cwd, "bower_components/pkg/index.js", "");
-        yield* writeTextFile(cwd, ".venv/lib/python.py", "");
-        yield* writeTextFile(cwd, "dist/bundle.js", "");
-        yield* writeTextFile(cwd, "build/bundle.js", "");
-        yield* writeTextFile(cwd, "out/page.js", "");
-        yield* writeTextFile(cwd, ".output/server/index.mjs", "");
-        yield* writeTextFile(cwd, ".svelte-kit/generated/client.js", "");
-        yield* writeTextFile(cwd, ".vite/deps/react.js", "");
-        yield* writeTextFile(cwd, "dist-electron/main.cjs", "");
-        yield* writeTextFile(cwd, ".electron-runtime/T3 Code.app/Contents/Info.plist", "");
-        yield* writeTextFile(cwd, "ignored.txt", "");
-        yield* writeTextFile(cwd, "src/keep.ts", "export {};");
-
-        const result = yield* searchWorkspaceEntries({ cwd, query: "", limit: 100 });
-
-        expect(result.entries.some((entry) => entry.path.startsWith("node_modules/"))).toBe(false);
-        expect(result.entries.some((entry) => entry.path.startsWith("bower_components/"))).toBe(
-          false,
-        );
-        expect(result.entries.some((entry) => entry.path.startsWith(".venv/"))).toBe(false);
-        expect(result.entries.some((entry) => entry.path.startsWith("dist/"))).toBe(false);
-        expect(result.entries.some((entry) => entry.path.startsWith("build/"))).toBe(false);
-        expect(result.entries.some((entry) => entry.path.startsWith("out/"))).toBe(false);
-        expect(result.entries.some((entry) => entry.path.startsWith(".output/"))).toBe(false);
-        expect(result.entries.some((entry) => entry.path.startsWith(".svelte-kit/"))).toBe(false);
-        expect(result.entries.some((entry) => entry.path.startsWith(".vite/"))).toBe(false);
-        expect(result.entries.some((entry) => entry.path.startsWith("dist-electron/"))).toBe(false);
-        expect(result.entries.some((entry) => entry.path.startsWith(".electron-runtime/"))).toBe(
-          false,
-        );
-        expect(result.entries).toContainEqual({ path: "ignored.txt", kind: "file", ignored: true });
-        expect(result.entries.some((entry) => entry.path === "src/keep.ts")).toBe(true);
+        expect(paths).toContain("src");
+        expect(paths).toContain("src/keep.ts");
+        expect(paths.some((entryPath) => entryPath.startsWith(".convex/"))).toBe(false);
       }),
     );
 

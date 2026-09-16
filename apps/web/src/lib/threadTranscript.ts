@@ -1,10 +1,9 @@
-import { extractTrailingPreviewAnnotation } from "./previewAnnotation";
-import { deriveDisplayedUserMessageState } from "./terminalContext";
+import { upgradeLegacyContextMessage } from "@t3tools/shared/composerContextLegacy";
+import { replaceComposerContextReferences } from "@t3tools/shared/composerContextReferences";
 import { randomUUID } from "./utils";
 
 /**
- * Thread transcripts ride the same inline-text mechanism as preview
- * annotations: "Copy transcript" puts a `<thread_transcript>` block on the
+ * Thread transcripts use a trailing text block: "Copy transcript" puts a `<thread_transcript>` block on the
  * clipboard, pasting one into the composer converts it into a draft card,
  * and sending appends the block verbatim to the prompt text. No attachment
  * type or wire schema is involved anywhere.
@@ -56,17 +55,14 @@ function escapeTranscriptTags(text: string): string {
 }
 
 /**
- * User messages store their send-time context appendix (terminal contexts,
- * element contexts, preview annotations, transcripts) inline. Strip all of
- * it so the copied transcript carries what the user actually typed.
+ * Normalize legacy appendices, then remove context references and nested
+ * transcripts so the copy carries the user's prose.
  */
 function cleanUserMessageText(text: string): string {
-  let visibleText = deriveDisplayedUserMessageState(text).visibleText;
-  while (true) {
-    const withoutAnnotation = extractTrailingPreviewAnnotation(visibleText);
-    if (withoutAnnotation.annotation === null) break;
-    visibleText = withoutAnnotation.promptText;
-  }
+  let visibleText = replaceComposerContextReferences(
+    upgradeLegacyContextMessage(text).text,
+    () => "",
+  ).trim();
   while (true) {
     const match = TRAILING_THREAD_TRANSCRIPT_BLOCK_PATTERN.exec(visibleText);
     if (!match) break;

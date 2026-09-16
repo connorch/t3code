@@ -1,6 +1,7 @@
 import { formatWorktreePathForDisplay } from "../worktreeCleanup";
 import type { SidebarThreadSummary } from "../types";
-import { hasUnseenCompletion, parseTimestampMs, resolveSidebarThreadStatus } from "./Sidebar.logic";
+import { toSortableTimestamp } from "../lib/threadSort";
+import { hasUnseenCompletion, resolveSidebarThreadStatus } from "./Sidebar.logic";
 
 // ── Connor mode: the worktree is the unit of navigation ─────────────
 // Threads sharing a `worktreePath` collapse into one sidebar group; threads
@@ -83,7 +84,7 @@ function byCreatedAtAscending<T extends { createdAt: string; id: string }>(
   right: T,
 ): number {
   return (
-    parseTimestampMs(left.createdAt) - parseTimestampMs(right.createdAt) ||
+    (toSortableTimestamp(left.createdAt) ?? 0) - (toSortableTimestamp(right.createdAt) ?? 0) ||
     left.id.localeCompare(right.id)
   );
 }

@@ -1,16 +1,15 @@
-// @effect-diagnostics nodeBuiltinImport:off
-import * as NodeChildProcess from "node:child_process";
+import * as NodeModule from "node:module";
 
-import {
-  type DirItem,
-  type DirSearchResult,
-  type FileItem,
-  FileFinder,
-  type GrepCursor,
-  type MixedItem,
-  type MixedSearchResult,
-  type Result,
-  type SearchResult,
+import type {
+  DirItem,
+  DirSearchResult,
+  FileItem,
+  FileFinder as FileFinderType,
+  GrepCursor,
+  MixedItem,
+  MixedSearchResult,
+  Result,
+  SearchResult,
 } from "@ff-labs/fff-node";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -28,6 +27,13 @@ import type {
 } from "@t3tools/contracts";
 import { isWorkspaceImagePreviewPath } from "@t3tools/shared/filePreview";
 
+// fff-node stays external to the CLI bundle because it dlopens a native
+// library. A static `import` of an external package is a hard error inside a
+// Node single-executable (only built-ins resolve there), so load it through
+// `require`, which reads from the real filesystem in every runtime.
+const requireForFff = NodeModule.createRequire(import.meta.url);
+const { FileFinder } = requireForFff("@ff-labs/fff-node") as typeof import("@ff-labs/fff-node");
+
 const WORKSPACE_INDEX_MAX_ENTRIES = 25_000;
 const WORKSPACE_INDEX_PAGE_SIZE = WORKSPACE_INDEX_MAX_ENTRIES + 2;
 const WORKSPACE_INDEX_SCAN_TIMEOUT = "15 seconds";
@@ -35,39 +41,8 @@ const WORKSPACE_INDEX_SCAN_TIMEOUT_MS = 15_000;
 const WORKSPACE_INDEX_IDLE_TTL = "15 minutes";
 const CONTENT_SEARCH_TIME_BUDGET_MS = 250;
 const CONTENT_SEARCH_MAX_MATCHES_PER_FILE = 100;
-const WORKSPACE_IGNORED_ENTRY_LIMIT = 5_000;
-const WORKSPACE_IGNORED_OUTPUT_MAX_BUFFER = 8 * 1024 * 1024;
-const JUNK_IGNORED_DIRECTORY_NAMES = new Set([
-  ".cache",
-  ".electron-runtime",
-  ".git",
-  ".next",
-  ".nuxt",
-  ".output",
-  ".parcel-cache",
-  ".svelte-kit",
-  ".turbo",
-  ".venv",
-  ".vite",
-  ".vendor",
-  "bower_components",
-  "build",
-  "coverage",
-  "dist",
-  "dist-electron",
-  "jspm_packages",
-  "node_modules",
-  "out",
-  "output",
-  "target",
-  "venv",
-]);
-const JUNK_IGNORED_GIT_PATHSPECS = [...JUNK_IGNORED_DIRECTORY_NAMES].flatMap((directoryName) => [
-  `:(exclude)${directoryName}/**`,
-  `:(exclude)**/${directoryName}/**`,
-]);
 
-export class WorkspaceSearchIndexCreateFailed extends Schema.TaggedErrorClass<WorkspaceSearchIndexCreateFailed>()(
+export class WorkspaceSearchIndexCreateFailed extends Schema.TaggedError<WorkspaceSearchIndexCreateFailed>()(
   "WorkspaceSearchIndexCreateFailed",
   {
     cwd: Schema.String,
@@ -80,7 +55,7 @@ export class WorkspaceSearchIndexCreateFailed extends Schema.TaggedErrorClass<Wo
   }
 }
 
-export class WorkspaceSearchIndexScanTimedOut extends Schema.TaggedErrorClass<WorkspaceSearchIndexScanTimedOut>()(
+export class WorkspaceSearchIndexScanTimedOut extends Schema.TaggedError<WorkspaceSearchIndexScanTimedOut>()(
   "WorkspaceSearchIndexScanTimedOut",
   {
     cwd: Schema.String,
@@ -92,7 +67,7 @@ export class WorkspaceSearchIndexScanTimedOut extends Schema.TaggedErrorClass<Wo
   }
 }
 
-export class WorkspaceSearchIndexSearchFailed extends Schema.TaggedErrorClass<WorkspaceSearchIndexSearchFailed>()(
+export class WorkspaceSearchIndexSearchFailed extends Schema.TaggedError<WorkspaceSearchIndexSearchFailed>()(
   "WorkspaceSearchIndexSearchFailed",
   {
     cwd: Schema.String,
@@ -107,7 +82,7 @@ export class WorkspaceSearchIndexSearchFailed extends Schema.TaggedErrorClass<Wo
   }
 }
 
-export class WorkspaceSearchIndexRefreshFailed extends Schema.TaggedErrorClass<WorkspaceSearchIndexRefreshFailed>()(
+export class WorkspaceSearchIndexRefreshFailed extends Schema.TaggedError<WorkspaceSearchIndexRefreshFailed>()(
   "WorkspaceSearchIndexRefreshFailed",
   {
     cwd: Schema.String,
@@ -120,7 +95,7 @@ export class WorkspaceSearchIndexRefreshFailed extends Schema.TaggedErrorClass<W
   }
 }
 
-export class WorkspaceSearchIndexDestroyFailed extends Schema.TaggedErrorClass<WorkspaceSearchIndexDestroyFailed>()(
+export class WorkspaceSearchIndexDestroyFailed extends Schema.TaggedError<WorkspaceSearchIndexDestroyFailed>()(
   "WorkspaceSearchIndexDestroyFailed",
   {
     cwd: Schema.String,
@@ -180,7 +155,6 @@ function toProjectEntry(item: MixedItem): ProjectEntry | null {
   return {
     path: normalizedPath,
     kind: item.type,
-    ...(item.type === "file" && item.item.gitStatus === "ignored" ? { ignored: true } : {}),
   };
 }
 
@@ -324,193 +298,13 @@ function withDirectoryAncestors(entries: ReadonlyArray<ProjectEntry>): ProjectEn
     let parentPath = parentPathOf(entry.path);
     while (parentPath) {
       if (!entryByPath.has(parentPath)) {
-        entryByPath.set(parentPath, {
-          path: parentPath,
-          kind: "directory",
-          ...(entry.ignored === true ? { ignored: true } : {}),
-        });
+        entryByPath.set(parentPath, { path: parentPath, kind: "directory" });
       }
       parentPath = parentPathOf(parentPath);
     }
   }
   return [...entryByPath.values()];
 }
-
-function isJunkIgnoredPath(relativePath: string): boolean {
-  const segments = relativePath.split("/");
-  return segments.some((segment) => JUNK_IGNORED_DIRECTORY_NAMES.has(segment));
-}
-
-function parseNullSeparatedPaths(output: string): string[] {
-  return output
-    .split("\0")
-    .map((entry) => trimDirectorySeparator(toPosixPath(entry)))
-    .filter((entry) => entry.length > 0);
-}
-
-function toIgnoredEntries(relativePaths: ReadonlyArray<string>): ProjectEntry[] {
-  const entryByPath = new Map<string, ProjectEntry>();
-  for (const relativePath of relativePaths) {
-    if (isJunkIgnoredPath(relativePath)) continue;
-    entryByPath.set(relativePath, { path: relativePath, kind: "file", ignored: true });
-
-    let parentPath = parentPathOf(relativePath);
-    while (parentPath) {
-      if (!entryByPath.has(parentPath)) {
-        entryByPath.set(parentPath, { path: parentPath, kind: "directory", ignored: true });
-      }
-      parentPath = parentPathOf(parentPath);
-    }
-
-    if (entryByPath.size >= WORKSPACE_IGNORED_ENTRY_LIMIT) break;
-  }
-  return [...entryByPath.values()];
-}
-
-function mergeProjectEntries(
-  baseEntries: ReadonlyArray<ProjectEntry>,
-  supplementalEntries: ReadonlyArray<ProjectEntry>,
-): ProjectEntry[] {
-  const entryByPath = new Map(baseEntries.map((entry) => [entry.path, entry]));
-  for (const supplementalEntry of supplementalEntries) {
-    const existingEntry = entryByPath.get(supplementalEntry.path);
-    if (!existingEntry) {
-      entryByPath.set(supplementalEntry.path, supplementalEntry);
-      continue;
-    }
-    if (supplementalEntry.ignored === true && existingEntry.ignored !== true) {
-      entryByPath.set(supplementalEntry.path, { ...existingEntry, ignored: true });
-    }
-  }
-  return [...entryByPath.values()];
-}
-
-function pathMatchesQuery(path: string, query: string): boolean {
-  if (query.length === 0) return true;
-  const normalizedPath = path.toLowerCase();
-  if (normalizedPath.includes(query)) return true;
-
-  let queryIndex = 0;
-  for (const character of normalizedPath) {
-    if (character === query[queryIndex]) {
-      queryIndex += 1;
-      if (queryIndex === query.length) return true;
-    }
-  }
-  return false;
-}
-
-function basenameOf(input: string): string {
-  const separatorIndex = input.lastIndexOf("/");
-  return separatorIndex === -1 ? input : input.slice(separatorIndex + 1);
-}
-
-function stripLeadingDots(input: string): string {
-  return input.replace(/^\.+/, "");
-}
-
-function fuzzyDistance(value: string, query: string): number | null {
-  let queryIndex = 0;
-  let firstMatchIndex = -1;
-  let previousMatchIndex = -1;
-  let gapCount = 0;
-
-  for (let valueIndex = 0; valueIndex < value.length && queryIndex < query.length; valueIndex++) {
-    if (value[valueIndex] !== query[queryIndex]) continue;
-    if (firstMatchIndex === -1) {
-      firstMatchIndex = valueIndex;
-    } else if (previousMatchIndex !== -1) {
-      gapCount += valueIndex - previousMatchIndex - 1;
-    }
-    previousMatchIndex = valueIndex;
-    queryIndex += 1;
-  }
-
-  return queryIndex === query.length ? firstMatchIndex + gapCount : null;
-}
-
-function queryMatchScore(value: string, query: string, baseScore: number): number | null {
-  if (value === query) return baseScore;
-  if (value.startsWith(query)) return baseScore + 10;
-
-  const includesIndex = value.indexOf(query);
-  if (includesIndex !== -1) {
-    const previous = includesIndex === 0 ? "" : value[includesIndex - 1];
-    const boundaryBonus =
-      includesIndex === 0 ||
-      previous === "/" ||
-      previous === "-" ||
-      previous === "_" ||
-      previous === "."
-        ? 20
-        : 30;
-    return baseScore + boundaryBonus + includesIndex;
-  }
-
-  const distance = fuzzyDistance(value, query);
-  return distance === null ? null : baseScore + 100 + distance;
-}
-
-function scoreProjectEntryPath(entry: ProjectEntry, query: string): number {
-  if (query.length === 0) {
-    return entry.kind === "directory" ? 0 : 1;
-  }
-
-  const path = entry.path.toLowerCase();
-  const basename = basenameOf(path);
-  const basenameWithoutDots = stripLeadingDots(basename);
-  const pathWithoutDots = stripLeadingDots(path);
-  const scores = [
-    queryMatchScore(basename, query, 0),
-    basenameWithoutDots === basename ? null : queryMatchScore(basenameWithoutDots, query, 0),
-    queryMatchScore(path, query, 40),
-    pathWithoutDots === path ? null : queryMatchScore(pathWithoutDots, query, 40),
-  ].filter((score): score is number => score !== null);
-
-  return scores.length === 0 ? Number.POSITIVE_INFINITY : Math.min(...scores);
-}
-
-function rankSearchEntries(entries: ReadonlyArray<ProjectEntry>, query: string): ProjectEntry[] {
-  return entries.toSorted((left, right) => {
-    const scoreDelta = scoreProjectEntryPath(left, query) - scoreProjectEntryPath(right, query);
-    if (scoreDelta !== 0) return scoreDelta;
-    const kindDelta = left.kind === right.kind ? 0 : left.kind === "file" ? -1 : 1;
-    if (kindDelta !== 0) return kindDelta;
-    return left.path.localeCompare(right.path);
-  });
-}
-
-const scanGitIgnoredEntries = Effect.fn("WorkspaceSearchIndex.scanGitIgnoredEntries")(function* (
-  cwd: string,
-) {
-  const result = yield* Effect.sync(() => {
-    try {
-      return NodeChildProcess.execFileSync(
-        "git",
-        [
-          "-C",
-          cwd,
-          "ls-files",
-          "-cio",
-          "--exclude-standard",
-          "-z",
-          "--",
-          ".",
-          ...JUNK_IGNORED_GIT_PATHSPECS,
-        ],
-        {
-          encoding: "utf8",
-          maxBuffer: WORKSPACE_IGNORED_OUTPUT_MAX_BUFFER,
-          stdio: ["ignore", "pipe", "ignore"],
-          timeout: 5_000,
-        },
-      );
-    } catch {
-      return "";
-    }
-  });
-  return toIgnoredEntries(parseNullSeparatedPaths(result));
-});
 
 const createFinder = Effect.fn("WorkspaceSearchIndex.createFinder")(function* (
   cwd: string,
@@ -545,7 +339,7 @@ const createFinder = Effect.fn("WorkspaceSearchIndex.createFinder")(function* (
 
 const waitForIndexReady = Effect.fn("WorkspaceSearchIndex.waitForIndexReady")(function* <E>(
   cwd: string,
-  finder: FileFinder,
+  finder: FileFinderType,
   onFailure: (input: { readonly reason: string; readonly cause?: unknown }) => E,
 ): Effect.fn.Return<void, E | WorkspaceSearchIndexScanTimedOut> {
   const result = yield* Effect.tryPromise({
@@ -616,14 +410,6 @@ export const make = Effect.fn("WorkspaceSearchIndex.make")(function* (
     return result.value;
   });
 
-  let ignoredEntriesCache: ProjectEntry[] | null = null;
-  const getIgnoredEntries = Effect.fn("WorkspaceSearchIndex.getIgnoredEntries")(function* () {
-    if (ignoredEntriesCache) return ignoredEntriesCache;
-    const ignoredEntries = yield* scanGitIgnoredEntries(cwd);
-    ignoredEntriesCache = ignoredEntries;
-    return ignoredEntries;
-  });
-
   const refresh: WorkspaceSearchIndex["Service"]["refresh"] = Effect.fn(
     "WorkspaceSearchIndex.refresh",
   )(function* () {
@@ -652,7 +438,6 @@ export const make = Effect.fn("WorkspaceSearchIndex.make")(function* (
           cause,
         }),
     );
-    ignoredEntriesCache = null;
   });
 
   const list: WorkspaceSearchIndex["Service"]["list"] = Effect.fn("WorkspaceSearchIndex.list")(
@@ -661,11 +446,9 @@ export const make = Effect.fn("WorkspaceSearchIndex.make")(function* (
         finder.mixedSearch("", { pageSize: WORKSPACE_INDEX_PAGE_SIZE }),
       );
       const mapped = mapMixedSearchResult(result, WORKSPACE_INDEX_MAX_ENTRIES);
-      const ignoredEntries = yield* getIgnoredEntries();
-      const sortedEntries = mergeProjectEntries(
-        withDirectoryAncestors(mapped.entries),
-        ignoredEntries,
-      ).toSorted((left, right) => left.path.localeCompare(right.path));
+      const sortedEntries = withDirectoryAncestors(mapped.entries).toSorted((left, right) =>
+        left.path.localeCompare(right.path),
+      );
       const entries = sortedEntries.slice(0, WORKSPACE_INDEX_MAX_ENTRIES);
       return {
         entries,
@@ -693,19 +476,7 @@ export const make = Effect.fn("WorkspaceSearchIndex.make")(function* (
     const result = yield* runSearch(query, pageSize, "mixedSearch", () =>
       finder.mixedSearch(query, { pageSize }),
     );
-    const mapped = mapMixedSearchResult(result, limit);
-    const ignoredEntries = (yield* getIgnoredEntries())
-      .filter((entry) => pathMatchesQuery(entry.path, query))
-      .filter((entry) => entry.kind === "file");
-    const rankedEntries = rankSearchEntries(
-      mergeProjectEntries(mapped.entries, ignoredEntries),
-      query,
-    );
-    const entries = rankedEntries.slice(0, limit);
-    return {
-      entries,
-      truncated: mapped.truncated || entries.length < rankedEntries.length,
-    };
+    return mapMixedSearchResult(result, limit);
   });
 
   const searchContents: WorkspaceSearchIndex["Service"]["searchContents"] = Effect.fn(
@@ -789,6 +560,8 @@ function parseWorkspaceSearchIndexKey(key: string): {
  * workspace root and variant. WorkspaceSearchIndexMap owns memoization and
  * idle cleanup; using a default cwd here would mix resources from different
  * workspaces.
+ *
+ * @public Service construction is part of the canonical Effect module API.
  */
 export const layer = (key: string) => {
   const { cwd, variant } = parseWorkspaceSearchIndexKey(key);

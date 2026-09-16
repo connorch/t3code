@@ -1,3 +1,4 @@
+import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 import { autoAnimate } from "@formkit/auto-animate";
 import {
   closestCorners,
@@ -109,7 +110,7 @@ import {
   isTrailingDoubleClick,
   orderItemsByPreferredIds,
   resolveAdjacentThreadId,
-  searchSidebarThreadsByTitle,
+  searchSidebarThreads,
   sortLogicalProjectsForSidebar,
 } from "./Sidebar.logic";
 import {
@@ -123,7 +124,6 @@ import {
   type ConnorThreadDot,
 } from "./SidebarConnor.logic";
 import { ProjectFavicon } from "./ProjectFavicon";
-import { resolveThreadPr } from "./ThreadStatusIndicators";
 import { stackedThreadToast, toastManager } from "./ui/toast";
 import { Button } from "./ui/button";
 import { Collapsible, CollapsiblePanel } from "./ui/collapsible";
@@ -712,10 +712,10 @@ function StackGroupSection(props: GroupSectionProps) {
         })
       : null,
   );
-  const groupPr = resolveThreadPr({
-    threadBranch: group.branch,
-    gitStatus: gitStatusQuery.data ?? null,
-  });
+  const groupPr =
+    group.branch !== null && gitStatusQuery.data?.refName === group.branch
+      ? gitStatusQuery.data.pr
+      : null;
   return (
     <li className="list-none py-px">
       {/* Card chrome is the expanded worktree's focus treatment; collapsed
@@ -921,8 +921,7 @@ function ConnorProjectHeader(props: {
     >
       <span className="relative flex size-4 shrink-0 items-center justify-center">
         <ProjectFavicon
-          environmentId={project.environmentId}
-          cwd={project.workspaceRoot}
+          project={project}
           className={cn(
             "size-4 transition-opacity group-hover/connor-project:opacity-0",
             props.hidden && "opacity-50 grayscale",
@@ -1016,7 +1015,7 @@ function ConnorProjectHeader(props: {
 
 function ConnorSearchResultRow(props: {
   thread: EnvironmentThreadShell;
-  projectCwd: string | null;
+  project: EnvironmentProject | null;
   isHighlighted: boolean;
   isRouteActive: boolean;
   resultId: string;
@@ -1038,12 +1037,15 @@ function ConnorSearchResultRow(props: {
         onPointerMove={props.onHighlight}
         onClick={props.onSelect}
       >
-        <ProjectFavicon
-          environmentId={thread.environmentId}
-          cwd={props.projectCwd ?? ""}
-          className="size-4 shrink-0"
-          fallbackIcon={MessageSquareIcon}
-        />
+        {props.project ? (
+          <ProjectFavicon
+            project={props.project}
+            className="size-4 shrink-0"
+            fallbackIcon={MessageSquareIcon}
+          />
+        ) : (
+          <MessageSquareIcon className="size-4 shrink-0" />
+        )}
         <span className="min-w-0 flex-1 truncate">{thread.title}</span>
         {thread.branch ? (
           <span className="max-w-28 shrink-0 truncate text-xs text-sidebar-muted-foreground/55">
@@ -1967,7 +1969,7 @@ export default function SidebarConnor() {
   const isSearchingThreads = threadSearchQuery.trim().length > 0;
   const searchableThreads = useMemo(() => allGroups.flatMap((group) => group.threads), [allGroups]);
   const threadSearchResults = useMemo(
-    () => searchSidebarThreadsByTitle(searchableThreads, threadSearchQuery),
+    () => searchSidebarThreads(searchableThreads, threadSearchQuery),
     [searchableThreads, threadSearchQuery],
   );
   const threadSearchResultOrderKey = threadSearchResults
@@ -2282,8 +2284,12 @@ export default function SidebarConnor() {
                     <ConnorSearchResultRow
                       key={threadKey}
                       thread={thread}
-                      projectCwd={
-                        projectCwdByKey.get(`${thread.environmentId}:${thread.projectId}`) ?? null
+                      project={
+                        projects.find(
+                          (project) =>
+                            project.environmentId === thread.environmentId &&
+                            project.id === thread.projectId,
+                        ) ?? null
                       }
                       isHighlighted={activeSearchResultIndex === index}
                       isRouteActive={routeThreadKey === threadKey}
