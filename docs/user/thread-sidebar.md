@@ -1,5 +1,28 @@
 # Organizing threads
 
+## Switching threads in a checkout
+
+On web and desktop, tabs below the chat header show all non-archived threads in the same Git
+worktree. Threads using the project's root checkout share their own tab bar. Tabs stay within the
+same environment and appear with every sidebar mode, even when only one thread is present.
+
+Select a tab to switch conversations. Use **+** to start another thread in the same checkout.
+Unsent drafts stay in the tab bar when you switch away. Long tab titles have tooltips, and the bar
+scrolls horizontally when it fills up.
+
+Tabs start in creation order, oldest first. Drag them to change their order. Your order is saved in
+the current browser or desktop app and survives restarts; it does not sync to other devices.
+
+Hover over a tab to reveal **×**. For a sent thread, this archives it using your existing archive
+confirmation preference. Running threads cannot be archived. For an unsent draft, **×** discards
+the draft and its contents. Archived threads can be restored from Settings under **Archived threads**.
+
+Archiving the selected thread uses normal archive navigation, independent of custom tab order:
+another thread in the linked worktree opens if one remains, otherwise the project's new-thread
+flow opens. Root-checkout threads always use the project's new-thread flow after archiving.
+
+## Pinning and settling
+
 Pin a thread from its context menu to keep it in the pinned section above your active work.
 `mod+shift+p` pins or unpins the thread you have open. Pinned threads are shown independently of
 their project, including when you connect to more than one environment.
