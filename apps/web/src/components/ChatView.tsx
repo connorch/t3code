@@ -296,6 +296,7 @@ import { PullRequestThreadDialog } from "./PullRequestThreadDialog";
 import { MessagesTimeline } from "./chat/MessagesTimeline";
 import { resolveTimelineIsAtEnd } from "./chat/MessagesTimeline.logic";
 import { ChatHeader } from "./chat/ChatHeader";
+import { WorktreeThreadTabs } from "./chat/WorktreeThreadTabs";
 import { PanelLayoutControls, RightPanelMaximizeControl } from "./chat/PanelLayoutControls";
 import { type ExpandedImagePreview } from "./chat/ExpandedImagePreview";
 import { NoActiveThreadState } from "./NoActiveThreadState";
@@ -7318,6 +7319,15 @@ function ChatViewContent(props: ChatViewProps) {
             onDeleteProjectScript={deleteProjectScript}
           />
         </WorkspacePageHeader>
+
+        <WorktreeThreadTabs
+          environmentId={activeThread.environmentId}
+          projectId={activeThread.projectId}
+          threadId={activeThread.id}
+          worktreePath={activeThread.worktreePath}
+          branch={activeThread.branch}
+          {...(routeKind === "draft" && draftId ? { draftId } : {})}
+        />
 
         <ThreadErrorBanner
           error={visibleThreadError}
