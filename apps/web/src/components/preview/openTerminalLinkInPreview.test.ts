@@ -3,20 +3,17 @@ import * as Cause from "effect/Cause";
 import { AsyncResult } from "effect/unstable/reactivity";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
+import { resetPreviewStateForTests } from "~/previewStateStore";
+import { useRightPanelStore } from "~/rightPanelStore";
+
 import {
   openTerminalLinkInPreview,
   TerminalLinkPreviewOpenError,
 } from "./openTerminalLinkInPreview";
 
-vi.mock("~/previewStateStore", () => ({
-  applyPreviewServerSnapshot: vi.fn(),
+vi.mock("~/previewStateStore", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("~/previewStateStore")>()),
   isPreviewSupportedInRuntime: () => true,
-}));
-
-vi.mock("~/rightPanelStore", () => ({
-  useRightPanelStore: {
-    getState: () => ({ openBrowser: vi.fn() }),
-  },
 }));
 
 const browserDefaultsMocks = vi.hoisted(() => ({
@@ -58,6 +55,8 @@ const snapshot: PreviewSessionSnapshot = {
 };
 
 beforeEach(() => {
+  resetPreviewStateForTests();
+  useRightPanelStore.setState({ byThreadKey: {} });
   browserDefaultsMocks.resolve.mockReset();
   browserDefaultsMocks.resolve.mockResolvedValue(hydratedDefaults);
   linkTargetMocks.preference.mockReturnValue("app");

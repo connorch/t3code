@@ -9,6 +9,7 @@ import {
 } from "~/browser/browserDefaults";
 import { isWebUrl, resolveBrowserLinkTargetPreference } from "~/browser/browserLinkTarget";
 import type { OpenPreviewMutation } from "~/browser/openFileInPreview";
+import { focusBrowserSurfaceForUrl } from "~/browser/focusBrowserSurfaceForUrl";
 import { recordVisitForThread } from "~/browserHistoryStore";
 import { applyPreviewServerSnapshot, isPreviewSupportedInRuntime } from "~/previewStateStore";
 import { useRightPanelStore } from "~/rightPanelStore";
@@ -54,6 +55,11 @@ export async function openTerminalLinkInPreview<E>(
 
   if (!supportsPreview) {
     input.fallbackToBrowser();
+    return;
+  }
+
+  if (focusBrowserSurfaceForUrl(input.threadRef, input.url)) {
+    recordVisitForThread(input.threadRef, input.url);
     return;
   }
 
