@@ -22,6 +22,7 @@ import {
   rememberPreviewUrl,
 } from "~/previewStateStore";
 import { useRightPanelStore } from "~/rightPanelStore";
+import { focusBrowserSurfaceForUrl } from "./focusBrowserSurfaceForUrl";
 
 import {
   browserDefaultOpenProfileId,
@@ -56,6 +57,9 @@ export async function openUrlInPreview<E>(input: {
   readonly url: string;
   readonly openPreview: OpenPreviewMutation<E>;
 }): Promise<AtomCommandResult<void, E | BrowserSettingsReadError>> {
+  if (focusBrowserSurfaceForUrl(input.threadRef, input.url)) {
+    return AsyncResult.success(undefined);
+  }
   const defaults = await resolveBrowserDefaults().catch(
     (cause: unknown) => new BrowserSettingsReadError({ cause }),
   );

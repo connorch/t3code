@@ -3,8 +3,10 @@ import {
   mapAtomCommandResult,
   type AtomCommandResult,
 } from "@t3tools/client-runtime/state/runtime";
+import { AsyncResult } from "effect/unstable/reactivity";
 
 import { resolveDiscoveredServerUrl } from "~/browser/browserTargetResolver";
+import { focusBrowserSurfaceForUrl } from "~/browser/focusBrowserSurfaceForUrl";
 import type { BrowserSettingsReadError, OpenPreviewMutation } from "~/browser/openFileInPreview";
 import { recordVisitForThread } from "~/browserHistoryStore";
 import { useRightPanelStore } from "~/rightPanelStore";
@@ -16,6 +18,10 @@ export async function openDiscoveredPort<E>(input: {
   readonly openPreview: OpenPreviewMutation<E>;
 }): Promise<AtomCommandResult<void, E | BrowserSettingsReadError>> {
   const resolvedUrl = resolveDiscoveredServerUrl(input.threadRef.environmentId, input.port.url);
+  if (focusBrowserSurfaceForUrl(input.threadRef, resolvedUrl)) {
+    recordVisitForThread(input.threadRef, input.port.url);
+    return AsyncResult.success(undefined);
+  }
   const result = await openPreviewSession({
     openPreview: input.openPreview,
     threadRef: input.threadRef,
