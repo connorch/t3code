@@ -36,6 +36,9 @@ export interface ThreadActionMenuState {
    */
   readonly hasTranscript: boolean;
   readonly isPinned: boolean;
+  /** Live threads sharing this thread's worktree card. Pin and unpin fan out
+      to them, so the labels say "worktree" whenever there are any. */
+  readonly worktreeSiblingCount: number;
   readonly isSettled: boolean;
   readonly isSnoozed: boolean;
   readonly canSnoozeNow: boolean;
@@ -72,8 +75,16 @@ export function buildThreadActionMenuItems(
     ...(state.supports.pinning
       ? [
           state.isPinned
-            ? { id: "unpin" as const, label: "Unpin thread", icon: "pin-off" }
-            : { id: "pin" as const, label: "Pin thread", icon: "pin" },
+            ? {
+                id: "unpin" as const,
+                label: state.worktreeSiblingCount > 0 ? "Unpin worktree" : "Unpin thread",
+                icon: "pin-off",
+              }
+            : {
+                id: "pin" as const,
+                label: state.worktreeSiblingCount > 0 ? "Pin worktree" : "Pin thread",
+                icon: "pin",
+              },
         ]
       : []),
     // Both lifecycle actions stay available on pinned threads: settling

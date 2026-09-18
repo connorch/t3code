@@ -10,9 +10,14 @@ export function SidebarDragLifecycle({ onUnmount }: { onUnmount: () => void }) {
 
 type Options = {
   distance: number;
+  /** A press held still this long (or Option at press) targets the row
+   * alone inside its worktree card; any earlier movement lifts the card. */
+  holdMs: number;
   onAttach: (sensor: SidebarPointerSensor) => void;
   onFinish: (started: boolean) => void;
 };
+
+export type SidebarDragMode = "card" | "row";
 
 /** A sidebar gesture ends on release, cancellation, or loss of its window.
  * Own the listeners so unmounting the list can cancel the sensor too. */
@@ -25,7 +30,10 @@ export class SidebarPointerSensor {
     },
   ];
   autoScrollEnabled = true;
+  /** Read at drag start; Sidebar decides whether the row has a card at all. */
+  mode: SidebarDragMode = "card";
   private phase: "pending" | "dragging" | "finished" = "pending";
+  private holdTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly pointer: PointerEvent;
   private readonly document: Document;
   private readonly window: Window;
@@ -44,8 +52,21 @@ export class SidebarPointerSensor {
     this.window.addEventListener("resize", this.cancel);
     this.document.addEventListener("dragstart", this.preventDefault);
     this.document.addEventListener("contextmenu", this.preventDefault);
+    if (this.pointer.altKey) this.mode = "row";
+    else {
+      this.holdTimer = setTimeout(() => {
+        this.holdTimer = null;
+        if (this.phase === "pending") this.mode = "row";
+      }, props.options.holdMs);
+    }
     props.options.onAttach(this);
     props.onPending(props.active, { distance: props.options.distance }, this.coordinates());
+  }
+
+  private clearHoldTimer() {
+    if (this.holdTimer === null) return;
+    clearTimeout(this.holdTimer);
+    this.holdTimer = null;
   }
 
   private coordinates = () => ({ x: this.pointer.clientX, y: this.pointer.clientY });
@@ -81,6 +102,7 @@ export class SidebarPointerSensor {
         return;
       }
       this.phase = "dragging";
+      this.clearHoldTimer();
       this.document.addEventListener("click", this.suppressClick, { capture: true });
       this.document.addEventListener("selectionchange", this.clearSelection);
       this.clearSelection();
@@ -111,6 +133,7 @@ export class SidebarPointerSensor {
     if (this.phase === "finished") return;
     const aborted = this.phase === "pending";
     this.phase = "finished";
+    this.clearHoldTimer();
     this.document.removeEventListener("pointermove", this.move, { capture: true });
     this.document.removeEventListener("pointerup", this.end, { capture: true });
     this.document.removeEventListener("pointercancel", this.pointerCancel, { capture: true });

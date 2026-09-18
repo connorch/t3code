@@ -414,6 +414,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["project thread tree old flat list"],
   },
   {
+    id: "sidebar-worktree-cards",
+    title: "Worktree cards",
+    to: "/settings/general",
+    searchTerms: ["group worktree threads together card sidebar branch"],
+  },
+  {
     id: "keybindings",
     title: "Keybindings",
     to: "/settings/keybindings",

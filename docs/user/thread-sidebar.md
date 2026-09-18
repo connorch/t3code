@@ -73,6 +73,20 @@ If dragging is unavailable for one environment, update the T3 Code server runnin
 environment. Pinned and active reordering require server support. Threads from older servers keep
 their default order until the server is updated.
 
+## Worktree cards
+
+On web and desktop, the threads that share a worktree stay together in the sidebar as one card.
+A card holds the worktree's pinned and active threads. Snoozed and settled threads leave the card
+for their own shelves. Pinning a thread pins the rest of its worktree, and unpinning does the
+same. Settle, snooze, and the other row actions still apply to one thread at a time.
+
+Drag any row to move the whole card. To reorder one thread inside its card, hold Option while
+dragging, or hold the pointer still for a moment before you start to move. Drop a card on
+**Settled** to settle every thread in it.
+
+Turn cards off in **Settings → General → Worktree cards**. The order is stored per thread on the
+server, so mobile and your other devices show the same threads next to each other.
+
 ## Settle finished work
 
 Choose **Settle thread** from its menu to move finished work out of the active list

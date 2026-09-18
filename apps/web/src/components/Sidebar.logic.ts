@@ -250,6 +250,9 @@ export function planSidebarThreadDrop(input: {
   readonly activeOrder: readonly string[];
   readonly activeKeysById: ReadonlyMap<string, string | null | undefined>;
   readonly activeReorderableKeys?: ReadonlySet<string>;
+  /** The lifted worktree card's members in card order; keys are assigned to
+      the whole block so the members stay adjacent on every client. */
+  readonly movedIds?: readonly string[];
 }): SidebarThreadDropPlan {
   const {
     activeKey,
@@ -281,6 +284,7 @@ export function planSidebarThreadDrop(input: {
         orderedIds: order,
         keysById: activeKeysById,
         movedId: activeKey,
+        ...(input.movedIds === undefined ? {} : { movedIds: input.movedIds }),
       });
       if (activeReorderableKeys && assignments.some(({ id }) => !activeReorderableKeys.has(id))) {
         return { kind: "none" };
@@ -310,6 +314,7 @@ export function planSidebarThreadDrop(input: {
         orderedIds: order,
         keysById: pinnedKeysById,
         movedId: activeKey,
+        ...(input.movedIds === undefined ? {} : { movedIds: input.movedIds }),
       });
       if (reorderableKeys && assignments.some(({ id }) => !reorderableKeys.has(id))) {
         return { kind: "none" };

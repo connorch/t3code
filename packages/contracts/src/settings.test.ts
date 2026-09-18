@@ -495,6 +495,16 @@ describe("ClientSettings sidebar", () => {
     expect(decoded).not.toHaveProperty("sidebarV2ConfiguredByUser");
   });
 
+  it("groups worktree threads by default and accepts the toggle off", () => {
+    expect(decodeClientSettings({}).sidebarGroupWorktreeThreads).toBe(true);
+    expect(
+      decodeClientSettings({ sidebarGroupWorktreeThreads: false }).sidebarGroupWorktreeThreads,
+    ).toBe(false);
+    expect(
+      decodeClientSettingsPatch({ sidebarGroupWorktreeThreads: false }).sidebarGroupWorktreeThreads,
+    ).toBe(false);
+  });
+
   it("accepts each sidebar mode and rejects unknown ones", () => {
     for (const mode of ["default", "legacy", "connor-1"] as const) {
       expect(decodeClientSettings({ sidebarMode: mode }).sidebarMode).toBe(mode);

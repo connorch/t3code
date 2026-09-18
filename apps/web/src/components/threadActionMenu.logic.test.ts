@@ -6,6 +6,7 @@ const baseState: ThreadActionMenuState = {
   branch: null,
   hasTranscript: false,
   isPinned: false,
+  worktreeSiblingCount: 0,
   isSettled: false,
   isSnoozed: false,
   canSnoozeNow: true,
@@ -115,5 +116,19 @@ describe("buildThreadActionMenuItems", () => {
       (item) => item.id === "archive",
     );
     expect(archiveItem?.disabled).toBe(true);
+  });
+});
+
+describe("worktree card labels", () => {
+  it("names the worktree when the pin fans out to siblings", () => {
+    const labels = (state: ThreadActionMenuState) =>
+      buildThreadActionMenuItems(state)
+        .filter((item) => item.id === "pin" || item.id === "unpin")
+        .map((item) => item.label);
+    expect(labels({ ...baseState, worktreeSiblingCount: 2 })).toEqual(["Pin worktree"]);
+    expect(labels({ ...baseState, worktreeSiblingCount: 2, isPinned: true })).toEqual([
+      "Unpin worktree",
+    ]);
+    expect(labels(baseState)).toEqual(["Pin thread"]);
   });
 });

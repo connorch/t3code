@@ -26,6 +26,7 @@ import {
   readEnvironmentSupportsTitleRegeneration,
   readThreadDetail,
   readThreadShell,
+  readThreadShells,
   useProjects,
 } from "../state/entities";
 import { buildThreadTranscriptBlock } from "../lib/threadTranscript";
@@ -38,6 +39,8 @@ import {
 } from "../logicalProject";
 import { buildPhysicalToLogicalProjectKeyMap } from "../sidebarProjectGrouping";
 import { useUiStateStore } from "../uiStateStore";
+import { worktreeCardSiblings } from "../components/Sidebar.worktree";
+import { useSidebarWorktreeCardsEnabled } from "./useSettings";
 import { useCopyToClipboard } from "./useCopyToClipboard";
 import { useNewThreadHandler } from "./useHandleNewThread";
 import { useClientSettings } from "./useSettings";
@@ -93,6 +96,7 @@ export function useThreadActionMenu(input: {
     archiveThread,
     deleteThread,
   } = useThreadActions();
+  const worktreeCardsEnabled = useSidebarWorktreeCardsEnabled();
   const updateThreadMetadata = useAtomCommand(threadEnvironment.updateMetadata, {
     reportFailure: false,
   });
@@ -156,10 +160,17 @@ export function useThreadActionMenu(input: {
           threadDetail?.messages.filter(
             (message) => !message.streaming && message.text.trim().length > 0,
           ) ?? [];
+        // A card is pinned while any member is: the menu offers "Unpin
+        // worktree" on an unpinned member of a pinned card.
+        const worktreeSiblings = worktreeCardsEnabled
+          ? worktreeCardSiblings(readThreadShells(), thread, { now: now.toISOString() })
+          : [];
         const items = buildThreadActionMenuItems({
           branch: thread.branch ?? null,
           hasTranscript: transcriptMessages.length > 0,
-          isPinned: thread.pinnedAt != null,
+          isPinned:
+            thread.pinnedAt != null || worktreeSiblings.some((sibling) => sibling.pinnedAt != null),
+          worktreeSiblingCount: worktreeSiblings.length,
           isSettled: supports.settlement && thread.settledOverride === "settled",
           isSnoozed: supports.snooze && effectiveSnoozed(thread, { now: now.toISOString() }),
           canSnoozeNow: canSnooze(thread, { now: now.toISOString() }),
@@ -387,6 +398,7 @@ export function useThreadActionMenu(input: {
       unsettleThread,
       unsnoozeThread,
       updateThreadMetadata,
+      worktreeCardsEnabled,
     ],
   );
 
