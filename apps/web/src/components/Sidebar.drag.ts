@@ -8,6 +8,7 @@ import {
   type SidebarListMarker,
   type SidebarSection,
 } from "./Sidebar.logic";
+import { applyWorktreeCardToDropTarget } from "./Sidebar.worktree";
 
 const stationary = { x: 0, y: 0, scaleX: 1, scaleY: 1 };
 const hidden = { ...stationary, scaleY: 0 };
@@ -106,9 +107,14 @@ export function createSidebarSortingStrategy(input: {
   /** Space each pinned boundary opens for its label while dragging. The
    * markers stay zero height at rest, so nothing is reserved until pickup. */
   boundaryLabelHeight?: number;
+  /** Every member of the lifted worktree card, dragged row included. The
+   * lifted row renders the whole card, so its siblings leave the flow and the
+   * gap opens to the card's full height. */
+  cardKeys?: readonly string[];
 }): SortingStrategy {
   const { items } = input;
   const indices = new Map(items.map((item, index) => [sidebarListItemId(item), index]));
+  const cardKeys = input.cardKeys ?? [];
   let previous: Pick<Layout, "rects" | "activeIndex" | "overIndex"> | undefined;
   let transforms: ReturnType<SortingStrategy>[] | null = [];
 
@@ -116,8 +122,10 @@ export function createSidebarSortingStrategy(input: {
     const active = items[activeIndex];
     const over = items[overIndex] ?? active;
     if (active?.kind !== "thread" || !over || !rects[0]) return [];
-    const target = resolveSidebarDropTarget(items, active.key, sidebarListItemId(over));
-    if (!target) return [];
+    const plainTarget = resolveSidebarDropTarget(items, active.key, sidebarListItemId(over));
+    if (!plainTarget) return [];
+    const target = applyWorktreeCardToDropTarget(plainTarget, active.key, cardKeys);
+    const siblings = new Set(cardKeys.filter((key) => key !== active.key));
     const groups: Record<SidebarSection, ThreadItem[]> = {
       pinned: [],
       active: [],
@@ -135,10 +143,13 @@ export function createSidebarSortingStrategy(input: {
         }
         continue;
       }
+      // The lifted node may have been remeasured as a whole worktree card,
+      // so row heights only ever come from rows still in the flow.
+      if (item.key === active.key) continue;
       if (item.section === "pinned" || item.section === "active")
         cardHeight ??= rects[index]?.height;
       else slimHeight ??= rects[index]?.height;
-      if (item.key !== active.key) groups[item.section].push(item);
+      if (item.key !== active.key && !siblings.has(item.key)) groups[item.section].push(item);
     }
     // Cards are 4.875rem + 0.25rem padding; slim rows/placeholders are h-9.
     const scale =
@@ -198,13 +209,24 @@ export function createSidebarSortingStrategy(input: {
           ? cardHeight
           : slimHeight;
       const moved = item.kind === "thread" && item.key === active.key;
+      // The lifted card is as tall as its members' rows plus the 1px list
+      // gaps between them: the siblings as measured at pickup, the dragged
+      // row as a plain row (its own node now holds the whole card).
+      const cardHeightTotal =
+        siblings.size === 0
+          ? fallback
+          : cardKeys.reduce((sum, key) => {
+              const memberIndex = key === active.key ? undefined : indices.get(key);
+              const memberRect = memberIndex === undefined ? undefined : rects[memberIndex];
+              return sum + (memberRect?.height ?? fallback) + 1;
+            }, -1);
       return item.kind === "marker" &&
         (item.marker === "pinned-header" || item.marker === "pinned-divider")
         ? labelHeight
         : item.kind === "marker" && item.marker.endsWith("placeholder")
           ? slimHeight
           : moved
-            ? fallback
+            ? cardHeightTotal
             : (rect?.height ?? fallback);
     });
     const firstShelf = items.findIndex(

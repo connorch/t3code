@@ -382,6 +382,19 @@ export function useSidebarMode(): SidebarMode {
   return settingsHydrated ? sidebarMode : DEFAULT_SIDEBAR_MODE;
 }
 
+/**
+ * Whether the default sidebar gathers a worktree's threads into one card
+ * (see docs/user/thread-sidebar.md "Worktree cards"). Off in other sidebar
+ * modes, so pin fan-out never fires where no card is drawn.
+ */
+export function useSidebarWorktreeCardsEnabled(): boolean {
+  const settingsHydrated = useClientSettingsHydrated();
+  const settings = useClientSettingsValue();
+  return (
+    settingsHydrated && settings.sidebarMode === "default" && settings.sidebarGroupWorktreeThreads
+  );
+}
+
 /** Read current settings for one environment, merged with client-local preferences. */
 export function useEnvironmentSettings<T = UnifiedSettings>(
   environmentId: EnvironmentId,

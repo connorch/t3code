@@ -42,7 +42,8 @@ import { useUiStateStore } from "../uiStateStore";
 import { buildThreadRouteParams, resolveThreadRouteRef } from "../threadRoutes";
 import { formatWorktreePathForDisplay, getOrphanedWorktreePathForThread } from "../worktreeCleanup";
 import { stackedThreadToast, toastManager } from "../components/ui/toast";
-import { useClientSettings } from "./useSettings";
+import { useClientSettings, useSidebarWorktreeCardsEnabled } from "./useSettings";
+import { worktreeCardSiblings } from "../components/Sidebar.worktree";
 import { useAtomCommand } from "../state/use-atom-command";
 
 export class ThreadArchiveBlockedError extends Schema.TaggedError<ThreadArchiveBlockedError>()(
@@ -96,14 +97,23 @@ export class ThreadSnoozeBlockedError extends Schema.TaggedError<ThreadSnoozeBlo
 /** Key that sorts before every arranged pinned thread, so a fresh pin lands
     at the top of the run. Undefined (keyless, sorts with the legacy block)
     when key math can't produce one — pinning must never fail on placement. */
-function topOfPinnedRunOrderKey(): string | undefined {
+function smallestPinnedOrderKey(): string | null {
   let firstKey: string | null = null;
   for (const shell of readThreadShells()) {
     if (shell.pinnedAt == null || shell.pinOrderKey == null) continue;
     if (firstKey === null || shell.pinOrderKey < firstKey) firstKey = shell.pinOrderKey;
   }
-  return pinOrderKeyBetween(null, firstKey) ?? undefined;
+  return firstKey;
 }
+
+function topOfPinnedRunOrderKey(): string | undefined {
+  return pinOrderKeyBetween(null, smallestPinnedOrderKey()) ?? undefined;
+}
+
+/** Pin and unpin act on the whole worktree card ("worktree", the default for
+    every entry point) unless the caller already fans out itself, as the
+    sidebar drop does when it writes one key per member. */
+export type ThreadPinScope = "thread" | "worktree";
 
 export class ThreadPinningUnsupportedError extends Schema.TaggedError<ThreadPinningUnsupportedError>()(
   "ThreadPinningUnsupportedError",
@@ -144,6 +154,8 @@ export class ThreadActiveReorderUnsupportedError extends Schema.TaggedError<Thre
 export async function requestThreadUnpinConfirmation(input: {
   enabled: boolean;
   title: string;
+  /** Pinned worktree siblings that unpin along with the thread. */
+  siblingCount?: number;
   confirm: ((message: string) => Promise<boolean>) | null;
 }) {
   const { confirm } = input;
@@ -151,12 +163,18 @@ export async function requestThreadUnpinConfirmation(input: {
     return AsyncResult.success(true);
   }
 
+  const siblingCount = input.siblingCount ?? 0;
   return settlePromise(() =>
     confirm(
-      [
-        `Unpin thread "${input.title}"?`,
-        "This will move the thread out of your pinned section.",
-      ].join("\n"),
+      siblingCount > 0
+        ? [
+            `Unpin thread "${input.title}" and ${siblingCount} more in its worktree?`,
+            "This will move the whole worktree out of your pinned section.",
+          ].join("\n")
+        : [
+            `Unpin thread "${input.title}"?`,
+            "This will move the thread out of your pinned section.",
+          ].join("\n"),
     ),
   );
 }
@@ -221,6 +239,20 @@ export function useThreadActions() {
   const sidebarThreadSortOrder = useClientSettings((settings) => settings.sidebarThreadSortOrder);
   const confirmThreadDelete = useClientSettings((settings) => settings.confirmThreadDelete);
   const confirmThreadUnpin = useClientSettings((settings) => settings.confirmThreadUnpin);
+  const worktreeCardsEnabled = useSidebarWorktreeCardsEnabled();
+  // The other live threads in the target's worktree card, or none when cards
+  // are off. Read at call time: the card is a view over current shells.
+  const readWorktreeSiblings = useCallback(
+    (target: ScopedThreadRef) => {
+      if (!worktreeCardsEnabled) return [];
+      const shell = readThreadShell(target);
+      if (!shell) return [];
+      return worktreeCardSiblings(readThreadShells(), shell, {
+        now: new Date().toISOString(),
+      }).filter((sibling) => sibling.environmentId === target.environmentId);
+    },
+    [worktreeCardsEnabled],
+  );
   const clearComposerDraftForThread = useComposerDraftStore((store) => store.clearDraftThread);
   const clearProjectDraftThreadById = useComposerDraftStore(
     (store) => store.clearProjectDraftThreadById,
@@ -596,8 +628,17 @@ export function useThreadActions() {
     [unsettleThreadMutation],
   );
 
+  // A worktree card is pinned while any live member is, so a keyboard or
+  // header toggle on an unpinned member of a pinned card must unpin.
+  const isWorktreeCardPinned = useCallback(
+    (target: ScopedThreadRef) =>
+      readThreadShell(target)?.pinnedAt != null ||
+      readWorktreeSiblings(target).some((sibling) => sibling.pinnedAt != null),
+    [readWorktreeSiblings],
+  );
+
   const pinThread = useCallback(
-    async (target: ScopedThreadRef, opts: { orderKey?: string } = {}) => {
+    async (target: ScopedThreadRef, opts: { orderKey?: string; scope?: ThreadPinScope } = {}) => {
       // Version skew: never send the command to a server that predates it.
       if (!readEnvironmentSupportsPinning(target.environmentId)) {
         return AsyncResult.failure(
@@ -615,22 +656,45 @@ export function useThreadActions() {
       // gets the default so the same action never places differently.
       // orderKey rides only to servers that decode it; pre-reorder servers
       // get the bare pin they understand and the thread stays keyless.
-      const orderKey = readEnvironmentSupportsPinReorder(target.environmentId)
-        ? (opts.orderKey ?? topOfPinnedRunOrderKey())
-        : undefined;
-      return pinThreadMutation({
+      const supportsReorder = readEnvironmentSupportsPinReorder(target.environmentId);
+      const runTop = smallestPinnedOrderKey();
+      const orderKey = supportsReorder ? (opts.orderKey ?? topOfPinnedRunOrderKey()) : undefined;
+      const result = await pinThreadMutation({
         environmentId: target.environmentId,
         input: {
           threadId: target.threadId,
           ...(orderKey !== undefined ? { orderKey } : {}),
         },
       });
+      if (result._tag === "Failure" || (opts.scope ?? "worktree") === "thread") return result;
+      // Unpinned siblings follow the thread into the pinned block, keyed in
+      // sequence between it and the run's previous top so the card stays
+      // whole on every client. Stop on the first failure; each landed pin
+      // is a complete placement on its own.
+      let previous = orderKey ?? null;
+      for (const sibling of readWorktreeSiblings(target)) {
+        if (sibling.pinnedAt != null) continue;
+        const siblingKey =
+          supportsReorder && orderKey !== undefined
+            ? (pinOrderKeyBetween(previous, runTop) ?? undefined)
+            : undefined;
+        const siblingResult = await pinThreadMutation({
+          environmentId: sibling.environmentId,
+          input: {
+            threadId: sibling.id,
+            ...(siblingKey !== undefined ? { orderKey: siblingKey } : {}),
+          },
+        });
+        if (siblingResult._tag === "Failure") return siblingResult;
+        previous = siblingKey ?? previous;
+      }
+      return result;
     },
-    [pinThreadMutation],
+    [pinThreadMutation, readWorktreeSiblings],
   );
 
   const unpinThread = useCallback(
-    async (target: ScopedThreadRef) => {
+    async (target: ScopedThreadRef, opts: { scope?: ThreadPinScope } = {}) => {
       if (!readEnvironmentSupportsPinning(target.environmentId)) {
         return AsyncResult.failure(
           Cause.fail(
@@ -641,12 +705,29 @@ export function useThreadActions() {
           ),
         );
       }
-      return unpinThreadMutation({
-        environmentId: target.environmentId,
-        input: { threadId: target.threadId },
-      });
+      // A card is pinned while any member is, so an unpinned member can be
+      // asked to unpin its worktree: the thread itself is skipped, its
+      // pinned siblings are not.
+      const shell = readThreadShell(target);
+      const result =
+        shell?.pinnedAt == null && (opts.scope ?? "worktree") === "worktree"
+          ? AsyncResult.success(undefined)
+          : await unpinThreadMutation({
+              environmentId: target.environmentId,
+              input: { threadId: target.threadId },
+            });
+      if (result._tag === "Failure" || (opts.scope ?? "worktree") === "thread") return result;
+      for (const sibling of readWorktreeSiblings(target)) {
+        if (sibling.pinnedAt == null) continue;
+        const siblingResult = await unpinThreadMutation({
+          environmentId: sibling.environmentId,
+          input: { threadId: sibling.id },
+        });
+        if (siblingResult._tag === "Failure") return siblingResult;
+      }
+      return result;
     },
-    [unpinThreadMutation],
+    [readWorktreeSiblings, unpinThreadMutation],
   );
 
   const confirmAndUnpinThread = useCallback(
@@ -656,6 +737,8 @@ export function useThreadActions() {
       const confirmationResult = await requestThreadUnpinConfirmation({
         enabled: confirmThreadUnpin,
         title: resolved?.thread.title ?? "this thread",
+        siblingCount: readWorktreeSiblings(target).filter((sibling) => sibling.pinnedAt != null)
+          .length,
         confirm: localApi ? (message) => localApi.dialogs.confirm(message) : null,
       });
       if (confirmationResult._tag === "Failure") {
@@ -666,7 +749,7 @@ export function useThreadActions() {
       }
       return unpinThread(target);
     },
-    [confirmThreadUnpin, resolveThreadTarget, unpinThread],
+    [confirmThreadUnpin, readWorktreeSiblings, resolveThreadTarget, unpinThread],
   );
 
   const reorderPinnedThread = useCallback(
@@ -809,6 +892,7 @@ export function useThreadActions() {
       pinThread,
       unpinThread,
       confirmAndUnpinThread,
+      isWorktreeCardPinned,
       reorderPinnedThread,
       reorderActiveThread,
     }),
@@ -816,6 +900,7 @@ export function useThreadActions() {
       archiveThread,
       confirmAndDeleteThread,
       confirmAndUnpinThread,
+      isWorktreeCardPinned,
       deleteThread,
       pinThread,
       reorderPinnedThread,

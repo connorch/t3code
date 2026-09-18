@@ -835,3 +835,42 @@ describe("lifted card clearance", () => {
     expect(511 + apply(511, 36, -500, 136, 114).y).toBe(250);
   });
 });
+
+describe("lifted worktree card projection", () => {
+  const items = [
+    pinnedHeader,
+    divider,
+    thread("a1", "active"),
+    thread("a2", "active"),
+    thread("a3", "active"),
+    settledHeader,
+    thread("s1", "settled"),
+  ];
+
+  it("hides the siblings and opens a gap the height of the whole card", () => {
+    const result = preview(
+      { items, settledOrder: [], settledExpanded: true, cardKeys: ["a1", "a2"] },
+      "a1",
+      "a3",
+    );
+    // a2 travels inside the lifted card, so its own row leaves the flow.
+    expect(result.get("a2")?.scaleY).toBe(0);
+    // a3 slides up into the card's old slot (two rows plus the 1px gap).
+    expect(result.get("a3")).toEqual({ ...stationary, y: -166 });
+    // The shelf below keeps its place: the gap below a3 is the card's height.
+    expect(result.get(sidebarMarkerId("settled-header"))).toEqual(stationary);
+  });
+
+  it("carries the siblings across the pinned divider with the dragged row", () => {
+    const result = preview(
+      { items, settledOrder: [], settledExpanded: true, cardKeys: ["a1", "a2"] },
+      "a1",
+      sidebarMarkerId("pinned-header"),
+    );
+    expect(result.get("a2")?.scaleY).toBe(0);
+    // The divider drops below the card; a3 stays put since the card left
+    // above it and re-entered above it.
+    expect(result.get(sidebarMarkerId("pinned-divider"))).toEqual({ ...stationary, y: 166 });
+    expect(result.get("a3")).toEqual(stationary);
+  });
+});

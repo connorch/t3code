@@ -2019,6 +2019,7 @@ const LEGACY_FEATURE_TARGET_IDS: ReadonlySet<string> = new Set([
   "legacy-plan-mode",
   "legacy-context-window-indicator",
   "legacy-sidebar",
+  "sidebar-worktree-cards",
 ]);
 
 /**
@@ -2106,6 +2107,21 @@ function LegacyFeaturesSection() {
                 </Select>
               }
             />
+            {settings.sidebarMode === "default" ? (
+              <SettingsRow
+                {...searchableSetting("sidebar-worktree-cards")}
+                description="Keeps the threads of one worktree together as a card. Drag a row to move the whole card; hold before dragging to move one thread."
+                control={
+                  <Switch
+                    checked={settings.sidebarGroupWorktreeThreads}
+                    onCheckedChange={(checked) =>
+                      updateSettings({ sidebarGroupWorktreeThreads: Boolean(checked) })
+                    }
+                    aria-label="Worktree cards"
+                  />
+                }
+              />
+            ) : null}
           </div>
         </CollapsiblePanel>
       </Collapsible>

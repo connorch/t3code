@@ -189,6 +189,7 @@ const StoredSidebarMode = Schema.Literals([
   ),
 );
 export const DEFAULT_SIDEBAR_MODE: SidebarMode = "default";
+export const DEFAULT_SIDEBAR_GROUP_WORKTREE_THREADS = true;
 
 export const EnvironmentIdentificationMode = Schema.Literals(["artwork", "pill", "none"]);
 export type EnvironmentIdentificationMode = typeof EnvironmentIdentificationMode.Type;
@@ -508,6 +509,12 @@ export const ClientSettingsSchema = Schema.Struct({
   // so everyone lands on the new default sidebar once.
   sidebarMode: StoredSidebarMode.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_SIDEBAR_MODE)),
+  ),
+  // Default sidebar only: threads that share a worktree render as one card
+  // (see docs/user/thread-sidebar.md "Worktree cards"). Fork-only; upstream
+  // behavior is the toggle off.
+  sidebarGroupWorktreeThreads: Schema.Boolean.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_SIDEBAR_GROUP_WORKTREE_THREADS)),
   ),
   timestampFormat: TimestampFormat.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_TIMESTAMP_FORMAT)),
@@ -1567,6 +1574,7 @@ export const ClientSettingsPatch = Schema.Struct({
   sidebarThreadSortOrder: Schema.optionalKey(SidebarThreadSortOrder),
   sidebarThreadPreviewCount: Schema.optionalKey(SidebarThreadPreviewCount),
   sidebarMode: Schema.optionalKey(SidebarMode),
+  sidebarGroupWorktreeThreads: Schema.optionalKey(Schema.Boolean),
   timestampFormat: Schema.optionalKey(TimestampFormat),
   snapShotEnabled: Schema.optionalKey(Schema.Boolean),
   snapShotIncludeAccessibility: Schema.optionalKey(Schema.Boolean),

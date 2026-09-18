@@ -240,6 +240,10 @@ export function generateSpreadPinOrderKeys(count: number): string[] {
  * reordering shipped), the whole section gets fresh spread keys — a
  * one-time materialization; every move after that is single-write. Active
  * reordering uses the same planner with activeOrderKey values.
+ *
+ * A contiguous block of moved threads (the web sidebar's worktree card)
+ * passes `movedIds`: every member gets its own key between the block's two
+ * neighbors, in block order, so the members stay adjacent on every client.
  */
 export function planPinnedReorder(input: {
   /** Thread ids in the desired visual order (after the move). */
@@ -247,24 +251,36 @@ export function planPinnedReorder(input: {
   /** Include retained keys from hidden rows; only orderedIds receive writes. */
   readonly keysById: ReadonlyMap<string, string | null | undefined>;
   readonly movedId: string;
+  /** Contiguous run in orderedIds that moved together; must include movedId. */
+  readonly movedIds?: readonly string[];
 }): ReadonlyArray<{ readonly id: string; readonly orderKey: string }> {
   const { orderedIds, keysById, movedId } = input;
+  const movedIds = input.movedIds ?? [movedId];
   const visibleIds = new Set(orderedIds);
   const reservedKeys = new Set(
     [...keysById].flatMap(([id, key]) => (!visibleIds.has(id) && key != null ? [key] : [])),
   );
-  const movedIndex = orderedIds.indexOf(movedId);
-  if (movedIndex === -1) return [];
-  const beforeId = movedIndex > 0 ? orderedIds[movedIndex - 1] : null;
-  const afterId = movedIndex < orderedIds.length - 1 ? orderedIds[movedIndex + 1] : null;
+  const firstIndex = orderedIds.indexOf(movedIds[0] ?? movedId);
+  if (firstIndex === -1 || !movedIds.includes(movedId)) return [];
+  const lastIndex = firstIndex + movedIds.length - 1;
+  const contiguous = movedIds.every((id, offset) => orderedIds[firstIndex + offset] === id);
+  const beforeId = firstIndex > 0 ? orderedIds[firstIndex - 1] : null;
+  const afterId = lastIndex < orderedIds.length - 1 ? orderedIds[lastIndex + 1] : null;
   const beforeKey = beforeId != null ? (keysById.get(beforeId) ?? null) : null;
   const afterKey = afterId != null ? (keysById.get(afterId) ?? null) : null;
   const beforeUsable = beforeId === null || beforeKey != null;
   const afterUsable = afterId === null || afterKey != null;
-  if (beforeUsable && afterUsable) {
-    let key = pinOrderKeyBetween(beforeKey, afterKey);
-    while (key !== null && reservedKeys.has(key)) key = pinOrderKeyBetween(key, afterKey);
-    if (key !== null) return [{ id: movedId, orderKey: key }];
+  if (contiguous && beforeUsable && afterUsable) {
+    const assignments: { id: string; orderKey: string }[] = [];
+    let previous = beforeKey;
+    for (const id of movedIds) {
+      let key = pinOrderKeyBetween(previous, afterKey);
+      while (key !== null && reservedKeys.has(key)) key = pinOrderKeyBetween(key, afterKey);
+      if (key === null) break;
+      assignments.push({ id, orderKey: key });
+      previous = key;
+    }
+    if (assignments.length === movedIds.length) return assignments;
   }
   // Keyless neighbor (or corrupt keys): rewrite the section in the new order.
   const keys = generateSpreadPinOrderKeys(orderedIds.length + reservedKeys.size)

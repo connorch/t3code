@@ -195,6 +195,43 @@ describe("planPinnedReorder with hidden rows", () => {
   });
 });
 
+describe("planPinnedReorder with a moved block", () => {
+  it("keys every member between the block's neighbors, in block order", () => {
+    const keysById = new Map([
+      ["a", "f"],
+      ["b", "t"],
+      ["x", "v"],
+      ["y", "w"],
+    ]);
+    const assignments = planPinnedReorder({
+      orderedIds: ["a", "x", "y", "b"],
+      keysById,
+      movedId: "x",
+      movedIds: ["x", "y"],
+    });
+    expect(assignments.map(({ id }) => id)).toEqual(["x", "y"]);
+    const [x, y] = assignments.map(({ orderKey }) => orderKey);
+    expect(x! > "f" && x! < y! && y! < "t").toBe(true);
+  });
+
+  it("rewrites the section when the block is not contiguous", () => {
+    const keysById = new Map([
+      ["a", "f"],
+      ["x", "v"],
+      ["y", "w"],
+    ]);
+    const assignments = planPinnedReorder({
+      orderedIds: ["x", "a", "y"],
+      keysById,
+      movedId: "x",
+      movedIds: ["x", "y"],
+    });
+    expect(assignments.map(({ id }) => id)).toEqual(["x", "a", "y"]);
+    const keys = assignments.map(({ orderKey }) => orderKey);
+    expect(keys).toEqual([...keys].sort());
+  });
+});
+
 describe("planPinnedMove", () => {
   it("moves a thread up with a single key write", () => {
     const assignments = planPinnedMove({

@@ -119,7 +119,19 @@ import { useThreadActions } from "../hooks/useThreadActions";
 import { useHandleNewThread } from "../hooks/useHandleNewThread";
 import { isCommandPaletteOpen, openCommandPalette } from "../commandPaletteBus";
 import { startNewThreadFromContext } from "../lib/chatThreadActions";
-import { useClientSettings } from "../hooks/useSettings";
+import { useClientSettings, useSidebarWorktreeCardsEnabled } from "../hooks/useSettings";
+import {
+  applyWorktreeCardToDropTarget,
+  dropSplitsForeignWorktreeCard,
+  gatherWorktreeCards,
+  resolveWorktreeCardPositions,
+  worktreeCardKey,
+  worktreeCardMembers,
+  worktreeCardOrderWithin,
+  worktreeCardSiblings,
+  worktreeCardStaysContiguous,
+  type WorktreeCardPosition,
+} from "./Sidebar.worktree";
 import { useCopyToClipboard } from "../hooks/useCopyToClipboard";
 import { useLocalStorage } from "../hooks/useLocalStorage";
 import { useNowMinute } from "../hooks/useNowMinute";
@@ -193,7 +205,11 @@ import {
   createSidebarSortingStrategy,
   restrictBelowSidebarLabel,
 } from "./Sidebar.drag";
-import { SidebarDragLifecycle, SidebarPointerSensor } from "./Sidebar.pointer";
+import {
+  SidebarDragLifecycle,
+  SidebarPointerSensor,
+  type SidebarDragMode,
+} from "./Sidebar.pointer";
 import { createSidebarListMotion } from "./Sidebar.motion";
 import {
   ThreadPullRequestBadgeControl,
@@ -611,6 +627,10 @@ function SidebarSectionPlaceholder(props: {
 // sorting strategy opens 24px for a 16px label with 4px clearance on each side.
 const SIDEBAR_DRAG_LABEL_HEIGHT = 24;
 
+// A press held still this long before moving drags the row alone inside its
+// worktree card instead of the whole card (Option at press does the same).
+const SIDEBAR_ROW_DRAG_HOLD_MS = 300;
+
 function SidebarDragBoundary(props: {
   marker: "pinned-header" | "pinned-divider";
   label: string;
@@ -930,6 +950,26 @@ const SidebarDraftBlock = memo(function SidebarDraftBlock(props: {
   );
 });
 
+// Worktree card paint (Sidebar.worktree.ts): one well behind flush member
+// rows, with the list's 1px gap as the hairline between them. Members drop
+// the vertical padding at their shared edges; the well keeps the row's usual
+// 2px inset at the card's top and bottom and adds one at the sides.
+const worktreeCardRowClassName: Record<WorktreeCardPosition, string> = {
+  first: "rounded-t-lg bg-sidebar-foreground/[0.04] px-0.5 pb-0",
+  middle: "bg-sidebar-foreground/[0.04] px-0.5 py-0",
+  last: "rounded-b-lg bg-sidebar-foreground/[0.04] px-0.5 pt-0",
+};
+
+// The rows inside a lifted worktree card: not sortable themselves (the card's
+// wrapper carries the dnd-kit node), but styled as dragging.
+const liftedCardRowBag: SortableThreadRowBag = {
+  listeners: undefined,
+  setNodeRef: () => {},
+  transform: null,
+  transition: undefined,
+  isDragging: true,
+};
+
 // Verb and icon on the lifted row while it hovers over another section. Uses
 // the same icons as the row actions and context menu so the drop reads as the
 // action it performs.
@@ -990,6 +1030,11 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
   // the pinned section. Any other position shows the verb badge instead, and
   // the badge carries its own icon.
   dragOverPinned: boolean;
+  // Members of the lifted worktree card; the verb badge counts them past one.
+  dropCount: number;
+  // Paint for a row inside a worktree card (Sidebar.worktree.ts); null
+  // outside a card. Applied to the list item only, the row body is untouched.
+  cardPosition: WorktreeCardPosition | null;
   // Compact wake countdown ("2h") for rows in the snoozed shelf.
   snoozeWakeLabelText: string | null;
   // When a snooze ended (timer or early wake); drives the Woke pill until
@@ -1448,6 +1493,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
         className="pointer-events-none ml-auto inline-flex h-5 shrink-0 items-center gap-1 rounded-sm border border-primary/40 bg-primary/10 px-1.5 text-[11px] font-medium text-primary"
       >
         {dropVerbBadge[props.dropVerb]}
+        {props.dropCount > 1 ? <span className="tabular-nums">{props.dropCount}</span> : null}
       </span>
     ) : null;
 
@@ -1737,6 +1783,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
       className={cn(
         // Matches the h-[4.875rem] content box; the py-0.5 padding is added on top.
         "list-none py-0.5 [content-visibility:auto] [contain-intrinsic-size:auto_78px]",
+        props.cardPosition !== null && worktreeCardRowClassName[props.cardPosition],
         sortable?.isDragging && "relative z-20",
       )}
     >
@@ -2139,6 +2186,7 @@ export default function Sidebar() {
   const confirmThreadArchive = useClientSettings((s) => s.confirmThreadArchive);
   const sidebarProjectSortOrder = useClientSettings((s) => s.sidebarProjectSortOrder);
   const timestampFormat = useClientSettings((s) => s.timestampFormat);
+  const worktreeCardsEnabled = useSidebarWorktreeCardsEnabled();
   const projectGroupingSettings = useClientSettings(selectProjectGroupingSettings);
   const {
     settleThread,
@@ -2516,7 +2564,8 @@ export default function Sidebar() {
   // lifecycle command and any order-key writes. The next pickup waits for
   // this hold so a second drop cannot replace an unconfirmed placement.
   const [optimisticDrop, setOptimisticDrop] = useState<{
-    readonly key: string;
+    /** Every thread the drop moved: one row, or a worktree card's members. */
+    readonly keys: readonly string[];
     readonly sourceSection: SidebarSection;
     readonly section: "pinned" | "active" | "settled";
     readonly occurredAt: string;
@@ -2571,7 +2620,7 @@ export default function Sidebar() {
       if (capabilities?.threadPinning === true && capabilities.threadPinReorder === true) {
         draggable.add(threadKey);
       }
-      if (optimisticDrop?.key === threadKey) {
+      if (optimisticDrop?.keys.includes(threadKey)) {
         const projected = applySidebarThreadDrop(
           thread,
           optimisticDrop.section,
@@ -2606,25 +2655,32 @@ export default function Sidebar() {
     // web and mobile from the same data.
     const sortedPinned = sortPinnedThreadsForSidebar(pinned);
     const sortedActive = sortThreadsForSidebar(active);
+    const orderedPinned =
+      optimisticDrop?.section !== "pinned" || optimisticDrop.order === null
+        ? sortedPinned
+        : orderItemsByPreferredIds({
+            items: sortedPinned,
+            preferredIds: optimisticDrop.order,
+            getId: (thread) => scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)),
+          });
+    const orderedActive =
+      optimisticDrop?.section !== "active" || optimisticDrop.order === null
+        ? sortedActive
+        : orderItemsByPreferredIds({
+            items: sortedActive,
+            preferredIds: optimisticDrop.order,
+            getId: (thread) => scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)),
+          });
+    // Worktree cards gather behind their highest-ranking member on top of the
+    // flat order; a card with any pinned member lives in the pinned block.
+    const gathered = worktreeCardsEnabled
+      ? gatherWorktreeCards({ pinned: orderedPinned, active: orderedActive })
+      : { pinned: orderedPinned, active: orderedActive };
     return {
-      pinnedThreads:
-        optimisticDrop?.section !== "pinned" || optimisticDrop.order === null
-          ? sortedPinned
-          : orderItemsByPreferredIds({
-              items: sortedPinned,
-              preferredIds: optimisticDrop.order,
-              getId: (thread) => scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)),
-            }),
+      pinnedThreads: gathered.pinned,
       draggableThreadKeys: draggable,
       activeReorderableThreadKeys: activeReorderable,
-      activeThreads:
-        optimisticDrop?.section !== "active" || optimisticDrop.order === null
-          ? sortedActive
-          : orderItemsByPreferredIds({
-              items: sortedActive,
-              preferredIds: optimisticDrop.order,
-              getId: (thread) => scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)),
-            }),
+      activeThreads: gathered.active,
       // Soonest wake first: "what comes back next" is the shelf's question.
       snoozedThreads: snoozed.toSorted(
         (left, right) =>
@@ -2634,7 +2690,15 @@ export default function Sidebar() {
       settledThreads: sortSettledThreadsForSidebar(settled),
       snoozeNow: preciseNow,
     };
-  }, [nowMinute, optimisticDrop, scopedProjectKeys, serverConfigs, snoozeWakeTick, threads]);
+  }, [
+    nowMinute,
+    optimisticDrop,
+    scopedProjectKeys,
+    serverConfigs,
+    snoozeWakeTick,
+    threads,
+    worktreeCardsEnabled,
+  ]);
 
   const threadSearchInputRef = useRef<HTMLInputElement>(null);
   const [threadSearchQuery, setThreadSearchQuery] = useState("");
@@ -3152,7 +3216,18 @@ export default function Sidebar() {
     readonly occurredAt: string;
     readonly activationY: number | null;
     readonly targetSection: SidebarSection | null;
+    /** "card" lifts the whole worktree card; "row" (Option, or a still
+        hold before moving) lifts the row alone, kept inside its card. */
+    readonly mode: SidebarDragMode;
+    /** The dragged row's worktree card in card order; just the row when it
+        has no card. */
+    readonly cardKeys: readonly string[];
   } | null>(null);
+  // The card being carried as one, or undefined for a single-row drag.
+  const liftedCardKeys =
+    dragState !== null && dragState.mode === "card" && dragState.cardKeys.length > 1
+      ? dragState.cardKeys
+      : undefined;
   const dragTargetSection = dragState?.targetSection ?? null;
   const dragSensorRef = useRef<SidebarPointerSensor | null>(null);
   const finishThreadDrag = useCallback((started: boolean) => {
@@ -3171,6 +3246,7 @@ export default function Sidebar() {
   const dndSensors = useSensors(
     useSensor(SidebarPointerSensor, {
       distance: 6,
+      holdMs: SIDEBAR_ROW_DRAG_HOLD_MS,
       onAttach: attachDragSensor,
       onFinish: finishThreadDrag,
     }),
@@ -3210,21 +3286,35 @@ export default function Sidebar() {
         thread,
       ]),
     );
-    const thread = canonicalByKey.get(optimisticDrop.key);
-    if (thread === undefined || thread.archivedAt !== null) {
+    const members = optimisticDrop.keys.flatMap((key) => {
+      const thread = canonicalByKey.get(key);
+      return thread === undefined || thread.archivedAt !== null ? [] : [thread];
+    });
+    if (members.length !== optimisticDrop.keys.length) {
       setOptimisticDrop(null);
       return;
     }
-    const canonicalSection = effectiveSnoozed(thread, { now: new Date().toISOString() })
-      ? "snoozed"
-      : thread.settledOverride === "settled"
-        ? "settled"
-        : thread.pinnedAt != null
-          ? "pinned"
-          : "active";
+    const now = new Date().toISOString();
+    const sections = members.map((thread): SidebarSection =>
+      effectiveSnoozed(thread, { now })
+        ? "snoozed"
+        : thread.settledOverride === "settled"
+          ? "settled"
+          : thread.pinnedAt != null
+            ? "pinned"
+            : "active",
+    );
+    // A worktree card's unpinned members render in the pinned block, so
+    // between the two live sections any state is still "on its way".
+    const isLive = (section: SidebarSection) => section === "pinned" || section === "active";
+    const liveMove = isLive(optimisticDrop.sourceSection) && isLive(optimisticDrop.section);
     if (
-      canonicalSection !== optimisticDrop.sourceSection &&
-      canonicalSection !== optimisticDrop.section
+      sections.some(
+        (section) =>
+          section !== optimisticDrop.sourceSection &&
+          section !== optimisticDrop.section &&
+          !(liveMove && isLive(section)),
+      )
     ) {
       setOptimisticDrop(null);
       return;
@@ -3233,16 +3323,20 @@ export default function Sidebar() {
       // Settle also emits unpin/unsnooze events. Wait for the entire move
       // before releasing the projected fields and sort timestamps.
       if (
-        canonicalSection === optimisticDrop.section &&
-        thread.pinnedAt == null &&
-        (!optimisticDrop.clearsSnooze || thread.snoozedUntil == null)
+        members.every(
+          (thread, index) =>
+            sections[index] === optimisticDrop.section &&
+            thread.pinnedAt == null &&
+            (!optimisticDrop.clearsSnooze || thread.snoozedUntil == null),
+        )
       ) {
         setOptimisticDrop(null);
       }
       return;
     }
-    if (canonicalSection !== optimisticDrop.section) return;
-    if (optimisticDrop.clearsSnooze && thread.snoozedUntil != null) return;
+    if (sections.some((section) => section !== optimisticDrop.section)) return;
+    if (optimisticDrop.clearsSnooze && members.some((thread) => thread.snoozedUntil != null))
+      return;
     const destinationKeys = optimisticDrop.section === "pinned" ? pinnedKeys : activeKeys;
     const canonicalDestination = destinationKeys.flatMap((key) => {
       const canonical = canonicalByKey.get(key);
@@ -3329,6 +3423,19 @@ export default function Sidebar() {
       } else {
         dragLabelOffsetRef.current = 0;
       }
+      const activeThread = threadByKey.get(activeKey);
+      const sectionList =
+        activeSection === "pinned"
+          ? pinnedThreads
+          : activeSection === "active"
+            ? activeThreads
+            : [];
+      const cardKeys =
+        worktreeCardsEnabled && activeThread !== undefined
+          ? worktreeCardMembers(sectionList, activeThread).map((member) =>
+              scopedThreadKey(scopeThreadRef(member.environmentId, member.id)),
+            )
+          : [];
       setDragState({
         activeKey,
         activeSection,
@@ -3336,9 +3443,14 @@ export default function Sidebar() {
         occurredAt: new Date().toISOString(),
         activationY:
           event.activatorEvent instanceof PointerEvent ? event.activatorEvent.clientY : null,
+        mode:
+          event.activatorEvent instanceof PointerEvent && event.activatorEvent.altKey
+            ? "row"
+            : (dragSensorRef.current?.mode ?? "card"),
+        cardKeys: cardKeys.length > 0 ? cardKeys : [activeKey],
       });
     },
-    [sectionByThreadKey],
+    [activeThreads, pinnedThreads, sectionByThreadKey, threadByKey, worktreeCardsEnabled],
   );
   // Include every visible row in the measured order. Older servers disable
   // pickup on their rows without changing where those rows render.
@@ -3433,6 +3545,21 @@ export default function Sidebar() {
     [sidebarListItems],
   );
   const sortableIds = useMemo(() => sidebarListItems.map(sidebarListItemId), [sidebarListItems]);
+  // Card paint per row, from the gathered pinned and active lists.
+  const cardPositionByKey = useMemo(() => {
+    const positions = new Map<string, WorktreeCardPosition>();
+    if (!worktreeCardsEnabled) return positions;
+    for (const list of [pinnedThreads, activeThreads]) {
+      const resolved = resolveWorktreeCardPositions(list);
+      list.forEach((thread, index) => {
+        const position = resolved[index];
+        if (position) {
+          positions.set(scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)), position);
+        }
+      });
+    }
+    return positions;
+  }, [activeThreads, pinnedThreads, worktreeCardsEnabled]);
   const draggedSettledOrder = useMemo(() => {
     const thread = dragState === null ? undefined : threadByKey.get(dragState.activeKey);
     if (dragState === null || thread === undefined) return [];
@@ -3453,9 +3580,11 @@ export default function Sidebar() {
         settledVisibleCount,
         routeThreadKey,
         snoozedThreadCount: snoozedThreads.length,
+        ...(liftedCardKeys === undefined ? {} : { cardKeys: liftedCardKeys }),
       }),
     [
       draggedSettledOrder,
+      liftedCardKeys,
       routeThreadKey,
       settledShelfExpanded,
       settledVisibleCount,
@@ -3483,74 +3612,69 @@ export default function Sidebar() {
     [threads],
   );
   const draggedThreadKey = dragState?.activeKey;
-  const draggedFromSection = dragState?.activeSection;
+  const draggedMode = dragState?.mode;
+  const draggedCardKeys = dragState?.cardKeys;
   const dragActivationY = dragState?.activationY;
-  const dndCollisionDetection = useMemo(() => {
-    if (draggedThreadKey === undefined || draggedFromSection === undefined)
-      return createSidebarCollisionDetection(() => true);
-    const source = threadByKey.get(draggedThreadKey);
-    if (source === undefined) return createSidebarCollisionDetection(() => false);
-    return createSidebarCollisionDetection(
-      (id) => {
-        const target = resolveSidebarDropTarget(sidebarListItems, draggedThreadKey, id);
-        if (target === null) return false;
-        return (
-          planSidebarThreadDrop({
-            activeKey: draggedThreadKey,
-            activeSection: draggedFromSection,
-            activePinned: source.pinnedAt != null,
-            activeSettled: source.settledOverride === "settled",
-            supportsSettlement:
-              serverConfigs.get(source.environmentId)?.environment.capabilities.threadSettlement ===
-              true,
-            target,
-            pinnedOrder: pinnedKeys,
-            pinnedKeysById,
-            reorderableKeys: draggableThreadKeys,
-            activeOrder: activeKeys,
-            activeKeysById,
-            activeReorderableKeys: activeReorderableThreadKeys,
-          }).kind !== "none"
-        );
-      },
-      {
-        items: sidebarListItems,
-        activationY: dragActivationY ?? null,
-      },
-    );
-  }, [
-    activeKeysById,
-    pinnedKeysById,
-    serverConfigs,
-    activeKeys,
-    activeReorderableThreadKeys,
-    draggedThreadKey,
-    draggedFromSection,
-    dragActivationY,
-    draggableThreadKeys,
-    pinnedKeys,
-    sidebarListItems,
-    threadByKey,
-  ]);
-  const handleThreadDragEnd = useCallback(
-    (event: DragEndEvent) => {
-      const activeKey = String(event.active.id);
+  const cardKeyByThreadKey = useMemo(
+    () =>
+      new Map(
+        threads.map((thread) => [
+          scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)),
+          worktreeCardKey(thread),
+        ]),
+      ),
+    [threads],
+  );
+  // The drop a slot would perform for the lifted row, or null when the slot
+  // is not offered. Shared by collision detection (which slots light up) and
+  // the drop itself. A lifted card moves as one block; a row lifted alone
+  // inside its card stays there; nothing lands between another card's rows.
+  const resolveThreadDrop = useCallback(
+    (activeKey: string, overId: string) => {
       const activeSection = sectionByThreadKey.get(activeKey);
-      const target =
-        event.over === null
-          ? null
-          : resolveSidebarDropTarget(sidebarListItems, activeKey, String(event.over.id));
-      const activeThread = threadByKey.get(activeKey);
-      if (activeSection === undefined || target === null || activeThread === undefined) return;
-      const threadRef = scopeThreadRef(activeThread.environmentId, activeThread.id);
+      const source = threadByKey.get(activeKey);
+      if (activeSection === undefined || source === undefined) return null;
+      const plain = resolveSidebarDropTarget(sidebarListItems, activeKey, overId);
+      if (plain === null) return null;
+      const lifted = draggedThreadKey === activeKey;
+      const cardKeys = lifted && draggedCardKeys !== undefined ? draggedCardKeys : [activeKey];
+      const cardDrag = lifted && draggedMode === "card" && cardKeys.length > 1;
+      const target = cardDrag ? applyWorktreeCardToDropTarget(plain, activeKey, cardKeys) : plain;
+      const sectionOrder =
+        target.section === "pinned"
+          ? target.pinnedOrder
+          : target.section === "active"
+            ? target.activeOrder
+            : null;
+      const memberKeys = cardDrag ? cardKeys : [activeKey];
+      const rowInCard = !cardDrag && cardKeys.length > 1;
+      if (rowInCard) {
+        if (
+          target.section !== activeSection ||
+          sectionOrder === null ||
+          !worktreeCardStaysContiguous(sectionOrder, cardKeys)
+        ) {
+          return null;
+        }
+      } else if (
+        worktreeCardsEnabled &&
+        sectionOrder !== null &&
+        dropSplitsForeignWorktreeCard(
+          sectionOrder,
+          memberKeys,
+          (key) => cardKeyByThreadKey.get(key) ?? null,
+        )
+      ) {
+        return null;
+      }
       const plan = planSidebarThreadDrop({
         activeKey,
         activeSection,
-        activePinned: activeThread.pinnedAt != null,
-        activeSettled: activeThread.settledOverride === "settled",
+        activePinned: source.pinnedAt != null,
+        activeSettled: source.settledOverride === "settled",
         supportsSettlement:
-          serverConfigs.get(activeThread.environmentId)?.environment.capabilities
-            .threadSettlement === true,
+          serverConfigs.get(source.environmentId)?.environment.capabilities.threadSettlement ===
+          true,
         target,
         pinnedOrder: pinnedKeys,
         pinnedKeysById,
@@ -3558,9 +3682,60 @@ export default function Sidebar() {
         activeOrder: activeKeys,
         activeKeysById,
         activeReorderableKeys: activeReorderableThreadKeys,
+        // Both gestures key the whole card: a card drag to land it as a
+        // block, a row drag so the card keeps its anchor (see
+        // worktreeCardOrderWithin).
+        ...(cardDrag
+          ? { movedIds: cardKeys }
+          : rowInCard && sectionOrder !== null
+            ? { movedIds: worktreeCardOrderWithin(sectionOrder, cardKeys) }
+            : {}),
       });
-      if (plan.kind === "none") return;
-      if (plan.kind === "settle" && settlingThreadKeysRef.current.has(activeKey)) return;
+      return plan.kind === "none" ? null : { target, plan, memberKeys };
+    },
+    [
+      activeKeys,
+      activeKeysById,
+      activeReorderableThreadKeys,
+      cardKeyByThreadKey,
+      draggableThreadKeys,
+      draggedCardKeys,
+      draggedMode,
+      draggedThreadKey,
+      pinnedKeys,
+      pinnedKeysById,
+      sectionByThreadKey,
+      serverConfigs,
+      sidebarListItems,
+      threadByKey,
+      worktreeCardsEnabled,
+    ],
+  );
+  const dndCollisionDetection = useMemo(() => {
+    if (draggedThreadKey === undefined) return createSidebarCollisionDetection(() => true);
+    return createSidebarCollisionDetection(
+      (id) => resolveThreadDrop(draggedThreadKey, id) !== null,
+      {
+        items: sidebarListItems,
+        activationY: dragActivationY ?? null,
+      },
+    );
+  }, [draggedThreadKey, dragActivationY, resolveThreadDrop, sidebarListItems]);
+  const handleThreadDragEnd = useCallback(
+    (event: DragEndEvent) => {
+      const activeKey = String(event.active.id);
+      const activeSection = sectionByThreadKey.get(activeKey);
+      const resolved =
+        event.over === null ? null : resolveThreadDrop(activeKey, String(event.over.id));
+      const activeThread = threadByKey.get(activeKey);
+      if (activeSection === undefined || resolved === null || activeThread === undefined) return;
+      const { target, plan, memberKeys } = resolved;
+      const threadRef = scopeThreadRef(activeThread.environmentId, activeThread.id);
+      if (
+        plan.kind === "settle" &&
+        memberKeys.some((key) => settlingThreadKeysRef.current.has(key))
+      )
+        return;
       const assignments =
         plan.kind === "pin"
           ? [
@@ -3571,7 +3746,7 @@ export default function Sidebar() {
             ? plan.assignments
             : [];
       const drop = {
-        key: activeKey,
+        keys: memberKeys,
         sourceSection: activeSection,
         section: target.section,
         occurredAt: new Date().toISOString(),
@@ -3605,21 +3780,40 @@ export default function Sidebar() {
           }
           return false;
         };
+        // A worktree card's members share the drop: every lifecycle command
+        // below runs per member, the dragged row first. The sidebar writes
+        // its own keys, so pin and unpin run per thread here (scope
+        // "thread"), never fanning out a second time.
+        const members = memberKeys.flatMap((key) => {
+          const thread = threadByKey.get(key);
+          return thread === undefined
+            ? []
+            : [{ key, thread, ref: scopeThreadRef(thread.environmentId, thread.id) }];
+        });
         switch (plan.kind) {
           case "settle": {
-            settlingThreadKeysRef.current.add(activeKey);
-            const navigateAfterSettle = planForwardNavigation(activeKey);
-            const settled = await run(settleThread(threadRef), "Failed to settle thread").finally(
-              () => settlingThreadKeysRef.current.delete(activeKey),
-            );
+            // The member that owns the route decides where to go afterwards;
+            // the rest of the card is parking too, so it is skipped over.
+            const parkedKey =
+              memberKeys.find((key) => key === routeThreadKeyRef.current) ?? activeKey;
+            const navigateAfterSettle = planForwardNavigation(parkedKey, new Set(memberKeys));
+            for (const member of members) {
+              settlingThreadKeysRef.current.add(member.key);
+              const settled = await run(
+                settleThread(member.ref),
+                "Failed to settle thread",
+              ).finally(() => settlingThreadKeysRef.current.delete(member.key));
+              if (!settled) return;
+            }
+            const parked = members.find((member) => member.key === parkedKey);
             if (
-              settled &&
+              parked !== undefined &&
               shouldNavigateAfterThreadPark({
-                threadKey: activeKey,
+                threadKey: parkedKey,
                 currentThreadKey: routeThreadKeyRef.current,
                 action: "settle",
                 now: new Date().toISOString(),
-                thread: readThreadShell(threadRef),
+                thread: readThreadShell(parked.ref),
               })
             )
               navigateAfterSettle?.();
@@ -3627,8 +3821,13 @@ export default function Sidebar() {
           }
           case "move-active":
             // The drag expresses unpin intent; button/menu confirmation is unchanged.
-            if (plan.unpin && !(await run(unpinThread(threadRef), "Failed to unpin thread")))
-              return;
+            for (const member of members) {
+              if (
+                member.thread.pinnedAt != null &&
+                !(await run(unpinThread(member.ref, { scope: "thread" }), "Failed to unpin thread"))
+              )
+                return;
+            }
             if (
               plan.unsettle &&
               !(await run(unsettleThread(threadRef), "Failed to un-settle thread"))
@@ -3640,10 +3839,10 @@ export default function Sidebar() {
           case "pin":
             if (
               !(await run(
-                pinThread(
-                  threadRef,
-                  plan.orderKey === undefined ? {} : { orderKey: plan.orderKey },
-                ),
+                pinThread(threadRef, {
+                  scope: "thread",
+                  ...(plan.orderKey === undefined ? {} : { orderKey: plan.orderKey }),
+                }),
                 "Failed to pin thread",
               ))
             )
@@ -3653,40 +3852,44 @@ export default function Sidebar() {
             break;
         }
         // Stop on failure; each successful key write remains a valid placement.
+        // In the pinned block, a thread without a pin of its own (a card
+        // member gathered behind a pinned sibling, or arriving with the
+        // dragged row) takes its key on the pin command instead: the server
+        // rejects reorder for unpinned threads.
         const keyWrites = plan.kind === "pin" ? plan.extraAssignments : plan.assignments;
         for (const assignment of keyWrites) {
           const thread = threadByKey.get(assignment.id);
           if (thread === undefined) continue;
-          if (
-            !(await run(
-              (plan.kind === "move-active" ? reorderActiveThread : reorderPinnedThread)(
-                scopeThreadRef(thread.environmentId, thread.id),
-                assignment.orderKey,
-              ),
-              plan.kind === "move-active"
-                ? "Failed to reorder active threads"
-                : "Failed to reorder pinned threads",
-            ))
-          )
-            return;
+          const ref = scopeThreadRef(thread.environmentId, thread.id);
+          const write =
+            target.section === "active"
+              ? run(
+                  reorderActiveThread(ref, assignment.orderKey),
+                  "Failed to reorder active threads",
+                )
+              : thread.pinnedAt == null
+                ? run(
+                    pinThread(ref, { scope: "thread", orderKey: assignment.orderKey }),
+                    "Failed to pin thread",
+                  )
+                : run(
+                    reorderPinnedThread(ref, assignment.orderKey),
+                    "Failed to reorder pinned threads",
+                  );
+          if (!(await write)) return;
         }
       })();
     },
     [
       activeKeysById,
       pinnedKeysById,
-      serverConfigs,
-      activeKeys,
-      activeReorderableThreadKeys,
-      draggableThreadKeys,
       pinThread,
-      pinnedKeys,
       planForwardNavigation,
       reorderPinnedThread,
       reorderActiveThread,
+      resolveThreadDrop,
       sectionByThreadKey,
       settleThread,
-      sidebarListItems,
       threadByKey,
       unpinThread,
       unsettleThread,
@@ -4058,7 +4261,13 @@ export default function Sidebar() {
         const isRegeneratingTitle = thread.titleRegeneration != null;
         const isSettled = settledThreadKeysRef.current.has(threadKey);
         const isSnoozed = snoozedThreadKeysRef.current.has(threadKey);
-        const isPinned = thread.pinnedAt != null;
+        // A card is pinned while any member is: an unpinned member of a
+        // pinned card offers "Unpin worktree", which unpins its siblings.
+        const worktreeSiblings = worktreeCardsEnabled
+          ? worktreeCardSiblings(threads, thread, { now: new Date().toISOString() })
+          : [];
+        const isPinned =
+          thread.pinnedAt != null || worktreeSiblings.some((sibling) => sibling.pinnedAt != null);
         // Presets resolve at menu-open time (same as the popover).
         const snoozePresets = resolveSnoozePresets(new Date(), timestampFormat);
         // Sidebar rows hold shells; the transcript needs the full detail,
@@ -4073,6 +4282,7 @@ export default function Sidebar() {
               branch: thread.branch ?? null,
               hasTranscript: transcriptMessages.length > 0,
               isPinned,
+              worktreeSiblingCount: worktreeSiblings.length,
               isSettled,
               isSnoozed,
               canSnoozeNow: canSnooze(thread, { now: new Date().toISOString() }),
@@ -4286,7 +4496,9 @@ export default function Sidebar() {
       serverConfigs,
       startThreadRename,
       updateThreadMetadata,
+      threads,
       timestampFormat,
+      worktreeCardsEnabled,
     ],
   );
 
@@ -4663,10 +4875,14 @@ export default function Sidebar() {
                         thread: EnvironmentThreadShell,
                         section: SidebarSection,
                         sortable?: SortableThreadRowBag,
+                        // Rows inside the lifted worktree card: the first one
+                        // carries the verb badge for the whole card.
+                        lifted?: { verbRow: boolean; cardPosition: WorktreeCardPosition },
                       ) => {
                         const threadKey = scopedThreadKey(
                           scopeThreadRef(thread.environmentId, thread.id),
                         );
+                        const verbRow = lifted?.verbRow ?? dragState?.activeKey === threadKey;
                         // Settled and snoozed are the ONLY things that collapse a
                         // row: every other thread is a full card. Density comes
                         // from users (or the auto rules) actually parking work,
@@ -4703,13 +4919,17 @@ export default function Sidebar() {
                             isPinned={thread.pinnedAt != null}
                             sortable={sortable}
                             dropVerb={
-                              dragState?.activeKey === threadKey
+                              verbRow && dragState !== null
                                 ? resolveSidebarDropVerb(dragState.activeSection, dragTargetSection)
                                 : null
                             }
-                            dragOverPinned={
-                              dragState?.activeKey === threadKey && dragTargetSection === "pinned"
+                            dropCount={
+                              verbRow && dragState !== null ? dragState.cardKeys.length : 1
                             }
+                            cardPosition={
+                              lifted?.cardPosition ?? cardPositionByKey.get(threadKey) ?? null
+                            }
+                            dragOverPinned={verbRow && dragTargetSection === "pinned"}
                             snoozeWakeLabelText={
                               section === "snoozed" && thread.snoozedUntil != null
                                 ? snoozeWakeLabel(thread.snoozedUntil, {
@@ -4774,6 +4994,40 @@ export default function Sidebar() {
                         const threadKey = scopedThreadKey(
                           scopeThreadRef(thread.environmentId, thread.id),
                         );
+                        // The lifted worktree card: the dragged row's sortable
+                        // node wraps every member, painted as one card, while
+                        // the members' own rows sit hidden in the flow.
+                        const renderLiftedCard = (bag: SortableThreadRowBag) => (
+                          <li
+                            ref={bag.setNodeRef}
+                            data-thread-item
+                            className="relative z-20 list-none py-0.5"
+                            style={{
+                              transform: CSS.Translate.toString(bag.transform),
+                              transition: bag.transition,
+                            }}
+                            {...bag.listeners}
+                          >
+                            <ul
+                              role="list"
+                              className="flex flex-col gap-px overflow-hidden rounded-lg bg-sidebar shadow-lg"
+                            >
+                              {(liftedCardKeys ?? []).map((memberKey, index, keys) => {
+                                const member = threadByKey.get(memberKey);
+                                if (member === undefined) return null;
+                                return renderThreadRowInner(member, section, liftedCardRowBag, {
+                                  verbRow: index === 0,
+                                  cardPosition:
+                                    index === 0
+                                      ? "first"
+                                      : index === keys.length - 1
+                                        ? "last"
+                                        : "middle",
+                                });
+                              })}
+                            </ul>
+                          </li>
+                        );
                         return (
                           <SortableThreadRow
                             key={threadKey}
@@ -4782,7 +5036,11 @@ export default function Sidebar() {
                               !draggableThreadKeys.has(threadKey) || optimisticDrop !== null
                             }
                           >
-                            {(bag) => renderThreadRowInner(thread, section, bag)}
+                            {(bag) =>
+                              liftedCardKeys !== undefined && dragState?.activeKey === threadKey
+                                ? renderLiftedCard(bag)
+                                : renderThreadRowInner(thread, section, bag)
+                            }
                           </SortableThreadRow>
                         );
                       };

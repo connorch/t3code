@@ -1455,7 +1455,8 @@ export default function ChatView(props: ChatViewProps) {
   const threadSyncPhase = routeKind === "server" ? (props.threadSyncPhase ?? null) : null;
   const threadDetailLoading = threadSyncPhase === "loading";
   const handleNewThread = useNewThreadHandler();
-  const { settleThread, pinThread, confirmAndUnpinThread } = useThreadActions();
+  const { settleThread, pinThread, confirmAndUnpinThread, isWorktreeCardPinned } =
+    useThreadActions();
   const routeThreadRef = useMemo(
     () => scopeThreadRef(environmentId, threadId),
     [environmentId, threadId],
@@ -6664,7 +6665,7 @@ export default function ChatView(props: ChatViewProps) {
         event.preventDefault();
         event.stopPropagation();
         if (!isServerThread || !activeThreadRef || !supportsPinning) return;
-        const pinned = activeThreadPinned;
+        const pinned = activeThreadPinned || isWorktreeCardPinned(activeThreadRef);
         void (pinned ? confirmAndUnpinThread(activeThreadRef) : pinThread(activeThreadRef)).then(
           (result) => {
             if (result._tag !== "Failure" || isAtomCommandInterrupted(result)) return;
@@ -6870,6 +6871,7 @@ export default function ChatView(props: ChatViewProps) {
     supportsPinning,
     supportsSettlement,
     confirmAndUnpinThread,
+    isWorktreeCardPinned,
     copyActiveThreadReference,
     getShortcutContext,
     toggleRightPanel,
