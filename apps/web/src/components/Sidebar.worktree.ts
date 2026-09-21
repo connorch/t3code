@@ -212,3 +212,27 @@ export function worktreeCardSiblings<T extends WorktreeSiblingShell>(
       shell.id !== thread.id && worktreeCardKey(shell) === key && isLiveCardMember(shell, options),
   );
 }
+
+// ── Card accent ───────────────────────────────────────────────────────
+// A card draws a hairline in its own color so two stacked cards read as
+// separate worktrees without a label. The color is derived from the card
+// key, so nothing is stored and every client paints a worktree the same
+// way. Lightness and chroma are fixed, so no worktree shouts louder than
+// another, and only the hue tells them apart.
+
+const WORKTREE_CARD_HUE_COUNT = 36;
+// Walking the wheel with a stride coprime to the hue count still visits
+// every hue, but puts keys that hash to neighboring slots (worktree paths
+// often differ only in a trailing character) a third of the wheel apart.
+const WORKTREE_CARD_HUE_STEP = 110;
+
+/** Hairline color for a worktree card, keyed by `worktreeCardKey`. */
+export function worktreeCardAccent(cardKey: string): string {
+  // FNV-1a: cheap, and it scatters keys that share a long common prefix.
+  let hash = 0x811c9dc5;
+  for (let index = 0; index < cardKey.length; index += 1) {
+    hash = Math.imul(hash ^ cardKey.charCodeAt(index), 0x01000193) >>> 0;
+  }
+  const hue = ((hash % WORKTREE_CARD_HUE_COUNT) * WORKTREE_CARD_HUE_STEP) % 360;
+  return `oklch(0.68 0.17 ${hue} / 0.45)`;
+}

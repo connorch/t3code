@@ -125,6 +125,7 @@ import {
   dropSplitsForeignWorktreeCard,
   gatherWorktreeCards,
   resolveWorktreeCardPositions,
+  worktreeCardAccent,
   worktreeCardKey,
   worktreeCardMembers,
   worktreeCardOrderWithin,
@@ -953,11 +954,13 @@ const SidebarDraftBlock = memo(function SidebarDraftBlock(props: {
 // Worktree card paint (Sidebar.worktree.ts): one well behind flush member
 // rows, with the list's 1px gap as the hairline between them. Members drop
 // the vertical padding at their shared edges; the well keeps the row's usual
-// 2px inset at the card's top and bottom and adds one at the sides.
+// 2px inset at the card's top and bottom and adds one at the sides. The 1px
+// card outline eats one of those inset pixels, so the row body sits exactly
+// where it does outside a card; its color comes from worktreeCardAccent.
 const worktreeCardRowClassName: Record<WorktreeCardPosition, string> = {
-  first: "rounded-t-lg bg-sidebar-foreground/[0.04] px-0.5 pb-0",
-  middle: "bg-sidebar-foreground/[0.04] px-0.5 py-0",
-  last: "rounded-b-lg bg-sidebar-foreground/[0.04] px-0.5 pt-0",
+  first: "rounded-t-lg border-x border-t bg-sidebar-foreground/[0.04] px-px pt-px pb-0",
+  middle: "border-x bg-sidebar-foreground/[0.04] px-px py-0",
+  last: "rounded-b-lg border-x border-b bg-sidebar-foreground/[0.04] px-px pt-0 pb-px",
 };
 
 // The rows inside a lifted worktree card: not sortable themselves (the card's
@@ -1035,6 +1038,9 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
   // Paint for a row inside a worktree card (Sidebar.worktree.ts); null
   // outside a card. Applied to the list item only, the row body is untouched.
   cardPosition: WorktreeCardPosition | null;
+  // This row opens a card that sits directly under another card, so it pays
+  // the list's row gap a second time to keep the two outlines apart.
+  cardFollowsCard: boolean;
   // Compact wake countdown ("2h") for rows in the snoozed shelf.
   snoozeWakeLabelText: string | null;
   // When a snooze ended (timer or early wake); drives the Woke pill until
@@ -1470,22 +1476,28 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
   // dnd-kit props for the row root. Same bag on both variants: every row in
   // the list translates around the gap as the drag passes it.
   const sortable = props.sortable;
-  const sortableRootProps = sortable
+  const sortableRootStyle = sortable
     ? {
-        ref: sortable.setNodeRef,
-        style: {
-          transform: CSS.Translate.toString(sortable.transform),
-          transition: sortable.transition,
-          // A zero-height boundary also makes dnd-kit scale the source to
-          // zero. Only projected peers use scaleY as a visibility sentinel.
-          visibility:
-            !sortable.isDragging && sortable.transform?.scaleY === 0
-              ? ("hidden" as const)
-              : undefined,
-        },
-        ...sortable.listeners,
+        transform: CSS.Translate.toString(sortable.transform),
+        transition: sortable.transition,
+        // A zero-height boundary also makes dnd-kit scale the source to
+        // zero. Only projected peers use scaleY as a visibility sentinel.
+        visibility:
+          !sortable.isDragging && sortable.transform?.scaleY === 0
+            ? ("hidden" as const)
+            : undefined,
       }
+    : undefined;
+  const sortableRootProps = sortable
+    ? { ref: sortable.setNodeRef, style: sortableRootStyle, ...sortable.listeners }
     : {};
+  // Every member of one worktree card draws the same hairline color, so the
+  // card reads as one block and its neighbors read as other worktrees.
+  const rowWorktreeCardKey = worktreeCardKey(thread);
+  const worktreeCardBorderColor =
+    props.cardPosition === null || rowWorktreeCardKey === null
+      ? null
+      : worktreeCardAccent(rowWorktreeCardKey);
   const dragDestination =
     sortable?.isDragging && props.dropVerb !== null ? (
       <span
@@ -1780,10 +1792,16 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
       data-thread-item
       {...sortableRootProps}
       {...(fileDropHandlers ?? {})}
+      style={
+        worktreeCardBorderColor === null
+          ? sortableRootStyle
+          : { ...sortableRootStyle, borderColor: worktreeCardBorderColor }
+      }
       className={cn(
         // Matches the h-[4.875rem] content box; the py-0.5 padding is added on top.
         "list-none py-0.5 [content-visibility:auto] [contain-intrinsic-size:auto_78px]",
         props.cardPosition !== null && worktreeCardRowClassName[props.cardPosition],
+        props.cardFollowsCard && "mt-0.5",
         sortable?.isDragging && "relative z-20",
       )}
     >
@@ -3545,20 +3563,26 @@ export default function Sidebar() {
     [sidebarListItems],
   );
   const sortableIds = useMemo(() => sidebarListItems.map(sidebarListItemId), [sidebarListItems]);
-  // Card paint per row, from the gathered pinned and active lists.
-  const cardPositionByKey = useMemo(() => {
-    const positions = new Map<string, WorktreeCardPosition>();
-    if (!worktreeCardsEnabled) return positions;
+  // Card paint per row, from the gathered pinned and active lists. Cards
+  // stacked back to back are tracked too: their outlines would otherwise sit
+  // a pixel apart and read as one block.
+  const worktreeCardPaint = useMemo(() => {
+    const positionByKey = new Map<string, WorktreeCardPosition>();
+    const stackedStartKeys = new Set<string>();
+    if (!worktreeCardsEnabled) return { positionByKey, stackedStartKeys };
     for (const list of [pinnedThreads, activeThreads]) {
       const resolved = resolveWorktreeCardPositions(list);
       list.forEach((thread, index) => {
         const position = resolved[index];
-        if (position) {
-          positions.set(scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)), position);
-        }
+        if (!position) return;
+        const key = scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id));
+        positionByKey.set(key, position);
+        // A "first" right after a "last" always opens a different card: a run
+        // only ends where the next worktree begins.
+        if (position === "first" && resolved[index - 1] === "last") stackedStartKeys.add(key);
       });
     }
-    return positions;
+    return { positionByKey, stackedStartKeys };
   }, [activeThreads, pinnedThreads, worktreeCardsEnabled]);
   const draggedSettledOrder = useMemo(() => {
     const thread = dragState === null ? undefined : threadByKey.get(dragState.activeKey);
@@ -4927,7 +4951,13 @@ export default function Sidebar() {
                               verbRow && dragState !== null ? dragState.cardKeys.length : 1
                             }
                             cardPosition={
-                              lifted?.cardPosition ?? cardPositionByKey.get(threadKey) ?? null
+                              lifted?.cardPosition ??
+                              worktreeCardPaint.positionByKey.get(threadKey) ??
+                              null
+                            }
+                            cardFollowsCard={
+                              lifted === undefined &&
+                              worktreeCardPaint.stackedStartKeys.has(threadKey)
                             }
                             dragOverPinned={verbRow && dragTargetSection === "pinned"}
                             snoozeWakeLabelText={
