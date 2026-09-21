@@ -4,6 +4,7 @@ import {
   dropSplitsForeignWorktreeCard,
   gatherWorktreeCards,
   resolveWorktreeCardPositions,
+  worktreeCardAccent,
   worktreeCardKey,
   worktreeCardMembers,
   worktreeCardOrderWithin,
@@ -172,5 +173,19 @@ describe("worktreeCardSiblings", () => {
         now,
       }),
     ).toEqual([]);
+  });
+});
+
+describe("worktreeCardAccent", () => {
+  it("is stable per card key and spreads worktrees across the palette", () => {
+    const keys = Array.from({ length: 40 }, (_, index) => `env\u0000/wt/feature-${index}`);
+    const colors = keys.map(worktreeCardAccent);
+
+    expect(worktreeCardAccent(keys[0]!)).toBe(colors[0]);
+    expect(worktreeCardAccent("env\u0000/wt/other")).not.toBe(colors[0]);
+    // Worktree paths that differ only in a trailing character are the common
+    // case; neighbors in that series must not land on the same hue.
+    expect(colors.every((color, index) => index === 0 || color !== colors[index - 1])).toBe(true);
+    expect(new Set(colors).size).toBeGreaterThan(20);
   });
 });
