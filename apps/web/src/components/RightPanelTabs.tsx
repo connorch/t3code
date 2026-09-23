@@ -31,8 +31,6 @@ import {
   ChevronRight,
   FileDiff,
   Files,
-  GitPullRequest,
-  GitPullRequestArrow,
   Globe2,
   Plus,
   TerminalSquare,
@@ -47,6 +45,7 @@ import {
   type ReactNode,
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
@@ -75,7 +74,11 @@ import { ScrollArea } from "~/components/ui/scroll-area";
 import { PanelTabCloseButton } from "~/components/ui/panel-tab-close-button";
 import { faviconUrlForOrigin } from "~/lib/favicon";
 import { useTheme } from "~/hooks/useTheme";
-import { pullRequestEnvironment } from "~/state/pullRequests";
+import {
+  newestPullRequestSummary,
+  pullRequestEnvironment,
+  useSharedPullRequestSummary,
+} from "~/state/pullRequests";
 import { useEnvironmentQuery } from "~/state/query";
 import { COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS } from "~/workspaceTitlebar";
 
@@ -84,6 +87,7 @@ import { FaviconImage } from "./preview/PreviewFaviconIcon";
 import { previewBridge } from "./preview/previewBridge";
 import { PierreEntryIcon } from "./chat/PierreEntryIcon";
 import { resolvePullRequestState } from "./pullRequest/pullRequestPresentation";
+import { PullRequestGlyph } from "~/components/pullRequest/pullRequestIcons";
 
 interface RightPanelTabsProps {
   mode: PreviewPanelMode;
@@ -520,7 +524,7 @@ function SurfaceIcon({
         />
       );
     case "pull-requests":
-      return <GitPullRequestArrow className="size-3 shrink-0" />;
+      return <PullRequestGlyph.link className="size-3 shrink-0" />;
     case "agents":
       return <Bot className="size-3 shrink-0" />;
     case "device":
@@ -609,18 +613,26 @@ function PullRequestSurfaceIcon({
           },
         }),
   ).data;
-  // Only state and draft reach the tab. A list seed cannot know mergeability, so feeding the
-  // full detail would flip an open tab to the conflict glyph the moment its read lands.
-  const status =
-    linkedSnapshot !== null
-      ? linkedSnapshot
-      : detail === null
-        ? (seed ?? null)
-        : { state: detail.state, isDraft: detail.isDraft };
+  const reference = useMemo(
+    () => ({
+      projectId: surface.projectId as ProjectId,
+      repository: surface.repository,
+      number: surface.number,
+    }),
+    [surface.projectId, surface.repository, surface.number],
+  );
+  const sharedSummary = useSharedPullRequestSummary(resolvedEnvironmentId, reference, null);
+  // The compact tab intentionally shows lifecycle and draft state only. Conflict warnings have
+  // their own presentation on surfaces that have mergeability, while this tab stays stable as
+  // detail data arrives.
+  const status = linkedSnapshot ?? newestPullRequestSummary(detail, sharedSummary) ?? seed ?? null;
   if (status === null) {
-    return <GitPullRequest className="size-3 shrink-0 text-muted-foreground" />;
+    return <PullRequestGlyph.pullRequest className="size-3 shrink-0 text-muted-foreground" />;
   }
-  const presentation = resolvePullRequestState({ state: status.state, isDraft: status.isDraft });
+  const presentation = resolvePullRequestState({
+    state: status.state,
+    isDraft: status.isDraft ?? detail?.isDraft ?? seed?.isDraft ?? false,
+  });
   return <presentation.Icon className={cn("size-3 shrink-0", presentation.toneClassName)} />;
 }
 
@@ -715,7 +727,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
       multiInstance: false,
       badgeCount: 0,
       label: "Pull request",
-      icon: GitPullRequest,
+      icon: PullRequestGlyph.pullRequest,
       shortcut: "P",
       available: props.pullRequestAvailable,
       disabledReason: SURFACE_DISABLED_REASONS.pullRequest,
@@ -741,7 +753,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
       multiInstance: false,
       badgeCount: 0,
       label: "Linked pull requests",
-      icon: GitPullRequestArrow,
+      icon: PullRequestGlyph.link,
       shortcut: "L",
       available: props.pullRequestsAvailable,
       disabledReason: SURFACE_DISABLED_REASONS.pullRequests,
@@ -990,10 +1002,11 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
         data-right-panel-tabbar
       >
         <ScrollArea
+          radius="none"
           ref={tabListRef}
           hideScrollbars
           scrollFade
-          className="min-w-0 flex-1 rounded-none"
+          className="min-w-0 flex-1"
           data-right-panel-tab-list
         >
           <div className="flex h-full w-max min-w-full items-center gap-1">
@@ -1154,9 +1167,9 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
                   render={
                     <Button
                       aria-label="Add panel surface"
-                      className="size-6 shrink-0 text-muted-foreground hover:text-foreground"
+                      className="shrink-0"
                       size="icon-xs"
-                      variant="ghost"
+                      variant="ghost-muted"
                     />
                   }
                 >
@@ -1166,7 +1179,6 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
                   align="start"
                   side="bottom"
                   sideOffset={6}
-                  className="min-w-44"
                   onKeyDownCapture={handleAddSurfaceMenuKeyDown}
                 >
                   {addSurfaceActions.map((action) => {
@@ -1207,7 +1219,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
                             and run to 48 characters, which would otherwise widen
                             the popup to fit-content and wrap.
                           */}
-                          <MenuSubPopup className="min-w-40 max-w-56">
+                          <MenuSubPopup className="max-w-56">
                             {browserProfiles.map((profile) => (
                               <MenuItem
                                 key={profile.id}

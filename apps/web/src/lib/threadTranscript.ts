@@ -34,11 +34,13 @@ export interface ParsedThreadTranscript {
 }
 
 export interface TranscriptSourceMessage {
-  role: "user" | "assistant" | "system";
+  role: "user" | "assistant" | "system" | "reasoning";
   text: string;
 }
 
-const ROLE_HEADINGS: Record<TranscriptSourceMessage["role"], string> = {
+// Reasoning messages are thinking traces, not conversation; they have no
+// heading and are dropped from the transcript.
+const ROLE_HEADINGS: Partial<Record<TranscriptSourceMessage["role"], string>> = {
   user: "## User",
   assistant: "## Assistant",
   system: "## System",
@@ -77,9 +79,11 @@ export function buildThreadTranscriptBlock(source: {
   messages: ReadonlyArray<TranscriptSourceMessage>;
 }): string {
   const entries = source.messages.flatMap((message) => {
+    const heading = ROLE_HEADINGS[message.role];
+    if (heading === undefined) return [];
     const text = message.role === "user" ? cleanUserMessageText(message.text) : message.text.trim();
     if (text.trim().length === 0) return [];
-    return [`${ROLE_HEADINGS[message.role]}\n${escapeTranscriptTags(text.trim())}`];
+    return [`${heading}\n${escapeTranscriptTags(text.trim())}`];
   });
   const header = [
     `Id: ${randomUUID()}`,
