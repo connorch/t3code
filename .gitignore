@@ -41,7 +41,6 @@ node_modules/
 *.log
 .env*
 !.env.example
-.conductor/settings.local.toml
 
 # pnpm content-addressable store; never belongs in the repo.
 .pnpm-store/
