@@ -73,13 +73,6 @@ import {
   GitPullRequestRefInput,
   VcsPullResult,
   VcsRemoveWorktreeInput,
-  VcsArchiveWorktreeInput,
-  VcsArchiveWorktreeResult,
-  VcsUnarchiveWorktreeInput,
-  VcsUnarchiveWorktreeResult,
-  VcsListWorktreeArchivesInput,
-  VcsListWorktreeArchivesResult,
-  WorktreeArchiveError,
   GitResolvePullRequestResult,
   GitRunStackedActionInput,
   VcsStatusInput,
@@ -323,9 +316,6 @@ export const WS_METHODS = {
   vcsListRefs: "vcs.listRefs",
   vcsCreateWorktree: "vcs.createWorktree",
   vcsRemoveWorktree: "vcs.removeWorktree",
-  vcsArchiveWorktree: "vcs.archiveWorktree",
-  vcsUnarchiveWorktree: "vcs.unarchiveWorktree",
-  vcsListWorktreeArchives: "vcs.listWorktreeArchives",
   vcsCreateRef: "vcs.createRef",
   vcsSwitchRef: "vcs.switchRef",
   vcsInit: "vcs.init",
@@ -1084,24 +1074,6 @@ const WsVcsRemoveWorktreeRpc = Rpc.make(WS_METHODS.vcsRemoveWorktree, {
   error: Schema.Union([GitCommandError, EnvironmentAuthorizationError]),
 });
 
-export const WsVcsArchiveWorktreeRpc = Rpc.make(WS_METHODS.vcsArchiveWorktree, {
-  payload: VcsArchiveWorktreeInput,
-  success: VcsArchiveWorktreeResult,
-  error: Schema.Union([WorktreeArchiveError, GitCommandError, EnvironmentAuthorizationError]),
-});
-
-export const WsVcsUnarchiveWorktreeRpc = Rpc.make(WS_METHODS.vcsUnarchiveWorktree, {
-  payload: VcsUnarchiveWorktreeInput,
-  success: VcsUnarchiveWorktreeResult,
-  error: Schema.Union([WorktreeArchiveError, GitCommandError, EnvironmentAuthorizationError]),
-});
-
-export const WsVcsListWorktreeArchivesRpc = Rpc.make(WS_METHODS.vcsListWorktreeArchives, {
-  payload: VcsListWorktreeArchivesInput,
-  success: VcsListWorktreeArchivesResult,
-  error: Schema.Union([WorktreeArchiveError, EnvironmentAuthorizationError]),
-});
-
 const WsVcsCreateRefRpc = Rpc.make(WS_METHODS.vcsCreateRef, {
   payload: VcsCreateRefInput,
   success: VcsCreateRefResult,
@@ -1516,9 +1488,6 @@ export const WsRpcGroup = RpcGroup.make(
   WsVcsListRefsRpc,
   WsVcsCreateWorktreeRpc,
   WsVcsRemoveWorktreeRpc,
-  WsVcsArchiveWorktreeRpc,
-  WsVcsUnarchiveWorktreeRpc,
-  WsVcsListWorktreeArchivesRpc,
   WsVcsCreateRefRpc,
   WsVcsSwitchRefRpc,
   WsVcsInitRpc,

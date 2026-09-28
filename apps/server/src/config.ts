@@ -40,7 +40,6 @@ export interface ServerDerivedPaths {
   readonly providerStatusCacheDir: string;
   readonly worktreesDir: string;
   readonly attachmentsDir: string;
-  readonly worktreeArchivesDir: string;
   /** Screenshots the agent asks the collaborative browser to keep for the user. */
   readonly browserArtifactsDir: string;
   readonly logsDir: string;
@@ -151,7 +150,6 @@ export const deriveServerPaths = Effect.fn(function* (
     providerStatusCacheDir,
     worktreesDir: join(baseDir, "worktrees"),
     attachmentsDir,
-    worktreeArchivesDir: join(stateDir, "worktree-archives"),
     browserArtifactsDir: join(stateDir, "browser-artifacts"),
     logsDir,
     serverLogPath: join(logsDir, "server.log"),
@@ -178,7 +176,6 @@ export const ensureServerDirectories = Effect.fn(function* (derivedPaths: Server
       fs.makeDirectory(derivedPaths.terminalLogsDir, { recursive: true }),
       fs.makeDirectory(derivedPaths.attachmentsDir, { recursive: true }),
       fs.makeDirectory(derivedPaths.worktreesDir, { recursive: true }),
-      fs.makeDirectory(derivedPaths.worktreeArchivesDir, { recursive: true }),
       fs.makeDirectory(path.dirname(derivedPaths.keybindingsConfigPath), { recursive: true }),
       fs.makeDirectory(path.dirname(derivedPaths.settingsPath), { recursive: true }),
       fs.makeDirectory(derivedPaths.providerStatusCacheDir, { recursive: true }),

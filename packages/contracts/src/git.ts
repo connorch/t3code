@@ -1,13 +1,6 @@
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
-import {
-  IsoDateTime,
-  NonNegativeInt,
-  PositiveInt,
-  ProjectId,
-  ThreadId,
-  TrimmedNonEmptyString,
-} from "./baseSchemas.ts";
+import { NonNegativeInt, PositiveInt, ThreadId, TrimmedNonEmptyString } from "./baseSchemas.ts";
 import { SourceControlProviderError, SourceControlProviderInfo } from "./sourceControl.ts";
 import { VcsDriverKind } from "./vcs.ts";
 
@@ -91,31 +84,10 @@ export const VcsRef = Schema.Struct({
 });
 export type VcsRef = typeof VcsRef.Type;
 
-export const VcsWorktree = Schema.Struct({
+const VcsWorktree = Schema.Struct({
   path: TrimmedNonEmptyStringSchema,
   refName: TrimmedNonEmptyStringSchema,
 });
-export type VcsWorktree = typeof VcsWorktree.Type;
-
-// A thread captured at worktree-archive time; kept as a snapshot so the
-// history view stays renderable even if the thread is later deleted.
-export const VcsWorktreeArchiveThread = Schema.Struct({
-  id: ThreadId,
-  title: TrimmedNonEmptyStringSchema,
-});
-export type VcsWorktreeArchiveThread = typeof VcsWorktreeArchiveThread.Type;
-
-export const VcsWorktreeArchive = Schema.Struct({
-  id: TrimmedNonEmptyStringSchema,
-  projectId: ProjectId,
-  worktreePath: TrimmedNonEmptyStringSchema,
-  branch: Schema.NullOr(TrimmedNonEmptyStringSchema),
-  name: TrimmedNonEmptyStringSchema,
-  threads: Schema.Array(VcsWorktreeArchiveThread),
-  hasContextArchive: Schema.Boolean,
-  archivedAt: IsoDateTime,
-});
-export type VcsWorktreeArchive = typeof VcsWorktreeArchive.Type;
 const GitResolvedPullRequest = Schema.Struct({
   number: PositiveInt,
   title: TrimmedNonEmptyStringSchema,
@@ -194,22 +166,6 @@ export const VcsRemoveWorktreeInput = Schema.Struct({
   force: Schema.optional(Schema.Boolean),
 });
 export type VcsRemoveWorktreeInput = typeof VcsRemoveWorktreeInput.Type;
-
-export const VcsArchiveWorktreeInput = Schema.Struct({
-  projectId: ProjectId,
-  worktreePath: TrimmedNonEmptyStringSchema,
-  // Display name resolved by the client (custom worktree names live client-side).
-  name: TrimmedNonEmptyStringSchema,
-});
-export type VcsArchiveWorktreeInput = typeof VcsArchiveWorktreeInput.Type;
-
-export const VcsUnarchiveWorktreeInput = Schema.Struct({
-  archiveId: TrimmedNonEmptyStringSchema,
-});
-export type VcsUnarchiveWorktreeInput = typeof VcsUnarchiveWorktreeInput.Type;
-
-export const VcsListWorktreeArchivesInput = Schema.Struct({});
-export type VcsListWorktreeArchivesInput = typeof VcsListWorktreeArchivesInput.Type;
 
 export const VcsCreateRefInput = Schema.Struct({
   cwd: TrimmedNonEmptyStringSchema,
@@ -322,21 +278,6 @@ export const VcsCreateWorktreeResult = Schema.Struct({
 });
 export type VcsCreateWorktreeResult = typeof VcsCreateWorktreeResult.Type;
 
-export const VcsArchiveWorktreeResult = Schema.Struct({
-  archive: VcsWorktreeArchive,
-});
-export type VcsArchiveWorktreeResult = typeof VcsArchiveWorktreeResult.Type;
-
-export const VcsUnarchiveWorktreeResult = Schema.Struct({
-  worktree: VcsWorktree,
-});
-export type VcsUnarchiveWorktreeResult = typeof VcsUnarchiveWorktreeResult.Type;
-
-export const VcsListWorktreeArchivesResult = Schema.Struct({
-  archives: Schema.Array(VcsWorktreeArchive),
-});
-export type VcsListWorktreeArchivesResult = typeof VcsListWorktreeArchivesResult.Type;
-
 export const GitResolvePullRequestResult = Schema.Struct({
   pullRequest: GitResolvedPullRequest,
 });
@@ -411,19 +352,6 @@ export class GitCommandError extends Schema.TaggedError<GitCommandError>()("GitC
 }) {
   override get message(): string {
     return `Git command failed in ${this.operation} (${this.cwd}): ${this.detail}`;
-  }
-}
-
-export class WorktreeArchiveError extends Schema.TaggedError<WorktreeArchiveError>()(
-  "WorktreeArchiveError",
-  {
-    operation: Schema.String,
-    detail: Schema.String,
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {
-  override get message(): string {
-    return this.detail;
   }
 }
 

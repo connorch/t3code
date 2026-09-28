@@ -174,7 +174,6 @@ import * as VcsProvisioningService from "./vcs/VcsProvisioningService.ts";
 import * as GitHubCli from "./sourceControl/GitHubCli.ts";
 import * as VcsProcess from "./vcs/VcsProcess.ts";
 import * as GitWorkflowService from "./git/GitWorkflowService.ts";
-import * as WorktreeArchiveService from "./worktreeArchive/WorktreeArchiveService.ts";
 import * as ReviewService from "./review/ReviewService.ts";
 import * as SourceControlRepositoryService from "./sourceControl/SourceControlRepositoryService.ts";
 import * as ServerSecretStore from "./auth/ServerSecretStore.ts";
@@ -545,7 +544,6 @@ const buildAppUnderTest = (options?: {
       ProviderSessionDirectory.ProviderSessionDirectory["Service"]
     >;
     terminalManager?: Partial<TerminalManager.TerminalManager["Service"]>;
-    worktreeArchiveService?: Partial<WorktreeArchiveService.WorktreeArchiveService["Service"]>;
     orchestrationEngine?: Partial<OrchestrationEngine.OrchestrationEngineService["Service"]>;
     threadDeletionReactor?: Partial<ThreadDeletionReactor["Service"]>;
     analyticsService?: Partial<AnalyticsService.AnalyticsService["Service"]>;
@@ -1051,29 +1049,23 @@ const buildAppUnderTest = (options?: {
         }),
       ),
       Layer.provide(
-        Layer.mergeAll(
-          Layer.mock(CheckpointDiffQuery.CheckpointDiffQuery)({
-            getTurnDiff: () =>
-              Effect.succeed({
-                threadId: defaultThreadId,
-                fromTurnCount: 0,
-                toTurnCount: 0,
-                diff: "",
-              }),
-            getFullThreadDiff: () =>
-              Effect.succeed({
-                threadId: defaultThreadId,
-                fromTurnCount: 0,
-                toTurnCount: 0,
-                diff: "",
-              }),
-            ...options?.layers?.checkpointDiffQuery,
-          }),
-          Layer.mock(WorktreeArchiveService.WorktreeArchiveService)({
-            list: () => Effect.succeed({ archives: [] }),
-            ...options?.layers?.worktreeArchiveService,
-          }),
-        ),
+        Layer.mock(CheckpointDiffQuery.CheckpointDiffQuery)({
+          getTurnDiff: () =>
+            Effect.succeed({
+              threadId: defaultThreadId,
+              fromTurnCount: 0,
+              toTurnCount: 0,
+              diff: "",
+            }),
+          getFullThreadDiff: () =>
+            Effect.succeed({
+              threadId: defaultThreadId,
+              fromTurnCount: 0,
+              toTurnCount: 0,
+              diff: "",
+            }),
+          ...options?.layers?.checkpointDiffQuery,
+        }),
       ),
     );
 
