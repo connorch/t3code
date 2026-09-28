@@ -152,43 +152,6 @@ export const TerminalFontSize = Schema.Int.check(
 export type TerminalFontSize = typeof TerminalFontSize.Type;
 const DEFAULT_TERMINAL_FONT_SIZE: TerminalFontSize = 12;
 
-/**
- * Which sidebar renders. Supersedes the upstream `legacySidebarEnabled`
- * boolean, which only spans two of the three:
- *
- * - "default" — the flat thread list that upstream promoted to the default
- * - "legacy"  — the original per-project thread tree
- * - "connor-1" — threads grouped by git worktree as accordion cards
- */
-export const SidebarMode = Schema.Literals(["default", "legacy", "connor-1"]);
-export type SidebarMode = typeof SidebarMode.Type;
-
-// Values retired along the way still decode, rather than failing the whole
-// settings blob (a decode failure would reset every client setting to
-// defaults). "flat" was this fork's name for the sidebar that is now the
-// default; "connor-2"/"connor-3" were the Tree and Focus experiments.
-const StoredSidebarMode = Schema.Literals([
-  "default",
-  "flat",
-  "legacy",
-  "connor-1",
-  "connor-2",
-  "connor-3",
-]).pipe(
-  Schema.decodeTo(
-    SidebarMode,
-    SchemaTransformation.transform({
-      decode: (value) =>
-        value === "flat"
-          ? ("default" as const)
-          : value === "connor-2" || value === "connor-3"
-            ? ("connor-1" as const)
-            : value,
-      encode: (value) => value,
-    }),
-  ),
-);
-export const DEFAULT_SIDEBAR_MODE: SidebarMode = "default";
 export const DEFAULT_SIDEBAR_GROUP_WORKTREE_THREADS = true;
 
 export const EnvironmentIdentificationMode = Schema.Literals(["artwork", "pill", "none"]);
@@ -514,13 +477,11 @@ export const ClientSettingsSchema = Schema.Struct({
   sidebarThreadPreviewCount: SidebarThreadPreviewCount.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_SIDEBAR_THREAD_PREVIEW_COUNT)),
   ),
-  // Replaces upstream's `legacySidebarEnabled` boolean, which cannot express
-  // the third (Connor) sidebar. Like that key, this one is fresh: the old
-  // `sidebarV2Enabled`/`sidebarV2ConfiguredByUser` pair is dropped on decode,
-  // so everyone lands on the new default sidebar once.
-  sidebarMode: StoredSidebarMode.pipe(
-    Schema.withDecodingDefault(Effect.succeed(DEFAULT_SIDEBAR_MODE)),
-  ),
+  // Legacy sidebar (the original per-project tree). Deliberately a fresh key
+  // (was `sidebarV2Enabled` + `sidebarV2ConfiguredByUser`): decoding drops the
+  // old keys, so everyone, including prior beta opt-outs, resets to the new
+  // default sidebar.
+  legacySidebarEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   // Default sidebar only: threads that share a worktree render as one card
   // (see docs/user/thread-sidebar.md "Worktree cards"). Fork-only; upstream
   // behavior is the toggle off.
@@ -1692,7 +1653,7 @@ export const ClientSettingsPatch = Schema.Struct({
   sidebarProjectSortOrder: Schema.optionalKey(SidebarProjectSortOrder),
   sidebarThreadSortOrder: Schema.optionalKey(SidebarThreadSortOrder),
   sidebarThreadPreviewCount: Schema.optionalKey(SidebarThreadPreviewCount),
-  sidebarMode: Schema.optionalKey(SidebarMode),
+  legacySidebarEnabled: Schema.optionalKey(Schema.Boolean),
   sidebarGroupWorktreeThreads: Schema.optionalKey(Schema.Boolean),
   timestampFormat: Schema.optionalKey(TimestampFormat),
   snapShotEnabled: Schema.optionalKey(Schema.Boolean),

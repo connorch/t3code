@@ -522,7 +522,7 @@ function createGitHubCliWithFakeGh(scenario: FakeGhScenario = {}): {
             "--limit",
             String(input.limit ?? 1),
             "--json",
-            "number,title,url,baseRefName,headRefName,state,isDraft,mergedAt,closedAt,autoMergeRequest,isCrossRepository,headRepository,headRepositoryOwner",
+            "number,title,url,baseRefName,headRefName,state,isDraft,mergedAt,closedAt,isCrossRepository,headRepository,headRepositoryOwner",
           ],
         }).pipe(
           Effect.map((result) => JSON.parse(result.stdout) as unknown[]),
@@ -566,7 +566,7 @@ function createGitHubCliWithFakeGh(scenario: FakeGhScenario = {}): {
             "view",
             input.reference,
             "--json",
-            "number,title,url,baseRefName,headRefName,state,isDraft,mergedAt,closedAt,autoMergeRequest,isCrossRepository,headRepository,headRepositoryOwner",
+            "number,title,url,baseRefName,headRefName,state,isDraft,mergedAt,closedAt,isCrossRepository,headRepository,headRepositoryOwner",
           ],
         }).pipe(
           Effect.map((result) => JSON.parse(result.stdout) as GitHubCli.GitHubPullRequestSummary),
@@ -588,11 +588,6 @@ function createGitHubCliWithFakeGh(scenario: FakeGhScenario = {}): {
         execute({
           cwd: input.cwd,
           args: ["pr", "checkout", input.reference, ...(input.force ? ["--force"] : [])],
-        }).pipe(Effect.asVoid),
-      setAutoMergePullRequest: (input) =>
-        execute({
-          cwd: input.cwd,
-          args: ["pr", "merge", input.reference, input.enabled ? "--auto" : "--disable-auto"],
         }).pipe(Effect.asVoid),
     },
     ghCalls,
@@ -1932,7 +1927,7 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
           updatedAt: "2026-03-10T07:00:00.000Z",
         });
         expect(ghCalls).toContain(
-          "pr list --head jasonLaster:statemachine --state all --limit 20 --json number,title,url,baseRefName,headRefName,state,isDraft,mergedAt,closedAt,updatedAt,autoMergeRequest,isCrossRepository,headRepository,headRepositoryOwner",
+          "pr list --head jasonLaster:statemachine --state all --limit 20 --json number,title,url,baseRefName,headRefName,state,isDraft,mergedAt,closedAt,updatedAt,isCrossRepository,headRepository,headRepositoryOwner",
         );
       }),
     20_000,
@@ -1998,7 +1993,7 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
           updatedAt: "2026-03-10T07:00:00.000Z",
         });
         expect(ghCalls).toContain(
-          "pr list --head contributor:main --state all --limit 20 --json number,title,url,baseRefName,headRefName,state,isDraft,mergedAt,closedAt,updatedAt,autoMergeRequest,isCrossRepository,headRepository,headRepositoryOwner",
+          "pr list --head contributor:main --state all --limit 20 --json number,title,url,baseRefName,headRefName,state,isDraft,mergedAt,closedAt,updatedAt,isCrossRepository,headRepository,headRepositoryOwner",
         );
       }),
     20_000,

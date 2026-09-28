@@ -107,8 +107,6 @@ import * as VcsProvisioningService from "./vcs/VcsProvisioningService.ts";
 import * as VcsStatusBroadcaster from "./vcs/VcsStatusBroadcaster.ts";
 import * as ProjectCloneTracker from "./project/ProjectCloneTracker.ts";
 import * as GitWorkflowService from "./git/GitWorkflowService.ts";
-import * as WorktreeArchiveService from "./worktreeArchive/WorktreeArchiveService.ts";
-import { WorktreeArchiveRepositoryLive } from "./persistence/Layers/WorktreeArchives.ts";
 import * as ReviewService from "./review/ReviewService.ts";
 import * as SourceControlProviderRegistry from "./sourceControl/SourceControlProviderRegistry.ts";
 import * as PullRequestReadCache from "./pullRequest/PullRequestReadCache.ts";
@@ -486,14 +484,7 @@ const AntigravityInstallationRefreshLive = Layer.effectDiscard(
   }),
 );
 
-// Depends on services provided further down this chain (git workflow,
-// orchestration engine, terminals, persistence), so it sits at the top.
-const WorktreeArchiveLayerLive = WorktreeArchiveService.layer.pipe(
-  Layer.provide(WorktreeArchiveRepositoryLive),
-);
-
 const RuntimeCoreDependenciesLive = ReactorLayerLive.pipe(
-  Layer.provideMerge(WorktreeArchiveLayerLive),
   Layer.provideMerge(AntigravityInstallationRefreshLive),
   Layer.provideMerge(ProviderAuthServiceLive),
   // Core Services

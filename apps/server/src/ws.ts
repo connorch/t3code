@@ -137,7 +137,6 @@ import * as WorkspacePaths from "./workspace/WorkspacePaths.ts";
 import * as VcsStatusBroadcaster from "./vcs/VcsStatusBroadcaster.ts";
 import * as VcsProvisioningService from "./vcs/VcsProvisioningService.ts";
 import * as GitWorkflowService from "./git/GitWorkflowService.ts";
-import * as WorktreeArchiveService from "./worktreeArchive/WorktreeArchiveService.ts";
 import { linkCreatedPullRequest } from "./git/linkCreatedPullRequest.ts";
 import * as ReviewService from "./review/ReviewService.ts";
 import * as ProjectSetupScriptRunner from "./project/ProjectSetupScriptRunner.ts";
@@ -554,7 +553,6 @@ const makeWsRpcLayer = (
       const externalLauncher = yield* ExternalLauncher.ExternalLauncher;
       const remoteOpenTargets = yield* RemoteOpenTargets.RemoteOpenTargets;
       const gitWorkflow = yield* GitWorkflowService.GitWorkflowService;
-      const worktreeArchive = yield* WorktreeArchiveService.WorktreeArchiveService;
       const review = yield* ReviewService.ReviewService;
       const vcsProvisioning = yield* VcsProvisioningService.VcsProvisioningService;
       const vcsStatusBroadcaster = yield* VcsStatusBroadcaster.VcsStatusBroadcaster;
@@ -3051,16 +3049,6 @@ const makeWsRpcLayer = (
               "rpc.aggregate": "source-control",
             },
           ),
-        [WS_METHODS.sourceControlSetAutomerge]: (input) =>
-          observeRpcEffect(
-            WS_METHODS.sourceControlSetAutomerge,
-            sourceControlRepositories
-              .setAutomerge(input)
-              .pipe(Effect.tap(() => refreshGitStatus(input.cwd))),
-            {
-              "rpc.aggregate": "source-control",
-            },
-          ),
         [WS_METHODS.projectsSearchEntries]: (input) =>
           observeRpcEffect(
             WS_METHODS.projectsSearchEntries,
@@ -3397,18 +3385,6 @@ const makeWsRpcLayer = (
             gitWorkflow.removeWorktree(input).pipe(Effect.tap(() => refreshGitStatus(input.cwd))),
             { "rpc.aggregate": "vcs" },
           ),
-        [WS_METHODS.vcsArchiveWorktree]: (input) =>
-          observeRpcEffect(WS_METHODS.vcsArchiveWorktree, worktreeArchive.archive(input), {
-            "rpc.aggregate": "vcs",
-          }),
-        [WS_METHODS.vcsUnarchiveWorktree]: (input) =>
-          observeRpcEffect(WS_METHODS.vcsUnarchiveWorktree, worktreeArchive.unarchive(input), {
-            "rpc.aggregate": "vcs",
-          }),
-        [WS_METHODS.vcsListWorktreeArchives]: (_input) =>
-          observeRpcEffect(WS_METHODS.vcsListWorktreeArchives, worktreeArchive.list(), {
-            "rpc.aggregate": "vcs",
-          }),
         [WS_METHODS.vcsCreateRef]: (input) =>
           observeRpcEffect(
             WS_METHODS.vcsCreateRef,

@@ -73,13 +73,6 @@ import {
   GitPullRequestRefInput,
   VcsPullResult,
   VcsRemoveWorktreeInput,
-  VcsArchiveWorktreeInput,
-  VcsArchiveWorktreeResult,
-  VcsUnarchiveWorktreeInput,
-  VcsUnarchiveWorktreeResult,
-  VcsListWorktreeArchivesInput,
-  VcsListWorktreeArchivesResult,
-  WorktreeArchiveError,
   GitResolvePullRequestResult,
   GitRunStackedActionInput,
   VcsStatusInput,
@@ -273,9 +266,6 @@ import {
   SourceControlCloneRepositoryInput,
   SourceControlCloneRepositoryResult,
   SourceControlDiscoveryResult,
-  SourceControlSetAutomergeInput,
-  SourceControlSetAutomergeResult,
-  SourceControlProviderError,
   SourceControlPublishRepositoryInput,
   SourceControlPublishRepositoryResult,
   SourceControlRepositoryError,
@@ -326,9 +316,6 @@ export const WS_METHODS = {
   vcsListRefs: "vcs.listRefs",
   vcsCreateWorktree: "vcs.createWorktree",
   vcsRemoveWorktree: "vcs.removeWorktree",
-  vcsArchiveWorktree: "vcs.archiveWorktree",
-  vcsUnarchiveWorktree: "vcs.unarchiveWorktree",
-  vcsListWorktreeArchives: "vcs.listWorktreeArchives",
   vcsCreateRef: "vcs.createRef",
   vcsSwitchRef: "vcs.switchRef",
   vcsInit: "vcs.init",
@@ -437,7 +424,6 @@ export const WS_METHODS = {
   sourceControlLookupRepository: "sourceControl.lookupRepository",
   sourceControlCloneRepository: "sourceControl.cloneRepository",
   sourceControlPublishRepository: "sourceControl.publishRepository",
-  sourceControlSetAutomerge: "sourceControl.setAutomerge",
   projectCloneStart: "projectClone.start",
   projectCloneCancel: "projectClone.cancel",
   projectCloneRetry: "projectClone.retry",
@@ -914,12 +900,6 @@ const WsProjectCloneStartRpc = Rpc.make(WS_METHODS.projectCloneStart, {
   ]),
 });
 
-export const WsSourceControlSetAutomergeRpc = Rpc.make(WS_METHODS.sourceControlSetAutomerge, {
-  payload: SourceControlSetAutomergeInput,
-  success: SourceControlSetAutomergeResult,
-  error: Schema.Union([SourceControlProviderError, EnvironmentAuthorizationError]),
-});
-
 const WsProjectCloneCancelRpc = Rpc.make(WS_METHODS.projectCloneCancel, {
   payload: ProjectCloneActionInput,
   success: ProjectCloneActionResult,
@@ -1092,24 +1072,6 @@ const WsVcsCreateWorktreeRpc = Rpc.make(WS_METHODS.vcsCreateWorktree, {
 const WsVcsRemoveWorktreeRpc = Rpc.make(WS_METHODS.vcsRemoveWorktree, {
   payload: VcsRemoveWorktreeInput,
   error: Schema.Union([GitCommandError, EnvironmentAuthorizationError]),
-});
-
-export const WsVcsArchiveWorktreeRpc = Rpc.make(WS_METHODS.vcsArchiveWorktree, {
-  payload: VcsArchiveWorktreeInput,
-  success: VcsArchiveWorktreeResult,
-  error: Schema.Union([WorktreeArchiveError, GitCommandError, EnvironmentAuthorizationError]),
-});
-
-export const WsVcsUnarchiveWorktreeRpc = Rpc.make(WS_METHODS.vcsUnarchiveWorktree, {
-  payload: VcsUnarchiveWorktreeInput,
-  success: VcsUnarchiveWorktreeResult,
-  error: Schema.Union([WorktreeArchiveError, GitCommandError, EnvironmentAuthorizationError]),
-});
-
-export const WsVcsListWorktreeArchivesRpc = Rpc.make(WS_METHODS.vcsListWorktreeArchives, {
-  payload: VcsListWorktreeArchivesInput,
-  success: VcsListWorktreeArchivesResult,
-  error: Schema.Union([WorktreeArchiveError, EnvironmentAuthorizationError]),
 });
 
 const WsVcsCreateRefRpc = Rpc.make(WS_METHODS.vcsCreateRef, {
@@ -1498,7 +1460,6 @@ export const WsRpcGroup = RpcGroup.make(
   WsSourceControlLookupRepositoryRpc,
   WsSourceControlCloneRepositoryRpc,
   WsSourceControlPublishRepositoryRpc,
-  WsSourceControlSetAutomergeRpc,
   WsProjectCloneStartRpc,
   WsProjectCloneCancelRpc,
   WsProjectCloneRetryRpc,
@@ -1527,9 +1488,6 @@ export const WsRpcGroup = RpcGroup.make(
   WsVcsListRefsRpc,
   WsVcsCreateWorktreeRpc,
   WsVcsRemoveWorktreeRpc,
-  WsVcsArchiveWorktreeRpc,
-  WsVcsUnarchiveWorktreeRpc,
-  WsVcsListWorktreeArchivesRpc,
   WsVcsCreateRefRpc,
   WsVcsSwitchRefRpc,
   WsVcsInitRpc,

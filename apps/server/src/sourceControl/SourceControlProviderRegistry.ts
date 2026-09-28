@@ -123,14 +123,6 @@ function unsupportedProvider(
         reference: SourceControlProvider.transportSafeSourceControlErrorValue(input.reference),
         detail: `No ${kind} source control provider is registered.`,
       }),
-    setChangeRequestAutomerge: (input) =>
-      new SourceControlProviderError({
-        provider: kind,
-        operation: "setChangeRequestAutomerge",
-        cwd: input.cwd,
-        reference: SourceControlProvider.transportSafeSourceControlErrorValue(input.reference),
-        detail: `No ${kind} source control provider is registered.`,
-      }),
   });
 }
 
@@ -199,11 +191,6 @@ function bindProviderContext(
       }),
     checkoutChangeRequest: (input) =>
       provider.checkoutChangeRequest({
-        ...input,
-        context: input.context ?? context,
-      }),
-    setChangeRequestAutomerge: (input) =>
-      provider.setChangeRequestAutomerge({
         ...input,
         context: input.context ?? context,
       }),

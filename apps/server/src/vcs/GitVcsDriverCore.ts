@@ -47,16 +47,10 @@ import {
 import { ServerConfig } from "../config.ts";
 
 const DEFAULT_TIMEOUT_MS = 30_000;
-// Matches the scratch names produced by removeWorktree's rename-aside step.
-const WORKTREE_TRASH_PATTERN = /^\..+\.removing-[0-9a-f]{8}$/;
 // The workspace file tree only surfaces directories that contain files, so the
 // `.context` scratch directory is seeded with an empty placeholder to keep it
 // visible.
 const WORKTREE_CONTEXT_PLACEHOLDER_FILE = "_.txt";
-
-class WorktreeTrashDeleteError extends Data.TaggedError("WorktreeTrashDeleteError")<{
-  readonly detail: string;
-}> {}
 const gitProcesses = Semaphore.makeUnsafe(8);
 // `git worktree add` checks out the full tree, so on large repositories it can
 // take well beyond the default 30s (e.g. a 375k-file repo takes ~40s on an idle
@@ -283,38 +277,6 @@ function paginateBranches(input: {
     nextCursor,
     totalCount,
   };
-}
-
-interface WorktreeListEntry {
-  readonly path: string;
-  readonly locked: boolean;
-}
-
-function parseWorktreeListEntries(stdout: string): WorktreeListEntry[] {
-  const entries: WorktreeListEntry[] = [];
-  let currentPath: string | null = null;
-  let currentLocked = false;
-
-  const flush = () => {
-    if (currentPath !== null) {
-      entries.push({ path: currentPath, locked: currentLocked });
-    }
-    currentPath = null;
-    currentLocked = false;
-  };
-
-  for (const field of stdout.split("\0")) {
-    if (field === "") {
-      flush();
-    } else if (field.startsWith("worktree ")) {
-      currentPath = field.slice("worktree ".length);
-    } else if (field === "locked" || field.startsWith("locked ")) {
-      currentLocked = true;
-    }
-  }
-  flush();
-
-  return entries;
 }
 
 function parseWorktreeBranchPaths(stdout: string): ReadonlyMap<string, string> {
@@ -3519,192 +3481,53 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       input.branch,
     ]);
 
-  // Deleting via a child `rm -rf` keeps a multi-gigabyte tree walk off the
-  // server's libuv threadpool (shared with WebSocket compression and the rest
-  // of its file I/O), and unlike `fs.rm` it keeps going past files it cannot
-  // unlink (macOS App Management denies unlinking inside .app bundles) instead
-  // of aborting the whole walk.
-  const deleteWorktreeTrashDirectory = Effect.fn("deleteWorktreeTrashDirectory")(function* (
-    targetPath: string,
-  ) {
-    const platform = yield* HostProcessPlatform;
-    if (platform === "win32") {
-      return yield* fileSystem.remove(targetPath, { recursive: true, force: true });
-    }
-    const { exitCode, stderr } = yield* Effect.scoped(
-      Effect.gen(function* () {
-        const child = yield* commandSpawner.spawn(
-          ChildProcess.make("rm", ["-rf", "--", targetPath], {
-            stdin: "ignore",
-            stdout: "ignore",
-          }),
-        );
-        const [stderrText, code] = yield* Effect.all(
-          [Stream.mkString(Stream.decodeText(child.stderr)), child.exitCode],
-          { concurrency: "unbounded" },
-        );
-        return { exitCode: code, stderr: stderrText };
-      }),
-    );
-    if (exitCode !== 0) {
-      return yield* new WorktreeTrashDeleteError({
-        detail: `rm exited with code ${exitCode}: ${stderr.trim() || "no stderr output"}`,
-      });
-    }
-  });
-
-  const sweepWorktreeTrash = Effect.fn("sweepWorktreeTrash")(function* (parentDir: string) {
-    const entries = yield* fileSystem
-      .readDirectory(parentDir)
-      .pipe(Effect.orElseSucceed((): ReadonlyArray<string> => []));
-    for (const entry of entries) {
-      if (!WORKTREE_TRASH_PATTERN.test(entry)) continue;
-      const target = path.join(parentDir, entry);
-      yield* deleteWorktreeTrashDirectory(target).pipe(
-        Effect.catch((error) =>
-          Effect.logWarning(
-            `GitVcsDriver.removeWorktree: could not delete worktree trash at ${target}`,
-            error,
-          ),
-        ),
-      );
-    }
-  });
-
   const removeWorktree: GitVcsDriver.GitVcsDriver["Service"]["removeWorktree"] = Effect.fn(
     "removeWorktree",
   )(function* (input) {
-    const operation = "GitVcsDriver.removeWorktree";
-    const removeArgs = input.force
-      ? ["worktree", "remove", "--force", input.path]
-      : ["worktree", "remove", input.path];
-    const runGitRemove = Effect.gen(function* () {
-      const result = yield* executeGitWithStableDiagnostics(operation, input.cwd, removeArgs, {
+    const args = ["worktree", "remove"];
+    if (input.force) {
+      args.push("--force");
+    }
+    args.push(input.path);
+    const result = yield* executeGitWithStableDiagnostics(
+      "GitVcsDriver.removeWorktree",
+      input.cwd,
+      args,
+      {
+        // Removing dependency-heavy worktrees is filesystem-bound and can take
+        // minutes, especially on Windows. Keep it bounded without interrupting
+        // git midway through cleanup.
         timeoutMs: WORKTREE_REMOVE_TIMEOUT_MS,
         allowNonZeroExit: true,
-      });
-      if (result.exitCode === 0) {
-        return;
-      }
-      // Threads can share a worktree path, and worktrees get removed or pruned
-      // outside the app, so a worktree that is already gone is a no-op rather
-      // than an error. Prune so no stale registration lingers to block a later
-      // `worktree add` at the same path.
-      const alreadyGone =
-        isMissingWorktreeStderr(result.stderr) &&
-        !(yield* fileSystem.exists(input.path).pipe(Effect.orElseSucceed(() => false)));
-      if (alreadyGone) {
-        yield* pruneWorktrees({ cwd: input.cwd });
-        return;
-      }
-      // Raw stderr stays out of both the wire error and the log (it can carry
-      // secrets); log bounded diagnostics so a genuine failure is visible
-      // server-side.
-      yield* Effect.logWarning(
-        `GitVcsDriver.removeWorktree: git worktree remove exited with code ${result.exitCode} for ${input.path} (stderr length ${result.stderr.length}).`,
-      );
-      return yield* new GitCommandError({
-        ...gitCommandContext({ operation, cwd: input.cwd, args: removeArgs }),
-        detail: "git worktree remove failed",
-        ...(result.exitCode === null ? {} : { exitCode: result.exitCode }),
-        stdoutLength: result.stdout.length,
-        stderrLength: result.stderr.length,
-      });
+      },
+    );
+    if (result.exitCode === 0) {
+      return;
+    }
+    // Threads can share a worktree path, and worktrees get removed or pruned
+    // outside the app, so a worktree that is already gone is a no-op rather
+    // than an error. Prune so no stale registration lingers to block a later
+    // `worktree add` at the same path.
+    const alreadyGone =
+      isMissingWorktreeStderr(result.stderr) &&
+      !(yield* fileSystem.exists(input.path).pipe(Effect.orElseSucceed(() => false)));
+    if (alreadyGone) {
+      yield* pruneWorktrees({ cwd: input.cwd });
+      return;
+    }
+    // Raw stderr stays out of both the wire error and the log (it can carry
+    // secrets); log bounded diagnostics so a genuine failure is visible
+    // server-side.
+    yield* Effect.logWarning(
+      `GitVcsDriver.removeWorktree: git worktree remove exited with code ${result.exitCode} for ${input.path} (stderr length ${result.stderr.length}).`,
+    );
+    return yield* new GitCommandError({
+      ...gitCommandContext({ operation: "GitVcsDriver.removeWorktree", cwd: input.cwd, args }),
+      detail: "git worktree remove failed",
+      ...(result.exitCode === null ? {} : { exitCode: result.exitCode }),
+      stdoutLength: result.stdout.length,
+      stderrLength: result.stderr.length,
     });
-
-    if (!input.force) {
-      // Without --force git refuses dirty worktrees before deleting anything,
-      // so the command finishes well within the timeout.
-      return yield* runGitRemove;
-    }
-
-    // `git worktree remove --force` deletes the worktree's files itself, which
-    // can take minutes for a tree with node_modules installed and gets killed
-    // mid-delete by the command timeout. Instead, rename the directory aside
-    // (instant), drop the registration with `git worktree prune`, and delete
-    // the renamed directory in a detached fiber.
-    const listResult = yield* executeGit(
-      operation,
-      input.cwd,
-      ["worktree", "list", "--porcelain", "-z"],
-      { timeoutMs: 15_000, fallbackErrorDetail: "git worktree list failed" },
-    );
-    const resolveOnDiskPath = (candidate: string) => {
-      const normalized = path.normalize(path.resolve(input.cwd, candidate));
-      return Effect.map(
-        fileSystem.realPath(normalized).pipe(
-          // If the directory itself is gone, resolving the parent still
-          // normalizes symlinked prefixes (e.g. /var -> /private/var).
-          Effect.catch(() =>
-            Effect.map(fileSystem.realPath(path.dirname(normalized)), (parent) =>
-              path.join(parent, path.basename(normalized)),
-            ),
-          ),
-          Effect.orElseSucceed(() => normalized),
-        ),
-        (real) => ({ normalized, real }),
-      );
-    };
-    const target = yield* resolveOnDiskPath(input.path);
-    const entries = parseWorktreeListEntries(listResult.stdout);
-    let matched: (WorktreeListEntry & { isMain: boolean; onDiskPath: string }) | null = null;
-    for (const [index, entry] of entries.entries()) {
-      const entryPath = yield* resolveOnDiskPath(entry.path);
-      if (entryPath.normalized === target.normalized || entryPath.real === target.real) {
-        matched = { ...entry, isMain: index === 0, onDiskPath: entryPath.real };
-        break;
-      }
-    }
-    if (matched === null) {
-      // Not a worktree git knows about - let git report its usual error.
-      return yield* runGitRemove;
-    }
-
-    const failure = (detail: string, cause?: unknown) =>
-      new GitCommandError({
-        ...gitCommandContext({ operation, cwd: input.cwd, args: removeArgs }),
-        detail,
-        ...(cause === undefined ? {} : { cause }),
-      });
-    if (matched.isMain) {
-      return yield* failure("Refusing to remove the main working tree.");
-    }
-    if (matched.locked) {
-      return yield* failure("Cannot remove a locked working tree; unlock it first.");
-    }
-
-    // The directory may already be gone (e.g. a previous removal was
-    // interrupted); pruning alone clears the stale registration then.
-    const worktreeDirExists = yield* fileSystem
-      .exists(matched.onDiskPath)
-      .pipe(Effect.orElseSucceed(() => false));
-    if (worktreeDirExists) {
-      const suffix = yield* crypto.randomUUIDv4.pipe(
-        Effect.mapError((cause) =>
-          failure("Could not generate a scratch name for worktree removal.", cause),
-        ),
-      );
-      const trashPath = path.join(
-        path.dirname(matched.onDiskPath),
-        `.${path.basename(matched.onDiskPath)}.removing-${suffix.slice(0, 8)}`,
-      );
-      yield* fileSystem
-        .rename(matched.onDiskPath, trashPath)
-        .pipe(
-          Effect.mapError((cause) =>
-            failure("Could not move the worktree directory aside for deletion.", cause),
-          ),
-        );
-    }
-
-    yield* pruneWorktrees({ cwd: input.cwd });
-
-    // The sweep picks up the directory renamed aside above along with any
-    // trash left behind by earlier removals whose deletes failed.
-    yield* sweepWorktreeTrash(path.dirname(matched.onDiskPath)).pipe(
-      Effect.ignoreCause({ log: true }),
-      Effect.forkDetach,
-    );
   });
 
   const pruneWorktrees: GitVcsDriver.GitVcsDriver["Service"]["pruneWorktrees"] = Effect.fn(

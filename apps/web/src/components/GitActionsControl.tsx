@@ -38,7 +38,6 @@ import {
   LockIcon,
   GlobeIcon,
 } from "lucide-react";
-import { PullRequestGlyph } from "./pullRequest/pullRequestIcons";
 import { Radio as RadioPrimitive } from "@base-ui/react/radio";
 import {
   AzureDevOpsIcon,
@@ -99,7 +98,6 @@ import { useOpenInPreferredEditor } from "~/editorPreferences";
 import {
   useGitStackedAction,
   useSourceControlActionRunning,
-  useSourceControlSetAutomergeAction,
   useSourceControlPublishRepositoryAction,
   useVcsInitAction,
   useVcsPullAction,
@@ -137,7 +135,6 @@ interface PendingDefaultBranchAction {
   commitMessage?: string;
   onConfirmed?: () => void;
   filePaths?: string[];
-  enableAutomergeAfter?: boolean;
 }
 
 type PublishProviderKind = Extract<
@@ -168,7 +165,6 @@ interface RunGitActionWithToastInput {
   featureBranch?: boolean;
   progressToastId?: GitActionToastId;
   filePaths?: string[];
-  enableAutomergeAfter?: boolean;
 }
 
 const GIT_STATUS_WINDOW_REFRESH_DEBOUNCE_MS = 250;
@@ -188,12 +184,7 @@ function requestVcsStatusRefresh(
   }
   void refresh({ environmentId, input: { cwd } });
 }
-const RUNNING_SOURCE_CONTROL_ACTIONS = [
-  "runStackedAction",
-  "pull",
-  "publishRepository",
-  "setAutomerge",
-] as const;
+const RUNNING_SOURCE_CONTROL_ACTIONS = ["runStackedAction", "pull", "publishRepository"] as const;
 
 const PUBLISH_PROVIDER_OPTIONS = [
   {
@@ -353,29 +344,6 @@ function getMenuActionDisabledReason({
     return "Push is currently unavailable.";
   }
 
-  if (item.id === "automerge") {
-    if (!hasOpenPr) {
-      return `No open ${terminology.singular} to automerge.`;
-    }
-    return "Automerge is currently unavailable.";
-  }
-
-  if (item.id === "commit_push_pr_automerge") {
-    if (hasOpenPr) {
-      return `An open ${terminology.singular} already exists.`;
-    }
-    if (!hasBranch) {
-      return `Detached HEAD: checkout a refName before creating a ${terminology.singular}.`;
-    }
-    if (!hasChanges && isBehind) {
-      return "Branch is behind upstream. Pull/rebase first.";
-    }
-    if (!hasChanges && !isAhead && (gitStatus.aheadOfDefaultCount ?? 0) === 0) {
-      return `No changes to commit or commits to include in a ${terminology.singular}.`;
-    }
-    return "This action is currently unavailable.";
-  }
-
   if (hasOpenPr) {
     return `View ${terminology.singular} is currently unavailable.`;
   }
@@ -410,7 +378,6 @@ function GitActionItemIcon({
 }) {
   if (icon === "commit") return <GitCommitIcon />;
   if (icon === "push") return <CloudUploadIcon />;
-  if (icon === "automerge") return <PullRequestGlyph.merged />;
   return <SourceControlIcon />;
 }
 
@@ -1144,7 +1111,6 @@ export default function GitActionsControl({
   const initAction = useVcsInitAction(sourceControlScope);
   const runImmediateGitAction = useGitStackedAction(sourceControlScope);
   const pullAction = useVcsPullAction(sourceControlScope);
-  const setAutomergeAction = useSourceControlSetAutomergeAction(sourceControlScope);
   const isGitActionRunning = useSourceControlActionRunning(
     sourceControlScope,
     RUNNING_SOURCE_CONTROL_ACTIONS,
@@ -1296,7 +1262,6 @@ export default function GitActionsControl({
       featureBranch = false,
       progressToastId,
       filePaths,
-      enableAutomergeAfter = false,
     }: RunGitActionWithToastInput) => {
       const actionStatus = statusOverride ?? gitStatusForActions;
       const actionBranch = actionStatus?.refName ?? null;
@@ -1326,7 +1291,6 @@ export default function GitActionsControl({
           ...(commitMessage ? { commitMessage } : {}),
           ...(onConfirmed ? { onConfirmed } : {}),
           ...(filePaths ? { filePaths } : {}),
-          ...(enableAutomergeAfter ? { enableAutomergeAfter } : {}),
         });
         return;
       }
@@ -1467,38 +1431,6 @@ export default function GitActionsControl({
       const actionResult = result.value;
       syncThreadBranchAfterGitAction(actionResult);
 
-      let automergeEnabled = false;
-      if (enableAutomergeAfter && actionResult.pr.number !== undefined) {
-        toastManager.update(resolvedProgressToastId, {
-          type: "loading",
-          title: "Enabling automerge...",
-          timeout: 0,
-          data: scopedToastData,
-        });
-        const automergeResult = await setAutomergeAction.run({
-          reference: String(actionResult.pr.number),
-          enabled: true,
-        });
-        if (automergeResult._tag === "Failure") {
-          if (!isAtomCommandInterrupted(automergeResult)) {
-            const automergeError = squashAtomCommandFailure(automergeResult);
-            toastManager.update(
-              resolvedProgressToastId,
-              stackedThreadToast({
-                type: "error",
-                title: `${changeRequestTerminology.shortLabel} created, but automerge failed`,
-                description:
-                  automergeError instanceof Error ? automergeError.message : "An error occurred.",
-                ...(scopedToastData !== undefined ? { data: scopedToastData } : {}),
-              }),
-            );
-            return;
-          }
-        } else {
-          automergeEnabled = true;
-        }
-      }
-
       const closeResultToast = () => {
         toastManager.close(resolvedProgressToastId);
       };
@@ -1532,17 +1464,13 @@ export default function GitActionsControl({
         ...scopedToastData,
         dismissAfterVisibleMs: 10_000,
       };
-      const successDescription = automergeEnabled
-        ? `${actionResult.toast.description} Automerge enabled.`
-        : actionResult.toast.description;
-
       if (toastActionProps) {
         toastManager.update(
           resolvedProgressToastId,
           stackedThreadToast({
             type: "success",
             title: actionResult.toast.title,
-            description: successDescription,
+            description: actionResult.toast.description,
             timeout: 0,
             actionProps: toastActionProps,
             data: successToastData,
@@ -1552,7 +1480,7 @@ export default function GitActionsControl({
         toastManager.update(resolvedProgressToastId, {
           type: "success",
           title: actionResult.toast.title,
-          description: successDescription,
+          description: actionResult.toast.description,
           timeout: 0,
           data: successToastData,
         });
@@ -1562,30 +1490,26 @@ export default function GitActionsControl({
 
   const continuePendingDefaultBranchAction = () => {
     if (!pendingDefaultBranchAction) return;
-    const { action, commitMessage, onConfirmed, filePaths, enableAutomergeAfter } =
-      pendingDefaultBranchAction;
+    const { action, commitMessage, onConfirmed, filePaths } = pendingDefaultBranchAction;
     setPendingDefaultBranchAction(null);
     void runGitActionWithToast({
       action,
       ...(commitMessage ? { commitMessage } : {}),
       ...(onConfirmed ? { onConfirmed } : {}),
       ...(filePaths ? { filePaths } : {}),
-      ...(enableAutomergeAfter ? { enableAutomergeAfter } : {}),
       skipDefaultBranchPrompt: true,
     });
   };
 
   const checkoutFeatureBranchAndContinuePendingAction = () => {
     if (!pendingDefaultBranchAction) return;
-    const { action, commitMessage, onConfirmed, filePaths, enableAutomergeAfter } =
-      pendingDefaultBranchAction;
+    const { action, commitMessage, onConfirmed, filePaths } = pendingDefaultBranchAction;
     setPendingDefaultBranchAction(null);
     void runGitActionWithToast({
       action,
       ...(commitMessage ? { commitMessage } : {}),
       ...(onConfirmed ? { onConfirmed } : {}),
       ...(filePaths ? { filePaths } : {}),
-      ...(enableAutomergeAfter ? { enableAutomergeAfter } : {}),
       featureBranch: true,
       skipDefaultBranchPrompt: true,
     });
@@ -1672,66 +1596,10 @@ export default function GitActionsControl({
     }
   };
 
-  const runToggleAutomerge = () => {
-    const pr = gitStatusForActions?.pr?.state === "open" ? gitStatusForActions.pr : null;
-    if (!pr) {
-      toastManager.add({
-        type: "error",
-        title: "No open pull request found.",
-        data: threadToastData,
-      });
-      return;
-    }
-    const enabled = pr.isAutoMergeEnabled !== true;
-    const toastId = toastManager.add({
-      type: "loading",
-      title: enabled ? "Enabling automerge..." : "Disabling automerge...",
-      timeout: 0,
-      data: threadToastData,
-    });
-    void (async () => {
-      const result = await setAutomergeAction.run({ reference: String(pr.number), enabled });
-      if (result._tag === "Failure") {
-        if (isAtomCommandInterrupted(result)) {
-          toastManager.close(toastId);
-          return;
-        }
-        const error = squashAtomCommandFailure(result);
-        toastManager.update(
-          toastId,
-          stackedThreadToast({
-            type: "error",
-            title: enabled ? "Automerge failed" : "Disabling automerge failed",
-            description: error instanceof Error ? error.message : "An error occurred.",
-            ...(threadToastData !== undefined ? { data: threadToastData } : {}),
-          }),
-        );
-        return;
-      }
-
-      toastManager.update(toastId, {
-        type: "success",
-        title: enabled ? "Automerge enabled" : "Automerge disabled",
-        description: enabled
-          ? `${changeRequestTerminology.shortLabel} #${pr.number} will merge automatically once its requirements are met.`
-          : `${changeRequestTerminology.shortLabel} #${pr.number} will no longer merge automatically.`,
-        data: threadToastData,
-      });
-    })();
-  };
-
   const openDialogForMenuItem = (item: GitActionMenuItem) => {
     if (item.disabled) return;
     if (item.kind === "open_pr") {
       void openExistingPr();
-      return;
-    }
-    if (item.kind === "toggle_automerge") {
-      runToggleAutomerge();
-      return;
-    }
-    if (item.kind === "run_action_with_automerge") {
-      void runGitActionWithToast({ action: "commit_push_pr", enableAutomergeAfter: true });
       return;
     }
     if (item.dialogAction === "push") {

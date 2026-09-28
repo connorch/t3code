@@ -556,7 +556,7 @@ describe("ClientSettings environment identification", () => {
 
 describe("ClientSettings sidebar", () => {
   it("defaults to the current sidebar", () => {
-    expect(decodeClientSettings({}).sidebarMode).toBe("default");
+    expect(decodeClientSettings({}).legacySidebarEnabled).toBe(false);
   });
 
   it("drops the retired sidebar v2 beta keys, resetting everyone to the default", () => {
@@ -564,7 +564,7 @@ describe("ClientSettings sidebar", () => {
       sidebarV2Enabled: false,
       sidebarV2ConfiguredByUser: true,
     });
-    expect(decoded.sidebarMode).toBe("default");
+    expect(decoded.legacySidebarEnabled).toBe(false);
     expect(decoded).not.toHaveProperty("sidebarV2Enabled");
     expect(decoded).not.toHaveProperty("sidebarV2ConfiguredByUser");
   });
@@ -579,29 +579,19 @@ describe("ClientSettings sidebar", () => {
     ).toBe(false);
   });
 
-  it("accepts each sidebar mode and rejects unknown ones", () => {
-    for (const mode of ["default", "legacy", "connor-1"] as const) {
-      expect(decodeClientSettings({ sidebarMode: mode }).sidebarMode).toBe(mode);
-      expect(decodeClientSettingsPatch({ sidebarMode: mode }).sidebarMode).toBe(mode);
-    }
-    expect(() => decodeClientSettings({ sidebarMode: "connor-4" })).toThrow();
-    expect(() => decodeClientSettingsPatch({ sidebarMode: "connor-4" })).toThrow();
-  });
-
-  it("migrates retired mode names instead of failing the blob", () => {
-    // A decode failure here would reset every client setting to defaults.
-    // "flat" was this fork's name for the sidebar that is now the default.
-    expect(decodeClientSettings({ sidebarMode: "flat" }).sidebarMode).toBe("default");
-    expect(decodeClientSettings({ sidebarMode: "connor-2" }).sidebarMode).toBe("connor-1");
-    expect(decodeClientSettings({ sidebarMode: "connor-3" }).sidebarMode).toBe("connor-1");
-  });
-
   it("drops the retired compact sidebar keys for users who opted in", () => {
     const stored = { compactSidebarEnabled: true, sidebarCompactThreadRows: true };
     const decoded = decodeClientSettings(stored);
     expect(decoded).not.toHaveProperty("compactSidebarEnabled");
     expect(decoded).not.toHaveProperty("sidebarCompactThreadRows");
     expect(decodeClientSettingsPatch(stored)).toEqual({});
+  });
+
+  it("preserves an explicit legacy sidebar opt-in", () => {
+    expect(decodeClientSettings({ legacySidebarEnabled: true }).legacySidebarEnabled).toBe(true);
+    expect(decodeClientSettingsPatch({ legacySidebarEnabled: true }).legacySidebarEnabled).toBe(
+      true,
+    );
   });
 
   it("keeps unpin confirmation opt-in and patchable", () => {

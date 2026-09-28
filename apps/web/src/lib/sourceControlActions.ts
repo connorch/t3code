@@ -4,7 +4,6 @@ export {
   usePreparePullRequestThreadAction,
   usePullRequestResolutionState as usePullRequestResolution,
   useSourceControlActionRunning,
-  useSourceControlSetAutomergeAction,
   useSourceControlPublishRepositoryAction,
   useVcsInitAction,
   useVcsPullAction,

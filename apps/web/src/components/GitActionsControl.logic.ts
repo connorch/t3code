@@ -10,16 +10,16 @@ import {
   type ChangeRequestTerminology,
 } from "../sourceControlPresentation";
 
-export type GitActionIconName = "commit" | "push" | "pr" | "automerge";
+export type GitActionIconName = "commit" | "push" | "pr";
 
 export type GitDialogAction = "commit" | "push" | "create_pr";
 
 export interface GitActionMenuItem {
-  id: "commit" | "push" | "pr" | "automerge" | "commit_push_pr_automerge";
+  id: "commit" | "push" | "pr";
   label: string;
   disabled: boolean;
   icon: GitActionIconName;
-  kind: "open_dialog" | "open_pr" | "toggle_automerge" | "run_action_with_automerge";
+  kind: "open_dialog" | "open_pr";
   dialogAction?: GitDialogAction;
 }
 
@@ -135,21 +135,6 @@ export function buildMenuItems(
     return [commitItem];
   }
 
-  // Automerge is only implemented through the GitHub CLI for now. On the
-  // default ref the PR-creating flow is not offered (the quick action drops
-  // the PR step there too), so hide both items unless a PR already exists.
-  const showAutomergeItems =
-    gitStatus.sourceControlProvider?.kind === "github" && (!gitStatus.isDefaultRef || hasOpenPr);
-  const canAutomerge = !isBusy && hasOpenPr;
-  const isAutomergeEnabled = hasOpenPr && gitStatus.pr?.isAutoMergeEnabled === true;
-  const canCommitPushPrAutomerge =
-    !isBusy &&
-    hasBranch &&
-    !hasOpenPr &&
-    !gitStatus.isDefaultRef &&
-    (hasChanges || (hasDefaultBranchDelta && !isBehind)) &&
-    (gitStatus.hasUpstream || canPushWithoutUpstream);
-
   return [
     commitItem,
     {
@@ -176,24 +161,6 @@ export function buildMenuItems(
           kind: "open_dialog",
           dialogAction: "create_pr",
         },
-    ...(showAutomergeItems
-      ? [
-          {
-            id: "automerge",
-            label: isAutomergeEnabled ? "Disable automerge" : "Automerge",
-            disabled: !canAutomerge,
-            icon: "automerge",
-            kind: "toggle_automerge",
-          } satisfies GitActionMenuItem,
-          {
-            id: "commit_push_pr_automerge",
-            label: `Commit, push, ${terminology.shortLabel}, & Automerge`,
-            disabled: !canCommitPushPrAutomerge,
-            icon: "automerge",
-            kind: "run_action_with_automerge",
-          } satisfies GitActionMenuItem,
-        ]
-      : []),
   ];
 }
 

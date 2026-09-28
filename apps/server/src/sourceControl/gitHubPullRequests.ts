@@ -18,7 +18,6 @@ export interface NormalizedGitHubPullRequestRecord {
   readonly closedAt?: string | null;
   readonly mergedAt?: string | null;
   readonly updatedAt: Option.Option<DateTime.Utc>;
-  readonly isAutoMergeEnabled?: boolean;
   readonly isCrossRepository?: boolean;
   readonly headRepositoryNameWithOwner?: string | null;
   readonly headRepositoryOwnerLogin?: string | null;
@@ -35,9 +34,6 @@ const GitHubPullRequestSchema = Schema.Struct({
   closedAt: Schema.optional(Schema.NullOr(Schema.String)),
   mergedAt: Schema.optional(Schema.NullOr(Schema.String)),
   updatedAt: Schema.optional(Schema.OptionFromNullOr(Schema.DateTimeUtcFromString)),
-  // Non-null when automerge is armed on the PR. Only the presence matters
-  // here, so the payload shape is left unconstrained.
-  autoMergeRequest: Schema.optional(Schema.NullOr(Schema.Unknown)),
   isCrossRepository: Schema.optional(Schema.Boolean),
   // gh < 2.47 exports headRepository as {id, name} only; nameWithOwner was
   // added later. Both fields stay optional so a version-drifted gh CLI can
@@ -106,9 +102,6 @@ function normalizeGitHubPullRequestRecord(
     closedAt: raw.closedAt ?? null,
     mergedAt: raw.mergedAt ?? null,
     updatedAt: raw.updatedAt ?? Option.none(),
-    ...(raw.autoMergeRequest !== undefined
-      ? { isAutoMergeEnabled: raw.autoMergeRequest !== null }
-      : {}),
     ...(typeof raw.isCrossRepository === "boolean"
       ? { isCrossRepository: raw.isCrossRepository }
       : {}),
