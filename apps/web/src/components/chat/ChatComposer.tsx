@@ -54,7 +54,6 @@ import { createModelSelection, normalizeModelSlug } from "@t3tools/shared/model"
 import { USAGE_LIMITS_COMMAND } from "@t3tools/shared/usageLimits";
 import {
   memo,
-  type CSSProperties,
   type ComponentProps,
   type ReactNode,
   useCallback,
@@ -981,17 +980,12 @@ import {
 } from "@t3tools/client-runtime/providerSkills";
 import { searchProviderSkills } from "../../providerSkillSearch";
 import { useMediaQuery } from "../../hooks/useMediaQuery";
-import { useResizableHeight } from "../../hooks/useResizableHeight";
 import { usePanelAnimationSettings } from "../../panelAnimations";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { serverEnvironment } from "../../state/server";
 import type { ReviewCommentContext } from "../../reviewCommentContext";
 
 const WORKSPACE_SNAPSHOT_RETRY_COOLDOWN_MS = 10_000;
-const COMPOSER_EDITOR_HEIGHT_STORAGE_KEY = "t3code:composer-editor-height";
-/** Matches the editor's auto min-height (min-h of 4.375rem). */
-const COMPOSER_EDITOR_MIN_HEIGHT = 70;
-const COMPOSER_EDITOR_MAX_HEIGHT = 800;
 
 const extendReplacementRangeForTrailingSpace = (
   text: string,
@@ -2239,40 +2233,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       window.removeEventListener("blur", onBlur);
     };
   }, []);
-
-  // ------------------------------------------------------------------
-  // Prompt editor height (drag handle on the composer's top edge)
-  // ------------------------------------------------------------------
-  const measureComposerEditorHeight = useCallback(
-    () =>
-      composerSurfaceRef.current?.querySelector<HTMLElement>('[data-testid="composer-editor"]')
-        ?.offsetHeight ?? null,
-    [],
-  );
-  const {
-    height: composerEditorHeight,
-    isResizing: isComposerEditorResizing,
-    handlers: composerResizeHandlers,
-  } = useResizableHeight({
-    storageKey: COMPOSER_EDITOR_HEIGHT_STORAGE_KEY,
-    minHeight: COMPOSER_EDITOR_MIN_HEIGHT,
-    maxHeight: COMPOSER_EDITOR_MAX_HEIGHT,
-    measureRenderedHeight: measureComposerEditorHeight,
-  });
-  // The dragged height only raises/lowers the editor's MAX height: the editor
-  // still auto-grows with content up to it, then scrolls. While the drag is in
-  // flight the min is pinned too, so the panel tracks the cursor directly.
-  // Cap against the viewport too, so a height persisted on a tall window
-  // can't swallow the messages timeline on a short one.
-  const composerEditorHeightStyle =
-    composerEditorHeight === null
-      ? undefined
-      : ({
-          ...(isComposerEditorResizing
-            ? { "--composer-editor-min-height": `min(${composerEditorHeight}px, 60svh)` }
-            : null),
-          "--composer-editor-max-height": `min(${composerEditorHeight}px, 60svh)`,
-        } as CSSProperties);
 
   // ------------------------------------------------------------------
   // Derived: composer send state
@@ -6439,27 +6399,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
               composerProviderState.composerSurfaceClassName,
             )}
           >
-            {!isComposerCollapsedMobile && (
-              <Tooltip>
-                <TooltipTrigger
-                  render={
-                    <div
-                      role="separator"
-                      aria-orientation="horizontal"
-                      aria-label="Resize prompt input"
-                      className="group/composer-resize absolute inset-x-0 -top-1 z-20 h-2.5 cursor-row-resize touch-none select-none"
-                      {...composerResizeHandlers}
-                    />
-                  }
-                >
-                  <span
-                    aria-hidden
-                    className="pointer-events-none absolute left-1/2 top-1/2 h-1 w-12 -translate-x-1/2 -translate-y-1/2 rounded-full bg-transparent transition-colors duration-150 group-hover/composer-resize:bg-border group-active/composer-resize:bg-primary/60"
-                  />
-                </TooltipTrigger>
-                <TooltipPopup side="top">Drag to resize, double-click to reset</TooltipPopup>
-              </Tooltip>
-            )}
             {showCollapsedMobilePromptRow ? (
               <div className="flex items-center justify-between gap-2 px-3 py-2">
                 <button
@@ -6887,7 +6826,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                 />
               ) : null}
               <div
-                style={isComposerResting ? undefined : composerEditorHeightStyle}
                 className={cn(
                   "relative",
                   isComposerResting && "flex min-w-0 items-center gap-1",
