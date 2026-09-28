@@ -186,7 +186,6 @@ interface PullRequestInfo extends OpenPrInfo, PullRequestHeadRemoteInfo {
   closedAt?: string | null;
   mergedAt?: string | null;
   updatedAt: Option.Option<DateTime.Utc>;
-  isAutoMergeEnabled?: boolean | undefined;
 }
 
 const pullRequestUpdatedAtDescOrder: Order.Order<PullRequestInfo> = Order.mapInput(
@@ -451,9 +450,6 @@ function toPullRequestInfo(summary: ChangeRequest): PullRequestInfo {
     closedAt: summary.closedAt ?? null,
     mergedAt: summary.mergedAt ?? null,
     updatedAt: summary.updatedAt,
-    ...(summary.isAutoMergeEnabled !== undefined
-      ? { isAutoMergeEnabled: summary.isAutoMergeEnabled }
-      : {}),
     ...(summary.isCrossRepository !== undefined
       ? { isCrossRepository: summary.isCrossRepository }
       : {}),
@@ -607,7 +603,6 @@ function toStatusPr(pr: PullRequestInfo): {
   baseRef: string;
   headRef: string;
   state: "open" | "closed" | "merged";
-  isAutoMergeEnabled?: boolean;
   isDraft?: boolean;
   updatedAt: string | null;
 } {
@@ -618,7 +613,6 @@ function toStatusPr(pr: PullRequestInfo): {
     baseRef: pr.baseRefName,
     headRef: pr.headRefName,
     state: pr.state,
-    ...(pr.isAutoMergeEnabled !== undefined ? { isAutoMergeEnabled: pr.isAutoMergeEnabled } : {}),
     ...(pr.isDraft === true ? { isDraft: true } : {}),
     updatedAt: Option.match(pr.updatedAt, {
       onNone: () => null,
@@ -1619,9 +1613,6 @@ export const make = Effect.gen(function* () {
           ...firstPullRequest,
           state: "open",
           updatedAt: Option.none(),
-          ...(firstPullRequest.isAutoMergeEnabled !== undefined
-            ? { isAutoMergeEnabled: firstPullRequest.isAutoMergeEnabled }
-            : {}),
         } satisfies PullRequestInfo;
       }
     }

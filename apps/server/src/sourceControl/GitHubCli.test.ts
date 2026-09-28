@@ -321,7 +321,7 @@ describe("GitHubCli.layer", () => {
           "view",
           "#42",
           "--json",
-          "number,title,url,baseRefName,headRefName,state,isDraft,mergedAt,closedAt,updatedAt,autoMergeRequest,isCrossRepository,headRepository,headRepositoryOwner",
+          "number,title,url,baseRefName,headRefName,state,isDraft,mergedAt,closedAt,updatedAt,isCrossRepository,headRepository,headRepositoryOwner",
         ],
         cwd: "/repo",
         timeoutMs: 30_000,
@@ -565,86 +565,6 @@ describe("GitHubCli.layer", () => {
         url: "https://github.com/octocat/codething-mvp",
         sshUrl: "git@github.com:octocat/codething-mvp.git",
       });
-    }).pipe(Effect.provide(layer)),
-  );
-
-  it.effect("enables automerge with a merge strategy the repository allows", () =>
-    Effect.gen(function* () {
-      mockRun.mockReturnValueOnce(Effect.succeed(processOutput("squash\n")));
-      mockRun.mockReturnValueOnce(Effect.succeed(processOutput("")));
-
-      const gh = yield* GitHubCli.GitHubCli;
-      yield* gh.setAutoMergePullRequest({
-        cwd: "/repo",
-        reference: "42",
-        enabled: true,
-      });
-
-      expect(mockRun).toHaveBeenCalledTimes(2);
-      expect(mockRun).toHaveBeenNthCalledWith(1, {
-        operation: "GitHubCli.execute",
-        command: "gh",
-        args: [
-          "repo",
-          "view",
-          "--json",
-          "squashMergeAllowed,mergeCommitAllowed,rebaseMergeAllowed",
-          "--jq",
-          'if .squashMergeAllowed then "squash" elif .mergeCommitAllowed then "merge" else "rebase" end',
-        ],
-        cwd: "/repo",
-        timeoutMs: 30_000,
-      });
-      expect(mockRun).toHaveBeenNthCalledWith(2, {
-        operation: "GitHubCli.execute",
-        command: "gh",
-        args: ["pr", "merge", "42", "--auto", "--squash"],
-        cwd: "/repo",
-        timeoutMs: 30_000,
-      });
-    }).pipe(Effect.provide(layer)),
-  );
-
-  it.effect("disables automerge without a merge strategy lookup", () =>
-    Effect.gen(function* () {
-      mockRun.mockReturnValueOnce(Effect.succeed(processOutput("")));
-
-      const gh = yield* GitHubCli.GitHubCli;
-      yield* gh.setAutoMergePullRequest({
-        cwd: "/repo",
-        reference: "42",
-        enabled: false,
-      });
-
-      expect(mockRun).toHaveBeenCalledTimes(1);
-      expect(mockRun).toHaveBeenCalledWith({
-        operation: "GitHubCli.execute",
-        command: "gh",
-        args: ["pr", "merge", "42", "--disable-auto"],
-        cwd: "/repo",
-        timeoutMs: 30_000,
-      });
-    }).pipe(Effect.provide(layer)),
-  );
-
-  it.effect("falls back to squash when the merge strategy lookup is unrecognized", () =>
-    Effect.gen(function* () {
-      mockRun.mockReturnValueOnce(Effect.succeed(processOutput("garbled\n")));
-      mockRun.mockReturnValueOnce(Effect.succeed(processOutput("")));
-
-      const gh = yield* GitHubCli.GitHubCli;
-      yield* gh.setAutoMergePullRequest({
-        cwd: "/repo",
-        reference: "42",
-        enabled: true,
-      });
-
-      expect(mockRun).toHaveBeenNthCalledWith(
-        2,
-        expect.objectContaining({
-          args: ["pr", "merge", "42", "--auto", "--squash"],
-        }),
-      );
     }).pipe(Effect.provide(layer)),
   );
 

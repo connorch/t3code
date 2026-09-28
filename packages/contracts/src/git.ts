@@ -244,8 +244,6 @@ const VcsStatusChangeRequest = Schema.Struct({
   baseRef: TrimmedNonEmptyStringSchema,
   headRef: TrimmedNonEmptyStringSchema,
   state: VcsStatusChangeRequestState,
-  // Only reported for providers that expose automerge state (GitHub).
-  isAutoMergeEnabled: Schema.optional(Schema.Boolean),
   /** Optional for compatibility with older servers and providers. */
   isDraft: Schema.optional(Schema.Boolean),
   /**

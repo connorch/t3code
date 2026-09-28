@@ -273,9 +273,6 @@ import {
   SourceControlCloneRepositoryInput,
   SourceControlCloneRepositoryResult,
   SourceControlDiscoveryResult,
-  SourceControlSetAutomergeInput,
-  SourceControlSetAutomergeResult,
-  SourceControlProviderError,
   SourceControlPublishRepositoryInput,
   SourceControlPublishRepositoryResult,
   SourceControlRepositoryError,
@@ -437,7 +434,6 @@ export const WS_METHODS = {
   sourceControlLookupRepository: "sourceControl.lookupRepository",
   sourceControlCloneRepository: "sourceControl.cloneRepository",
   sourceControlPublishRepository: "sourceControl.publishRepository",
-  sourceControlSetAutomerge: "sourceControl.setAutomerge",
   projectCloneStart: "projectClone.start",
   projectCloneCancel: "projectClone.cancel",
   projectCloneRetry: "projectClone.retry",
@@ -912,12 +908,6 @@ const WsProjectCloneStartRpc = Rpc.make(WS_METHODS.projectCloneStart, {
     OrchestrationDispatchCommandError,
     EnvironmentAuthorizationError,
   ]),
-});
-
-export const WsSourceControlSetAutomergeRpc = Rpc.make(WS_METHODS.sourceControlSetAutomerge, {
-  payload: SourceControlSetAutomergeInput,
-  success: SourceControlSetAutomergeResult,
-  error: Schema.Union([SourceControlProviderError, EnvironmentAuthorizationError]),
 });
 
 const WsProjectCloneCancelRpc = Rpc.make(WS_METHODS.projectCloneCancel, {
@@ -1498,7 +1488,6 @@ export const WsRpcGroup = RpcGroup.make(
   WsSourceControlLookupRepositoryRpc,
   WsSourceControlCloneRepositoryRpc,
   WsSourceControlPublishRepositoryRpc,
-  WsSourceControlSetAutomergeRpc,
   WsProjectCloneStartRpc,
   WsProjectCloneCancelRpc,
   WsProjectCloneRetryRpc,

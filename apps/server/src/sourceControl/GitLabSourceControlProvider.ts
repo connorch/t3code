@@ -304,13 +304,5 @@ export const make = Effect.gen(function* () {
             }),
         ),
       ),
-    setChangeRequestAutomerge: (input) =>
-      new SourceControlProviderError({
-        provider: "gitlab",
-        operation: "setChangeRequestAutomerge",
-        cwd: input.cwd,
-        reference: SourceControlProvider.transportSafeSourceControlErrorValue(input.reference),
-        detail: "Automerge is not supported for GitLab yet.",
-      }),
   });
 });

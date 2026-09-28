@@ -232,13 +232,5 @@ export const make = Effect.gen(function* () {
               }),
           ),
         ),
-    setChangeRequestAutomerge: (input) =>
-      new SourceControlProviderError({
-        provider: "azure-devops",
-        operation: "setChangeRequestAutomerge",
-        cwd: input.cwd,
-        reference: SourceControlProvider.transportSafeSourceControlErrorValue(input.reference),
-        detail: "Automerge is not supported for Azure DevOps yet.",
-      }),
   });
 });

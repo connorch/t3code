@@ -11,9 +11,6 @@ import {
   type SourceControlCloneRepositoryInput,
   type SourceControlCloneRepositoryResult,
   type SourceControlCloneProtocol,
-  type SourceControlSetAutomergeInput,
-  type SourceControlSetAutomergeResult,
-  type SourceControlProviderError,
   type SourceControlProviderKind,
   type SourceControlPublishRepositoryInput,
   type SourceControlPublishRepositoryResult,
@@ -57,9 +54,6 @@ export class SourceControlRepositoryService extends Context.Service<
     readonly publishRepository: (
       input: SourceControlPublishRepositoryInput,
     ) => Effect.Effect<SourceControlPublishRepositoryResult, SourceControlRepositoryError>;
-    readonly setAutomerge: (
-      input: SourceControlSetAutomergeInput,
-    ) => Effect.Effect<SourceControlSetAutomergeResult, SourceControlProviderError>;
   }
 >()("t3/sourceControl/SourceControlRepositoryService") {}
 
@@ -448,18 +442,6 @@ export const make = Effect.gen(function* () {
     },
   );
 
-  const setAutomerge = Effect.fn("SourceControlRepositoryService.setAutomerge")(function* (
-    input: SourceControlSetAutomergeInput,
-  ) {
-    const provider = yield* providers.resolve({ cwd: input.cwd });
-    yield* provider.setChangeRequestAutomerge({
-      cwd: input.cwd,
-      reference: input.reference,
-      enabled: input.enabled,
-    });
-    return { reference: input.reference, enabled: input.enabled };
-  });
-
   return SourceControlRepositoryService.of({
     lookupRepository: (input) =>
       lookupRepository(input).pipe(mapRepositoryError("lookupRepository", input.provider)),
@@ -473,7 +455,6 @@ export const make = Effect.gen(function* () {
       discardClone(destinationPath).pipe(mapRepositoryError("discardClone", "unknown")),
     publishRepository: (input) =>
       publishRepository(input).pipe(mapRepositoryError("publishRepository", input.provider)),
-    setAutomerge,
   });
 });
 

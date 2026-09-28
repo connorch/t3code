@@ -228,15 +228,6 @@ export const make = Effect.gen(function* () {
   });
   return SourceControlProvider.SourceControlProvider.of({
     kind: "forgejo",
-    setChangeRequestAutomerge: (input) =>
-      new SourceControlProviderError({
-        provider: "forgejo",
-        operation: "setChangeRequestAutomerge",
-        cwd: input.cwd,
-        reference: SourceControlProvider.transportSafeSourceControlErrorValue(input.reference),
-        detail: "Automerge is not supported for Forgejo yet.",
-      }),
-
     listChangeRequests: (input) =>
       Effect.gen(function* () {
         const repo = yield* cli.resolveRepository(input);

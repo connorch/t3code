@@ -102,7 +102,6 @@ export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.sourceControlLookupRepository]: AuthOrchestrationReadScope,
   [WS_METHODS.sourceControlCloneRepository]: AuthOrchestrationOperateScope,
   [WS_METHODS.sourceControlPublishRepository]: AuthOrchestrationOperateScope,
-  [WS_METHODS.sourceControlSetAutomerge]: AuthOrchestrationOperateScope,
   [WS_METHODS.projectCloneStart]: AuthOrchestrationOperateScope,
   [WS_METHODS.projectCloneCancel]: AuthOrchestrationOperateScope,
   [WS_METHODS.projectCloneRetry]: AuthOrchestrationOperateScope,
