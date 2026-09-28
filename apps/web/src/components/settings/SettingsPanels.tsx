@@ -42,7 +42,6 @@ import {
   type ResponseStreamingMode,
   MIN_TERMINAL_FONT_SIZE,
   type QuitConfirmationMode,
-  type SidebarMode,
 } from "@t3tools/contracts/settings";
 import { resolveServerBackgroundActivitySettings } from "@t3tools/shared/backgroundActivitySettings";
 import { createModelSelection } from "@t3tools/shared/model";
@@ -1966,25 +1965,6 @@ function FontFamilySettingsRow({
 
 const AUTO_SETTLE_DEFAULT_DAYS = DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleAfterDays ?? 3;
 
-const SIDEBAR_MODE_OPTIONS: Record<SidebarMode, { label: string; description: string }> = {
-  default: {
-    label: "Default",
-    description:
-      "One flat thread list in creation order. Active work renders as rich cards; settled threads collapse to compact rows.",
-  },
-  legacy: {
-    label: "Legacy",
-    description: "The original sidebar: projects with nested thread trees.",
-  },
-  "connor-1": {
-    label: "Connor Mode",
-    description:
-      "Projects with threads grouped by git worktree as cards. One worktree open at a time (accordion); clicking a worktree jumps to its most recent thread.",
-  },
-};
-
-const SIDEBAR_MODE_ORDER: readonly SidebarMode[] = ["default", "connor-1", "legacy"];
-
 function AutoSettleDaysInput({
   value,
   onCommit,
@@ -2102,26 +2082,18 @@ function LegacyFeaturesSection() {
             />
             <SettingsRow
               {...searchableSetting("legacy-sidebar")}
-              description={SIDEBAR_MODE_OPTIONS[settings.sidebarMode].description}
+              description="Restore per-project thread trees instead of the default flat sidebar."
               control={
-                <Select
-                  value={settings.sidebarMode}
-                  onValueChange={(value) => updateSettings({ sidebarMode: value as SidebarMode })}
-                >
-                  <SelectTrigger className="w-full sm:w-56" aria-label="Sidebar mode">
-                    <SelectValue>{SIDEBAR_MODE_OPTIONS[settings.sidebarMode].label}</SelectValue>
-                  </SelectTrigger>
-                  <SelectPopup align="end" alignItemWithTrigger={false}>
-                    {SIDEBAR_MODE_ORDER.map((mode) => (
-                      <SelectItem key={mode} hideIndicator value={mode}>
-                        {SIDEBAR_MODE_OPTIONS[mode].label}
-                      </SelectItem>
-                    ))}
-                  </SelectPopup>
-                </Select>
+                <Switch
+                  checked={settings.legacySidebarEnabled}
+                  onCheckedChange={(checked) =>
+                    updateSettings({ legacySidebarEnabled: Boolean(checked) })
+                  }
+                  aria-label="Sidebar (legacy)"
+                />
               }
             />
-            {settings.sidebarMode === "default" ? (
+            {!settings.legacySidebarEnabled ? (
               <SettingsRow
                 {...searchableSetting("sidebar-worktree-cards")}
                 description="Keeps the threads of one worktree together as a card. Drag a row to move the whole card; hold before dragging to move one thread."
@@ -2366,7 +2338,6 @@ export function GeneralSettingsPanel() {
             />
           }
         />
-
         <SettingsRow
           {...searchableSetting("time-format")}
           description="System default follows your browser or OS clock preference."

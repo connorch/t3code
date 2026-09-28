@@ -1,4 +1,4 @@
-import { ArrowLeftIcon, ChartNoAxesColumnIcon, HistoryIcon, SettingsIcon } from "lucide-react";
+import { ArrowLeftIcon, ChartNoAxesColumnIcon, SettingsIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { memo, useCallback } from "react";
 import { Link, useCanGoBack, useLocation, useNavigate } from "@tanstack/react-router";
@@ -129,12 +129,7 @@ function SidebarUtilityItem({
   );
 }
 
-export const SidebarUtilityMenu = memo(function SidebarUtilityMenu({
-  showHistory = false,
-}: {
-  /** Shows the archived-worktree History entry (Connor sidebar only). */
-  showHistory?: boolean;
-}) {
+export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
   const navigate = useNavigate();
   const canGoBack = useCanGoBack();
   const { isMobile, setOpenMobile } = useSidebar();
@@ -171,10 +166,6 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu({
   const handleSettingsClick = useCallback(() => {
     closeMobileSidebar();
     void navigate({ to: "/settings" });
-  }, [closeMobileSidebar, navigate]);
-  const handleHistoryClick = useCallback(() => {
-    closeMobileSidebar();
-    void navigate({ to: "/history" });
   }, [closeMobileSidebar, navigate]);
 
   const handleUsageClick = useCallback(() => {
@@ -221,13 +212,6 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu({
             label="Usage"
             onClick={handleUsageClick}
           />
-          {showHistory ? (
-            <SidebarUtilityItem
-              icon={<HistoryIcon />}
-              label="History"
-              onClick={handleHistoryClick}
-            />
-          ) : null}
         </>
       )}
       <SidebarUpdatePill />
@@ -235,18 +219,13 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu({
   );
 });
 
-export const SidebarChromeFooter = memo(function SidebarChromeFooter({
-  showHistory = false,
-}: {
-  /** Shows the archived-worktree History entry (Connor sidebar only). */
-  showHistory?: boolean;
-}) {
+export const SidebarChromeFooter = memo(function SidebarChromeFooter() {
   return (
     <SidebarFooter>
       <SidebarThreadUndoNotice />
       <SidebarProviderUpdatePill />
       <SidebarUpdateArchitectureWarning />
-      <SidebarUtilityMenu showHistory={showHistory} />
+      <SidebarUtilityMenu />
     </SidebarFooter>
   );
 });

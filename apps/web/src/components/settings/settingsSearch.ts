@@ -478,10 +478,8 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["composer meter usage tokens circle old"],
   },
   {
-    // Id kept from upstream's legacy-only toggle so its `searchableSetting`
-    // anchor and existing deep links still land on the row.
     id: "legacy-sidebar",
-    title: "Sidebar mode",
+    title: "Sidebar (legacy)",
     to: "/settings/general",
     searchTerms: ["project thread tree old flat list"],
   },

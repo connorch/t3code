@@ -21,9 +21,7 @@ import {
   type ClientSettingsPatch,
   type ClientSettings,
   DEFAULT_CLIENT_SETTINGS,
-  DEFAULT_SIDEBAR_MODE,
   type EnvironmentIdentificationMode,
-  type SidebarMode,
   type UnifiedSettings,
 } from "@t3tools/contracts/settings";
 import { safeErrorLogAttributes } from "@t3tools/client-runtime/errors";
@@ -367,32 +365,29 @@ export function useEnvironmentIdentificationMode(): EnvironmentIdentificationMod
 }
 
 /**
- * Which sidebar renders (Settings → General → Legacy features). Every consumer
- * must read through this rather than `settings.sidebarMode` directly, for the
- * hydration guard below.
+ * Whether the legacy sidebar (Settings → General → Legacy features) replaces
+ * the default one.
  *
  * Held at the default sidebar until client settings hydrate: the pre-hydration
  * snapshot is just the schema defaults, so resolving against it could mount one
  * sidebar and then swap it out once persisted settings land — remounting the
- * whole tree for everyone instead of only for those on a non-default mode.
+ * whole tree for everyone instead of only for legacy opt-ins.
  */
-export function useSidebarMode(): SidebarMode {
+export function useLegacySidebarEnabled(): boolean {
   const settingsHydrated = useClientSettingsHydrated();
-  const sidebarMode = useClientSettingsValue().sidebarMode;
-  return settingsHydrated ? sidebarMode : DEFAULT_SIDEBAR_MODE;
+  const legacySidebarEnabled = useClientSettingsValue().legacySidebarEnabled;
+  return settingsHydrated && legacySidebarEnabled;
 }
 
 /**
  * Whether the default sidebar gathers a worktree's threads into one card
- * (see docs/user/thread-sidebar.md "Worktree cards"). Off in other sidebar
- * modes, so pin fan-out never fires where no card is drawn.
+ * (see docs/user/thread-sidebar.md "Worktree cards"). Off in the legacy
+ * sidebar, so pin fan-out never fires where no card is drawn.
  */
 export function useSidebarWorktreeCardsEnabled(): boolean {
   const settingsHydrated = useClientSettingsHydrated();
   const settings = useClientSettingsValue();
-  return (
-    settingsHydrated && settings.sidebarMode === "default" && settings.sidebarGroupWorktreeThreads
-  );
+  return settingsHydrated && !settings.legacySidebarEnabled && settings.sidebarGroupWorktreeThreads;
 }
 
 /** Read current settings for one environment, merged with client-local preferences. */
