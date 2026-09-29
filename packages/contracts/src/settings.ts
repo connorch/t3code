@@ -52,6 +52,25 @@ export const DiffLayout = Schema.Literals(["stacked", "split"]);
 export type DiffLayout = typeof DiffLayout.Type;
 const DEFAULT_DIFF_LAYOUT: DiffLayout = "stacked";
 
+/** Which files a diff opens folded: every file, none, or only those ticked off as viewed. */
+export const DiffFilesCollapsed = Schema.Literals(["all", "none", "viewed"]);
+export type DiffFilesCollapsed = typeof DiffFilesCollapsed.Type;
+const DEFAULT_DIFF_FILES_COLLAPSED: DiffFilesCollapsed = "all";
+
+// Older settings files saved a boolean. It decodes to the equivalent mode and
+// encodes back as the canonical string value.
+const LegacyDiffFilesCollapsed = Schema.Boolean.pipe(
+  Schema.decodeTo(
+    DiffFilesCollapsed,
+    SchemaTransformation.transform({
+      decode: (collapsed): DiffFilesCollapsed => (collapsed ? "all" : "none"),
+      encode: (mode) => mode === "all",
+    }),
+  ),
+);
+
+const DiffFilesCollapsedSetting = Schema.Union([DiffFilesCollapsed, LegacyDiffFilesCollapsed]);
+
 export const SidebarProjectSortOrder = Schema.Literals(["updated_at", "created_at", "manual"]);
 export type SidebarProjectSortOrder = typeof SidebarProjectSortOrder.Type;
 export const DEFAULT_SIDEBAR_PROJECT_SORT_ORDER: SidebarProjectSortOrder = "updated_at";
@@ -381,7 +400,9 @@ export const ClientSettingsSchema = Schema.Struct({
   dismissedProviderUpdateNotificationKeys: Schema.Array(TrimmedNonEmptyString).pipe(
     Schema.withDecodingDefault(Effect.succeed([])),
   ),
-  diffFilesCollapsed: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+  diffFilesCollapsed: DiffFilesCollapsedSetting.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_DIFF_FILES_COLLAPSED)),
+  ),
   diffIgnoreWhitespace: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   diffLayout: DiffLayout.pipe(Schema.withDecodingDefault(Effect.succeed(DEFAULT_DIFF_LAYOUT))),
   environmentIdentificationMode: EnvironmentIdentificationMode.pipe(
@@ -1609,7 +1630,7 @@ export const ClientSettingsPatch = Schema.Struct({
   confirmThreadArchive: Schema.optionalKey(Schema.Boolean),
   confirmThreadDelete: Schema.optionalKey(Schema.Boolean),
   confirmThreadUnpin: Schema.optionalKey(Schema.Boolean),
-  diffFilesCollapsed: Schema.optionalKey(Schema.Boolean),
+  diffFilesCollapsed: Schema.optionalKey(DiffFilesCollapsed),
   diffIgnoreWhitespace: Schema.optionalKey(Schema.Boolean),
   diffLayout: Schema.optionalKey(DiffLayout),
   environmentIdentificationMode: Schema.optionalKey(EnvironmentIdentificationMode),

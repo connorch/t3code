@@ -333,7 +333,7 @@ export const SETTINGS_SEARCH_ITEMS = [
     id: "default-diff-file-state",
     title: "Default diff file state",
     to: "/settings/general",
-    searchTerms: ["collapsed expanded collapse expand files pull request pr code tab"],
+    searchTerms: ["collapsed expanded collapse expand viewed files pull request pr code tab"],
   },
   {
     id: "diff-layout",

@@ -8,6 +8,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   type BackgroundActivityProfile,
   type DesktopUpdateChannel,
+  DiffFilesCollapsed,
   ProviderDriverKind,
   type ProviderInstanceId,
   type ScopedThreadRef,
@@ -208,6 +209,13 @@ const DIFF_LAYOUT_LABELS: Record<DiffLayout, string> = {
   stacked: "Stacked",
   split: "Split",
 };
+
+const DIFF_FILES_COLLAPSED_LABELS: Record<DiffFilesCollapsed, string> = {
+  none: "Expanded",
+  all: "Collapsed",
+  viewed: "Collapse viewed (pull requests)",
+};
+const isDiffFilesCollapsed = Schema.is(DiffFilesCollapsed);
 
 const QUIT_CONFIRMATION_MODE_LABELS: Record<QuitConfirmationMode, string> = {
   direct: "Direct",
@@ -2518,7 +2526,7 @@ export function GeneralSettingsPanel() {
         />
         <SettingsRow
           {...searchableSetting("default-diff-file-state")}
-          description="Start with files expanded or collapsed when opening diffs or a pull request's Code tab."
+          description="Start with files expanded or collapsed when opening diffs or a pull request's Code tab. Collapse viewed applies to pull requests and opens only the files not yet ticked off."
           resetAction={
             settings.diffFilesCollapsed !== DEFAULT_UNIFIED_SETTINGS.diffFilesCollapsed ? (
               <SettingResetButton
@@ -2533,10 +2541,10 @@ export function GeneralSettingsPanel() {
           }
           control={
             <Select
-              value={settings.diffFilesCollapsed ? "collapsed" : "expanded"}
+              value={settings.diffFilesCollapsed}
               onValueChange={(value) => {
-                if (value === "expanded" || value === "collapsed") {
-                  updateSettings({ diffFilesCollapsed: value === "collapsed" });
+                if (isDiffFilesCollapsed(value)) {
+                  updateSettings({ diffFilesCollapsed: value });
                 }
               }}
             >
@@ -2545,15 +2553,16 @@ export function GeneralSettingsPanel() {
                 className="w-full sm:w-40"
                 aria-label="Default diff file state"
               >
-                <SelectValue>{settings.diffFilesCollapsed ? "Collapsed" : "Expanded"}</SelectValue>
+                <SelectValue>
+                  {DIFF_FILES_COLLAPSED_LABELS[settings.diffFilesCollapsed]}
+                </SelectValue>
               </SelectTrigger>
               <SelectPopup align="end" alignItemWithTrigger={false}>
-                <SelectItem hideIndicator value="expanded">
-                  Expanded
-                </SelectItem>
-                <SelectItem hideIndicator value="collapsed">
-                  Collapsed
-                </SelectItem>
+                {DiffFilesCollapsed.literals.map((mode) => (
+                  <SelectItem key={mode} hideIndicator value={mode}>
+                    {DIFF_FILES_COLLAPSED_LABELS[mode]}
+                  </SelectItem>
+                ))}
               </SelectPopup>
             </Select>
           }
