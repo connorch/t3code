@@ -271,16 +271,28 @@ describe("ClientSettings notifications", () => {
 });
 
 describe("ClientSettings default diff file state", () => {
-  it("keeps files collapsed when existing settings omit the preference", () => {
-    expect(decodeClientSettings({}).diffFilesCollapsed).toBe(true);
+  it("folds every file when existing settings omit the preference", () => {
+    expect(decodeClientSettings({}).diffFilesCollapsed).toBe("all");
   });
 
-  it.each([true, false])("preserves a saved collapsed preference of %s", (diffFilesCollapsed) => {
-    const settings = decodeClientSettings({ diffFilesCollapsed });
-    expect(encodeClientSettings(settings).diffFilesCollapsed).toBe(diffFilesCollapsed);
-    expect(decodeClientSettingsPatch({ diffFilesCollapsed }).diffFilesCollapsed).toBe(
-      diffFilesCollapsed,
-    );
+  it.each(["all", "none", "viewed"] as const)(
+    "preserves a saved mode of %s",
+    (diffFilesCollapsed) => {
+      const settings = decodeClientSettings({ diffFilesCollapsed });
+      expect(encodeClientSettings(settings).diffFilesCollapsed).toBe(diffFilesCollapsed);
+      expect(decodeClientSettingsPatch({ diffFilesCollapsed }).diffFilesCollapsed).toBe(
+        diffFilesCollapsed,
+      );
+    },
+  );
+
+  it.each([
+    [true, "all"],
+    [false, "none"],
+  ] as const)("reads the legacy boolean %s as %s and saves it back as the mode", (legacy, mode) => {
+    const settings = decodeClientSettings({ diffFilesCollapsed: legacy });
+    expect(settings.diffFilesCollapsed).toBe(mode);
+    expect(encodeClientSettings(settings).diffFilesCollapsed).toBe(mode);
   });
 });
 

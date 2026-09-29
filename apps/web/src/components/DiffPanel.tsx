@@ -458,9 +458,10 @@ export default function DiffPanel({
     () => renderableFiles.map(getCachedFileEntry),
     [renderableFiles],
   );
+  // Thread diffs carry no viewed marks, so the `viewed` mode folds nothing here.
   const defaultCollapsedDiffFileKeys = useMemo(
     () =>
-      settings.diffFilesCollapsed
+      settings.diffFilesCollapsed === "all"
         ? new Set(renderableFileEntries.map((file) => file.fileKey))
         : EMPTY_COLLAPSED_DIFF_FILE_KEYS,
     [renderableFileEntries, settings.diffFilesCollapsed],
