@@ -10,6 +10,7 @@
 
 import * as Migrator from "effect/unstable/sql/Migrator";
 import * as Effect from "effect/Effect";
+import * as SqlClient from "effect/unstable/sql/SqlClient";
 
 // Import all migrations statically
 import Migration0001 from "./Migrations/001_OrchestrationEvents.ts";
@@ -165,9 +166,28 @@ export interface RunMigrationsOptions {
  *
  * @returns Effect containing array of executed migrations
  */
+/**
+ * Fork repair: databases that ran the fork's removed WorktreeArchives
+ * migration carry it in the ledger as slot 54, which upstream later used for
+ * ProjectionThreadsAutoSettleDisabledAt. The Migrator skips by id alone, so the
+ * stale row is dropped first and upstream's 54 (idempotent DDL) runs in its
+ * place. The empty worktree_archives table is left alone.
+ */
+const releaseForkMigrationSlots = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient;
+  const ledger = yield* sql<{ readonly name: string }>`
+    SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'effect_sql_migrations'
+  `;
+  if (ledger.length === 0) return;
+  yield* sql`
+    DELETE FROM effect_sql_migrations WHERE migration_id = 54 AND name = 'WorktreeArchives'
+  `;
+});
+
 export const runMigrations = Effect.fn("runMigrations")(function* ({
   toMigrationInclusive,
 }: RunMigrationsOptions = {}) {
+  yield* releaseForkMigrationSlots;
   const executedMigrations = yield* run({ loader: makeMigrationLoader(toMigrationInclusive) });
   const migrations = executedMigrations.map(([id, name]) => `${id}_${name}`);
   yield* migrations.length === 0
