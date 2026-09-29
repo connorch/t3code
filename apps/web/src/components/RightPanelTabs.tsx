@@ -74,6 +74,7 @@ import { ScrollArea } from "~/components/ui/scroll-area";
 import { PanelTabCloseButton } from "~/components/ui/panel-tab-close-button";
 import { faviconUrlForOrigin } from "~/lib/favicon";
 import { useTheme } from "~/hooks/useTheme";
+import { useDeviceState } from "~/state/device";
 import {
   newestPullRequestSummary,
   pullRequestEnvironment,
@@ -320,7 +321,7 @@ function ActionIcon({ action, className }: { action: SurfaceAction; className: s
       {action.badgeCount > 0 ? (
         <span
           aria-hidden
-          className="absolute -top-1.5 -right-2 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-info px-1 text-[9px] font-semibold tabular-nums text-white"
+          className="absolute -top-1.5 -right-2 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-info px-1 text-3xs font-semibold tabular-nums text-white"
         >
           {action.badgeCount}
         </span>
@@ -353,9 +354,11 @@ function GhostSurfaceTab({ action }: { action: SurfaceAction }) {
           </button>
         }
       />
-      <TooltipPopup side="bottom" className="flex items-center gap-1.5">
-        <span>{tooltip.label}</span>
-        {tooltip.shortcut ? <Kbd>{tooltip.shortcut}</Kbd> : null}
+      <TooltipPopup side="bottom">
+        <span className="flex items-center gap-1.5">
+          <span>{tooltip.label}</span>
+          {tooltip.shortcut ? <Kbd>{tooltip.shortcut}</Kbd> : null}
+        </span>
       </TooltipPopup>
     </Tooltip>
   );
@@ -993,10 +996,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
           // controls a few pixels higher and the cluster jumps on open.
           props.mode === "inline" && !props.layoutControls ? "pr-28" : "pr-3",
           ownsDesktopTitleBar && "drag-region",
-          ownsDesktopTitleBar &&
-            (props.layoutControls
-              ? "wco:pr-[var(--workspace-native-controls-inset)]"
-              : "wco:pr-[calc(var(--workspace-native-controls-inset)+6rem)]"),
+          ownsDesktopTitleBar && "wco:pr-(--workspace-native-controls-inset)",
           props.mode === "inline" && props.maximized && COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS,
         )}
         data-right-panel-tabbar
@@ -1297,6 +1297,10 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
           </div>
         ) : null}
         {props.layoutControls}
+        {ownsDesktopTitleBar && !props.layoutControls ? (
+          // Keeps the tabs clear of the window controls when the layout toggles live elsewhere.
+          <span aria-hidden className="hidden w-24 shrink-0 wco:block" />
+        ) : null}
         {ownsDesktopTitleBar ? (
           <span
             aria-hidden
@@ -1314,5 +1318,29 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
         )}
       </div>
     </PreviewPanelShell>
+  );
+}
+
+function DeviceTabTooltip(props: {
+  surface: Extract<RightPanelSurface, { kind: "device" }>;
+  environmentId: EnvironmentId | null;
+  title: string;
+}) {
+  const target = props.surface.target;
+  const { state } = useDeviceState(target ? props.environmentId : null);
+  const device = target
+    ? state.devices.find((entry) => entry.hostId === target.hostId && entry.id === target.deviceId)
+    : undefined;
+  const host = target ? state.hosts.find((entry) => entry.id === target.hostId) : undefined;
+  return (
+    <div className="flex flex-col gap-0.5">
+      <span>{props.title}</span>
+      {target ? (
+        <span className="text-muted-foreground">
+          {host?.label ?? "Device host"} ·{" "}
+          {device?.version ?? (target.platform === "ios" ? "iOS" : "Android")}
+        </span>
+      ) : null}
+    </div>
   );
 }

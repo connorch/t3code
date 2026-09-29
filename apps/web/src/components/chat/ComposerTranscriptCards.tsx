@@ -31,7 +31,7 @@ export function ComposerTranscriptCards({
             <p className="max-w-80 truncate text-foreground text-xs font-medium">
               {transcript.title}
             </p>
-            <p className="mt-1 text-secondary-label text-[10px]">
+            <p className="mt-1 text-secondary-label text-3xs">
               Transcript · {transcript.messageCount}{" "}
               {transcript.messageCount === 1 ? "message" : "messages"}
             </p>
