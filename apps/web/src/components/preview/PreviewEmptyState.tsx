@@ -1,13 +1,19 @@
 import type { EnvironmentId, ScopedThreadRef } from "@t3tools/contracts";
 import { Globe, History, RadioTower } from "lucide-react";
+import { useMemo, useState } from "react";
 
 import type { BrowserHistoryEntry } from "~/browserHistoryStore";
 import { Empty, EmptyDescription, EmptyMedia, EmptyTitle } from "~/components/ui/empty";
+import { Toggle, ToggleGroup } from "~/components/ui/toggle-group";
+import { useThreadShell, useThreadShellsForProjectRefs } from "~/state/entities";
 import { DiscoveryList } from "../ui/discovery-list";
 
 import { PreviewLocalServerCard } from "./PreviewLocalServerCard";
 import { PreviewRecentUrlCard } from "./PreviewRecentUrlCard";
+import { selectWorktreeServers } from "./previewEmptyStateLogic";
 import { useDiscoveredLocalServers } from "./useDiscoveredLocalServers";
+
+type ServerScope = "worktree" | "all";
 
 interface Props {
   threadRef: ScopedThreadRef;
@@ -30,6 +36,21 @@ export function PreviewEmptyState({
     environmentId,
     configuredUrls,
   });
+  const activeThread = useThreadShell(threadRef);
+  const activeProjectId = activeThread?.projectId ?? null;
+  const projectRefs = useMemo(
+    () => (activeProjectId ? [{ environmentId, projectId: activeProjectId }] : []),
+    [activeProjectId, environmentId],
+  );
+  const projectThreads = useThreadShellsForProjectRefs(projectRefs);
+  const worktreeServers = useMemo(
+    () => selectWorktreeServers({ servers, activeThread, projectThreads }),
+    [servers, activeThread, projectThreads],
+  );
+  const [scope, setScope] = useState<ServerScope>("worktree");
+  // The toggle only appears when it filters something out.
+  const canScope = worktreeServers.length > 0 && worktreeServers.length < servers.length;
+  const visibleServers = canScope && scope === "worktree" ? worktreeServers : servers;
   const recents = recentEntries.filter((entry) => URL.canParse(entry.url)).slice(0, 8);
 
   if (servers.length === 0 && recents.length === 0) {
@@ -74,9 +95,23 @@ export function PreviewEmptyState({
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <RadioTower className="size-4 shrink-0" />
               <h2 className="font-medium">Local servers</h2>
+              {canScope ? (
+                <ToggleGroup
+                  aria-label="Local server scope"
+                  className="ml-auto"
+                  value={[scope]}
+                  onValueChange={(value) => {
+                    const next = value[0];
+                    if (next === "worktree" || next === "all") setScope(next);
+                  }}
+                >
+                  <Toggle value="worktree">This worktree {worktreeServers.length}</Toggle>
+                  <Toggle value="all">All {servers.length}</Toggle>
+                </ToggleGroup>
+              ) : null}
             </div>
             <DiscoveryList>
-              {servers.map((server) => (
+              {visibleServers.map((server) => (
                 <PreviewLocalServerCard
                   key={`${server.host}:${server.port}`}
                   threadRef={threadRef}

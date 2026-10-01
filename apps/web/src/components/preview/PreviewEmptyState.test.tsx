@@ -18,6 +18,10 @@ const mocks = vi.hoisted(() => ({
 vi.mock("./useDiscoveredLocalServers", () => ({
   useDiscoveredLocalServers: () => mocks.servers,
 }));
+vi.mock("~/state/entities", () => ({
+  useThreadShell: () => null,
+  useThreadShellsForProjectRefs: () => [],
+}));
 vi.mock("./PreviewFaviconIcon", () => ({
   PreviewFaviconIcon: () => <span data-favicon-icon />,
 }));
