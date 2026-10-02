@@ -2,12 +2,7 @@ import { DndContext, PointerSensor, useSensor, useSensors } from "@dnd-kit/core"
 import { restrictToFirstScrollableAncestor, restrictToHorizontalAxis } from "@dnd-kit/modifiers";
 import { SortableContext, horizontalListSortingStrategy, useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import {
-  emptyGhostTooltip,
-  iconGhostsForOpenSurfaces,
-  shouldClaimSurfaceLauncherKey,
-  type LaunchableSurfaceKind,
-} from "./RightPanelTabs.logic";
+import { emptyGhostTooltip, shouldClaimSurfaceLauncherKey } from "./RightPanelTabs.logic";
 import { pullRequestHostOf, type SourceControlProviderKind } from "@t3tools/contracts";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
 import { useProjects, useServerConfigs, useThreadShells } from "~/state/entities";
@@ -296,16 +291,11 @@ function SurfaceMenuItem(props: {
   return <DisabledReasonTooltip reason={props.disabledReason} trigger={item} />;
 }
 
-/** One launchable surface, shared by the ghost tabs, icon ghosts, and the narrow-panel + menu. */
+/** One launchable surface, shared by the empty-panel ghost tabs and the + menu. */
 interface SurfaceAction {
   label: string;
-  /** Tooltip and aria-label for the icon-only ghost, e.g. "New terminal". */
-  addLabel: string;
   description: string;
   icon: LucideIcon;
-  surfaceKind: LaunchableSurfaceKind;
-  /** Multi-instance surfaces keep their ghost while instances are open; singletons drop it. */
-  multiInstance: boolean;
   shortcut: string;
   available: boolean;
   disabledReason: string | null;
@@ -359,35 +349,6 @@ function GhostSurfaceTab({ action }: { action: SurfaceAction }) {
           <span>{tooltip.label}</span>
           {tooltip.shortcut ? <Kbd>{tooltip.shortcut}</Kbd> : null}
         </span>
-      </TooltipPopup>
-    </Tooltip>
-  );
-}
-
-/** Icon-only ghost shown after real tabs so surfaces stay one click away in the same spot. */
-function GhostSurfaceIconButton({ action }: { action: SurfaceAction }) {
-  return (
-    <Tooltip>
-      <TooltipTrigger
-        render={
-          <button
-            type="button"
-            onClick={action.available ? action.onClick : undefined}
-            aria-disabled={!action.available}
-            aria-label={action.addLabel}
-            className={cn(
-              "flex size-6 shrink-0 items-center justify-center rounded-md border border-border/70 text-muted-foreground",
-              action.available
-                ? "cursor-pointer hover:bg-accent/60 hover:text-foreground"
-                : "cursor-not-allowed opacity-40",
-            )}
-          >
-            <ActionIcon action={action} className="size-3" />
-          </button>
-        }
-      />
-      <TooltipPopup side="bottom">
-        {action.available ? action.addLabel : action.disabledReason}
       </TooltipPopup>
     </Tooltip>
   );
@@ -685,10 +646,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
 
   const addSurfaceActions: SurfaceAction[] = [
     {
-      surfaceKind: "terminal",
-      addLabel: "New terminal",
       description: "New terminal",
-      multiInstance: true,
       badgeCount: 0,
       label: "Terminal",
       icon: TerminalSquare,
@@ -698,10 +656,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
       onClick: props.onAddTerminal,
     },
     {
-      surfaceKind: "files",
-      addLabel: "Open files",
       description: "Open files",
-      multiInstance: false,
       badgeCount: 0,
       label: "Files",
       icon: Files,
@@ -711,10 +666,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
       onClick: props.onAddFiles,
     },
     {
-      surfaceKind: "diff",
-      addLabel: "Open diff",
       description: "Open diff",
-      multiInstance: false,
       badgeCount: 0,
       label: "Diff",
       icon: FileDiff,
@@ -724,10 +676,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
       onClick: props.onAddDiff,
     },
     {
-      surfaceKind: "pull-request",
-      addLabel: "Open pull request",
       description: "Open pull request",
-      multiInstance: false,
       badgeCount: 0,
       label: "Pull request",
       icon: PullRequestGlyph.pullRequest,
@@ -737,10 +686,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
       onClick: props.onAddPullRequest,
     },
     {
-      surfaceKind: "preview",
-      addLabel: "New browser",
       description: "New browser",
-      multiInstance: true,
       badgeCount: 0,
       label: "Browser",
       icon: Globe2,
@@ -750,10 +696,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
       onClick: props.onAddBrowser,
     },
     {
-      surfaceKind: "pull-requests",
-      addLabel: "Open linked pull requests",
       description: "Open linked pull requests",
-      multiInstance: false,
       badgeCount: 0,
       label: "Linked pull requests",
       icon: PullRequestGlyph.link,
@@ -763,10 +706,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
       onClick: props.onAddPullRequests,
     },
     {
-      surfaceKind: "agents",
-      addLabel: "Open agents",
       description: "Open agents",
-      multiInstance: false,
       badgeCount: props.liveAgentCount,
       label: "Agents",
       icon: Bot,
@@ -776,10 +716,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
       onClick: props.onAddAgents,
     },
     {
-      surfaceKind: "device",
-      addLabel: "Open device",
       description: "Open device",
-      multiInstance: true,
       badgeCount: 0,
       label: "Device",
       icon: Smartphone,
@@ -794,10 +731,6 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
   );
   const isLauncherVisible = props.surfaces.length === 0;
-  const ghostIconActions = iconGhostsForOpenSurfaces(
-    addSurfaceActions,
-    props.surfaces.map((surface) => surface.kind),
-  );
   const launcherActionsRef = useRef(addSurfaceActions);
   launcherActionsRef.current = addSurfaceActions;
   useEffect(() => {
@@ -1156,11 +1089,6 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
                 })}
               </SortableContext>
             </DndContext>
-            {!isLauncherVisible
-              ? ghostIconActions.map((action) => (
-                  <GhostSurfaceIconButton key={action.label} action={action} />
-                ))
-              : null}
             {props.surfaces.length > 0 || browserProfiles.length > 1 ? (
               <Menu open={addSurfaceMenuOpen} onOpenChange={setAddSurfaceMenuOpen}>
                 <MenuTrigger

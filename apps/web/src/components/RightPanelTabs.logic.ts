@@ -1,5 +1,3 @@
-import type { RightPanelKind } from "~/rightPanelStore";
-
 /** Overlays that must win over the launcher's letter shortcuts. */
 export const LAUNCHER_SHORTCUT_BLOCKING_LAYERS = [
   '[data-slot="dialog-popup"]',
@@ -11,27 +9,6 @@ export const LAUNCHER_SHORTCUT_BLOCKING_LAYERS = [
   '[data-slot="combobox-popup"]',
   '[data-slot="autocomplete-popup"]',
 ].join(",");
-
-export type LaunchableSurfaceKind = Extract<
-  RightPanelKind,
-  "preview" | "terminal" | "files" | "diff" | "pull-request" | "pull-requests" | "agents" | "device"
->;
-
-export interface LaunchableSurface {
-  surfaceKind: LaunchableSurfaceKind;
-  /** Multi-instance surfaces keep their icon ghost while instances are open; singletons drop it. */
-  multiInstance: boolean;
-}
-
-/** Icon ghosts stay one click away; singletons disappear once that surface is already a tab. */
-export function iconGhostsForOpenSurfaces<T extends LaunchableSurface>(
-  actions: readonly T[],
-  openKinds: readonly RightPanelKind[],
-): T[] {
-  return actions.filter(
-    (action) => action.multiInstance || !openKinds.includes(action.surfaceKind),
-  );
-}
 
 export function emptyGhostTooltip(action: {
   available: boolean;
