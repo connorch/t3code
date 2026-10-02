@@ -5418,6 +5418,20 @@ export default function ChatView(props: ChatViewProps) {
       void legendListRef.current?.scrollToEnd?.({ animated });
     });
   }, []);
+  // Holds a message the user just sent near the top of the viewport so its turn
+  // reads downward from it. ChatView drives the streaming scrolls itself while
+  // this "anchoring-new-turn" mode lasts; see releaseChatTimelineAnchor.
+  const anchorSentMessage = useCallback((threadRef: ScopedThreadRef, messageId: MessageId) => {
+    isAtEndRef.current = true;
+    timelineScrollModeRef.current = "anchoring-new-turn";
+    liveFollowUserScrollGenerationRef.current = anchorUserScrollGenerationRef.current;
+    setTimelineLiveFollowEnabled(true);
+    pendingTimelineAnchorRef.current = messageId;
+    activeTimelineAnchorIndexRef.current = null;
+    showScrollDebouncer.current.cancel();
+    setShowScrollToBottom(false);
+    setTimelineAnchor({ threadKey: scopedThreadKey(threadRef), messageId });
+  }, []);
   useLayoutEffect(() => {
     if (timelineScrollModeRef.current !== "anchoring-new-turn") {
       return;
@@ -8235,22 +8249,16 @@ export default function ChatView(props: ChatViewProps) {
             ...(attachment.source ? { source: attachment.source } : {}),
           },
     );
+    // The first message of a thread always anchors so the opening turn reads
+    // from the top; later sends only do when the user opted in.
     const shouldAnchorFirstMessage =
       activeThread.latestTurn === null &&
       !timelineMessages.some((message) => message.role === "user");
-    if (shouldAnchorFirstMessage) {
-      isAtEndRef.current = true;
-      timelineScrollModeRef.current = "anchoring-new-turn";
-      liveFollowUserScrollGenerationRef.current = anchorUserScrollGenerationRef.current;
-      setTimelineLiveFollowEnabled(true);
-      pendingTimelineAnchorRef.current = messageIdForSend;
-      activeTimelineAnchorIndexRef.current = null;
-      showScrollDebouncer.current.cancel();
-      setShowScrollToBottom(false);
-      setTimelineAnchor({
-        threadKey: scopedThreadKey(scopeThreadRef(activeThread.environmentId, threadIdForSend)),
-        messageId: messageIdForSend,
-      });
+    if (shouldAnchorFirstMessage || settings.chatTurnAnchor === "top") {
+      anchorSentMessage(
+        scopeThreadRef(activeThread.environmentId, threadIdForSend),
+        messageIdForSend,
+      );
     } else {
       scrollToEnd();
     }
@@ -8957,7 +8965,11 @@ export default function ChatView(props: ChatViewProps) {
       beginLocalDispatch({ preparingWorktree: false });
       setThreadError(threadIdForSend, null);
 
-      scrollToEnd();
+      if (settings.chatTurnAnchor === "top") {
+        anchorSentMessage(scopeThreadRef(environmentId, threadIdForSend), messageIdForSend);
+      } else {
+        scrollToEnd();
+      }
 
       setOptimisticUserMessages((existing) => [
         ...existing,
@@ -9063,9 +9075,11 @@ export default function ChatView(props: ChatViewProps) {
       persistThreadSettingsForNextTurn,
       resetLocalDispatch,
       runtimeMode,
+      anchorSentMessage,
       scrollToEnd,
       setComposerDraftInteractionMode,
       setThreadError,
+      settings.chatTurnAnchor,
       startThreadTurn,
       environmentId,
       composerRef,

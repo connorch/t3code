@@ -49,6 +49,14 @@ the oldest queued message now. Change `thread.steerQueuedMessage` in
 **Settings → Keybindings** to use another shortcut. It leaves the current draft
 in the composer and waits if the agent needs an approval or an answer.
 
+## Where a sent message lands
+
+By default the conversation stays pinned to the latest message. In
+**Settings → General → Sent message position**, choose **Top** to hold each
+message you send at the top of the view while the reply streams in below it.
+Messages that queue behind a running turn keep the current position. On mobile,
+the same choice is **Settings → Thread behavior → Sent messages at top**.
+
 ## Queue messages offline on mobile
 
 Mobile keeps local copies of draft attachments, so you can preview them and queue

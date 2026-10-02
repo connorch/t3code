@@ -91,6 +91,7 @@ describe("resolveThreadFeedSubmissionAnchor", () => {
         hasStartedTurn: false,
         hasUserMessage: false,
         queuedMessageCount: 0,
+        turnAnchor: "bottom",
       }),
     ).toBe("first-message");
   });
@@ -103,6 +104,7 @@ describe("resolveThreadFeedSubmissionAnchor", () => {
         hasStartedTurn: false,
         hasUserMessage: false,
         queuedMessageCount: 1,
+        turnAnchor: "bottom",
       }),
     ).toBe("first-message");
   });
@@ -115,6 +117,7 @@ describe("resolveThreadFeedSubmissionAnchor", () => {
         hasStartedTurn: false,
         hasUserMessage: false,
         queuedMessageCount: 0,
+        turnAnchor: "bottom",
       }),
     ).toBe("first-message");
   });
@@ -127,6 +130,7 @@ describe("resolveThreadFeedSubmissionAnchor", () => {
         hasStartedTurn: false,
         hasUserMessage: true,
         queuedMessageCount: 0,
+        turnAnchor: "bottom",
       }),
     ).toBeNull();
   });
@@ -139,8 +143,35 @@ describe("resolveThreadFeedSubmissionAnchor", () => {
         hasStartedTurn: true,
         hasUserMessage: false,
         queuedMessageCount: 0,
+        turnAnchor: "bottom",
       }),
     ).toBeNull();
+  });
+
+  it("re-anchors every direct send when messages anchor at the top", () => {
+    expect(
+      resolveThreadFeedSubmissionAnchor({
+        currentAnchorMessageId: "first-message",
+        submittedMessageId: "second-message",
+        hasStartedTurn: true,
+        hasUserMessage: true,
+        queuedMessageCount: 0,
+        turnAnchor: "top",
+      }),
+    ).toBe("second-message");
+  });
+
+  it("keeps the current framing for a send that queues behind others", () => {
+    expect(
+      resolveThreadFeedSubmissionAnchor({
+        currentAnchorMessageId: "first-message",
+        submittedMessageId: "second-message",
+        hasStartedTurn: true,
+        hasUserMessage: true,
+        queuedMessageCount: 1,
+        turnAnchor: "top",
+      }),
+    ).toBe("first-message");
   });
 });
 
