@@ -1465,8 +1465,10 @@ const noopHeldAttachment = (_attachment: ChatFileAttachment) => {};
  * message near the top while its turn streams, and it keeps LegendList's
  * maintainScrollAtEnd switched off for as long as it is installed — ChatView
  * drives the streaming scrolls itself, but only in "anchoring-new-turn" mode.
- * So every return to the live edge has to release the anchor too, otherwise the
- * timeline settles into "following-end" with nothing following anything.
+ * So a return to the live edge must either resume that mode (the anchor is
+ * still installed, so the live edge is the anchored framing) or release the
+ * anchor, otherwise the timeline settles into "following-end" with nothing
+ * following anything.
  */
 function releaseChatTimelineAnchor<T extends { readonly messageId: MessageId | null }>(
   current: T,
@@ -5321,6 +5323,8 @@ export default function ChatView(props: ChatViewProps) {
   const liveFollowUserScrollGenerationRef = useRef<number | null>(0);
   // Manual navigation stops live-follow without removing anchored end space.
   // Collapsing that space during a gesture clamps the viewport back to the end.
+  // The anchor index stays too: the anchor is still installed, and returning
+  // to the live edge resumes the anchored framing from it.
   const cancelTimelineLiveFollowForUserNavigation = useCallback(() => {
     cancelPositionRestoreRef.current?.();
     anchorUserScrollGenerationRef.current += 1;
@@ -5330,7 +5334,6 @@ export default function ChatView(props: ChatViewProps) {
     pendingTimelineAnchorRef.current = null;
     positionedTimelineAnchorRef.current = null;
     settledTimelineAnchorRef.current = null;
-    activeTimelineAnchorIndexRef.current = null;
   }, []);
   const cancelTimelineLiveFollowForUserNavigationRef = useRef(
     cancelTimelineLiveFollowForUserNavigation,
@@ -5400,24 +5403,35 @@ export default function ChatView(props: ChatViewProps) {
     pageScrollControllerRef.current?.releaseActiveKey();
   }, []);
   // Live-follow stays active after send/thread-open until an actual list scroll
-  // gesture opts out.
-  const scrollToEnd = useCallback((animated = false) => {
-    cancelPositionRestoreRef.current?.();
-    isAtEndRef.current = true;
-    timelineScrollModeRef.current = "following-end";
-    liveFollowUserScrollGenerationRef.current = anchorUserScrollGenerationRef.current;
-    setTimelineLiveFollowEnabled(true);
-    pendingTimelineAnchorRef.current = null;
-    positionedTimelineAnchorRef.current = null;
-    settledTimelineAnchorRef.current = null;
-    activeTimelineAnchorIndexRef.current = null;
-    showScrollDebouncer.current.cancel();
-    setShowScrollToBottom(false);
-    setTimelineAnchor(releaseChatTimelineAnchor);
-    requestAnimationFrame(() => {
-      void legendListRef.current?.scrollToEnd?.({ animated });
-    });
-  }, []);
+  // gesture opts out. `keepAnchor` is for returning to the live edge after such
+  // a gesture: an installed send-time anchor is resumed rather than released,
+  // since releasing collapses its end space and drops the sent message from
+  // the top of the viewport to the bottom. Sends and tool activity never keep
+  // it; the previous turn's framing is over.
+  const scrollToEnd = useCallback(
+    (animated = false, options?: { readonly keepAnchor?: boolean }) => {
+      cancelPositionRestoreRef.current?.();
+      const resumeAnchor =
+        options?.keepAnchor === true && activeTimelineAnchorIndexRef.current !== null;
+      isAtEndRef.current = true;
+      timelineScrollModeRef.current = resumeAnchor ? "anchoring-new-turn" : "following-end";
+      liveFollowUserScrollGenerationRef.current = anchorUserScrollGenerationRef.current;
+      setTimelineLiveFollowEnabled(true);
+      pendingTimelineAnchorRef.current = null;
+      positionedTimelineAnchorRef.current = null;
+      settledTimelineAnchorRef.current = null;
+      if (!resumeAnchor) {
+        activeTimelineAnchorIndexRef.current = null;
+        setTimelineAnchor(releaseChatTimelineAnchor);
+      }
+      showScrollDebouncer.current.cancel();
+      setShowScrollToBottom(false);
+      requestAnimationFrame(() => {
+        void legendListRef.current?.scrollToEnd?.({ animated });
+      });
+    },
+    [],
+  );
   // Holds a message the user just sent near the top of the viewport so its turn
   // reads downward from it. ChatView drives the streaming scrolls itself while
   // this "anchoring-new-turn" mode lasts; see releaseChatTimelineAnchor.
@@ -5612,6 +5626,10 @@ export default function ChatView(props: ChatViewProps) {
   }, [activeThread?.id, isTimelineAtLogicalEnd, timelineRealContentOverflowsViewport]);
 
   const onTimelineAnchorReady = useCallback((messageId: MessageId, anchorIndex: number) => {
+    // The index is bookkeeping for the installed anchor and stays current in
+    // every mode: rows can be prepended while the user reads history, and a
+    // later return to the live edge resumes the framing from this index.
+    activeTimelineAnchorIndexRef.current = anchorIndex;
     // Anchored-end space can be remeasured when the turn completes. Once the
     // user has scrolled away (or returned to ordinary end-following), that
     // remeasurement must not restart the send-time anchor positioning.
@@ -5621,7 +5639,6 @@ export default function ChatView(props: ChatViewProps) {
     if (pendingTimelineAnchorRef.current === messageId) {
       pendingTimelineAnchorRef.current = null;
     }
-    activeTimelineAnchorIndexRef.current = anchorIndex;
     if (positionedTimelineAnchorRef.current === messageId) {
       return;
     }
@@ -5676,14 +5693,18 @@ export default function ChatView(props: ChatViewProps) {
       if (timelineScrollIntentRef.current === "toward-end") {
         composerRef.current?.restoreAfterTimelineReachedEnd();
       }
-      timelineScrollModeRef.current = "following-end";
+      // Reachable only once manual navigation has already broken follow. The
+      // user scrolled back to the live edge and expects the stream to stick
+      // to it again, exactly like the scroll-to-bottom pill: resume the
+      // anchored framing while the send-time anchor is still installed,
+      // otherwise fall back to ordinary end-following.
+      const resumeAnchor = activeTimelineAnchorIndexRef.current !== null;
+      timelineScrollModeRef.current = resumeAnchor ? "anchoring-new-turn" : "following-end";
       liveFollowUserScrollGenerationRef.current = anchorUserScrollGenerationRef.current;
       setTimelineLiveFollowEnabled(true);
-      // Reachable only once manual navigation has already broken follow, so
-      // the anchored turn framing is over: the user scrolled back to the live
-      // edge and expects the stream to stick to it again, exactly like the
-      // scroll-to-bottom pill.
-      setTimelineAnchor(releaseChatTimelineAnchor);
+      if (!resumeAnchor) {
+        setTimelineAnchor(releaseChatTimelineAnchor);
+      }
       showScrollDebouncer.current.cancel();
       setShowScrollToBottom(false);
     } else {
@@ -9966,7 +9987,7 @@ export default function ChatView(props: ChatViewProps) {
                     onPointerDown={(event) => event.preventDefault()}
                     onClick={() => {
                       composerRef.current?.restoreAfterTimelineReachedEnd();
-                      scrollToEnd(true);
+                      scrollToEnd(true, { keepAnchor: true });
                     }}
                     className="pointer-events-auto"
                     size="xs"
