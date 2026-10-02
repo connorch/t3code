@@ -9,6 +9,11 @@ export interface ChatListAnchorOptions {
   readonly anchorOffset?: number;
 }
 
+/**
+ * Locates the row a chat list should hold near the top of the viewport while
+ * its turn streams in below. Callers decide which sent message (if any) gets
+ * anchored; this only maps that id to the LegendList `anchoredEndSpace` config.
+ */
 export function resolveChatListAnchoredEndSpace<Item, AnchorId>(
   items: ReadonlyArray<Item>,
   anchorId: AnchorId | null,
@@ -19,24 +24,8 @@ export function resolveChatListAnchoredEndSpace<Item, AnchorId>(
     return undefined;
   }
 
-  for (let index = 0; index < items.length; index += 1) {
-    const item = items[index];
-    if (item === undefined) {
-      continue;
-    }
-
-    const itemAnchorId = getAnchorId(item);
-    if (itemAnchorId === null) {
-      continue;
-    }
-
-    return itemAnchorId === anchorId
-      ? {
-          anchorIndex: index,
-          anchorOffset: options.anchorOffset ?? CHAT_LIST_ANCHOR_OFFSET,
-        }
-      : undefined;
-  }
-
-  return undefined;
+  const anchorIndex = items.findIndex((item) => getAnchorId(item) === anchorId);
+  return anchorIndex === -1
+    ? undefined
+    : { anchorIndex, anchorOffset: options.anchorOffset ?? CHAT_LIST_ANCHOR_OFFSET };
 }

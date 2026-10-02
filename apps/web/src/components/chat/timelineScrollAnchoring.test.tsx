@@ -28,7 +28,7 @@ function buildState({
 }
 
 describe("timelineContentOverflowsViewport", () => {
-  const inset = { composerInset: 100, anchorOffset: 24 };
+  const inset = { composerInset: 100, anchorOffset: 24, headerSize: 0 };
 
   it("reports overflow from the last row, not the inset spacer", () => {
     const fits = buildState({ positions: [0, 200], sizes: [200, 300], scrollLength: 700 });
@@ -36,6 +36,12 @@ describe("timelineContentOverflowsViewport", () => {
 
     const overflows = buildState({ positions: [0, 200], sizes: [200, 400], scrollLength: 700 });
     expect(timelineContentOverflowsViewport(overflows, inset)).toBe(true);
+  });
+
+  it("counts the list header above the rows", () => {
+    const state = buildState({ positions: [0, 200], sizes: [200, 300], scrollLength: 700 });
+    expect(timelineContentOverflowsViewport(state, inset)).toBe(false);
+    expect(timelineContentOverflowsViewport(state, { ...inset, headerSize: 100 })).toBe(true);
   });
 
   it("treats an empty or unmeasured list as fitting", () => {
@@ -80,6 +86,7 @@ describe("timeline scroll anchoring", () => {
       anchorIndex: 1,
       composerOverlayHeight: 180,
       anchorOffset: 16,
+      headerSize: 0,
     });
 
     expect(metrics?.turnHeight).toBe(300);
@@ -102,6 +109,7 @@ describe("timeline scroll anchoring", () => {
       anchorIndex: 1,
       composerOverlayHeight: 180,
       anchorOffset: 16,
+      headerSize: 0,
     });
 
     expect(metrics?.lastBottom).toBe(2000);
@@ -122,6 +130,7 @@ describe("timeline scroll anchoring", () => {
       anchorIndex: 1,
       composerOverlayHeight: 180,
       anchorOffset: 16,
+      headerSize: 0,
     });
 
     expect(metrics?.turnHeight).toBe(580);
@@ -142,11 +151,36 @@ describe("timeline scroll anchoring", () => {
       anchorIndex: 1,
       composerOverlayHeight: 180,
       anchorOffset: 16,
+      headerSize: 0,
     });
 
     expect(metrics?.lastBottom).toBe(1540);
     expect(metrics?.visibleUsableBottom).toBe(1464);
     expect(metrics?.scrollDeltaToRevealEnd).toBe(76);
+  });
+
+  it("reveals the turn end in scroll offsets, which include the list header", () => {
+    // Rows start 60px into the content. Without the header the reveal lands
+    // 60px short and the last row's tail sits behind the composer.
+    const state = buildState({
+      positions: [0, 900, 1180],
+      sizes: [800, 220, 360],
+      scroll: 900,
+      scrollLength: 760,
+    });
+
+    const metrics = getAnchoredTurnMetrics({
+      state,
+      anchorIndex: 1,
+      composerOverlayHeight: 180,
+      anchorOffset: 16,
+      headerSize: 60,
+    });
+
+    expect(metrics?.anchorTop).toBe(960);
+    expect(metrics?.lastBottom).toBe(1600);
+    expect(metrics?.turnHeight).toBe(640);
+    expect(metrics?.scrollDeltaToRevealEnd).toBe(136);
   });
 
   it("subtracts composer height from usable viewport height", () => {
@@ -161,12 +195,14 @@ describe("timeline scroll anchoring", () => {
       anchorIndex: 1,
       composerOverlayHeight: 0,
       anchorOffset: 16,
+      headerSize: 0,
     });
     const withComposer = getAnchoredTurnMetrics({
       state,
       anchorIndex: 1,
       composerOverlayHeight: 220,
       anchorOffset: 16,
+      headerSize: 0,
     });
 
     expect(withoutComposer?.overflowsUsableViewport).toBe(false);

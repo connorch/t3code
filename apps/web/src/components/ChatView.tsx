@@ -1465,8 +1465,10 @@ const noopHeldAttachment = (_attachment: ChatFileAttachment) => {};
  * message near the top while its turn streams, and it keeps LegendList's
  * maintainScrollAtEnd switched off for as long as it is installed — ChatView
  * drives the streaming scrolls itself, but only in "anchoring-new-turn" mode.
- * So every return to the live edge has to release the anchor too, otherwise the
- * timeline settles into "following-end" with nothing following anything.
+ * So a return to the live edge must either resume that mode (the anchor is
+ * still installed, so the live edge is the anchored framing) or release the
+ * anchor, otherwise the timeline settles into "following-end" with nothing
+ * following anything.
  */
 function releaseChatTimelineAnchor<T extends { readonly messageId: MessageId | null }>(
   current: T,
@@ -5321,6 +5323,8 @@ export default function ChatView(props: ChatViewProps) {
   const liveFollowUserScrollGenerationRef = useRef<number | null>(0);
   // Manual navigation stops live-follow without removing anchored end space.
   // Collapsing that space during a gesture clamps the viewport back to the end.
+  // The anchor index stays too: the anchor is still installed, and returning
+  // to the live edge resumes the anchored framing from it.
   const cancelTimelineLiveFollowForUserNavigation = useCallback(() => {
     cancelPositionRestoreRef.current?.();
     anchorUserScrollGenerationRef.current += 1;
@@ -5330,7 +5334,6 @@ export default function ChatView(props: ChatViewProps) {
     pendingTimelineAnchorRef.current = null;
     positionedTimelineAnchorRef.current = null;
     settledTimelineAnchorRef.current = null;
-    activeTimelineAnchorIndexRef.current = null;
   }, []);
   const cancelTimelineLiveFollowForUserNavigationRef = useRef(
     cancelTimelineLiveFollowForUserNavigation,
@@ -5339,6 +5342,11 @@ export default function ChatView(props: ChatViewProps) {
     cancelTimelineLiveFollowForUserNavigationRef.current =
       cancelTimelineLiveFollowForUserNavigation;
   }, [cancelTimelineLiveFollowForUserNavigation]);
+  // Reported by the list; row positions it measures exclude this header.
+  const timelineHeaderSizeRef = useRef(0);
+  const onTimelineHeaderSizeChange = useCallback((headerSize: number) => {
+    timelineHeaderSizeRef.current = headerSize;
+  }, []);
   const getActiveTimelineTurnMetrics = useCallback(
     (list?: LegendListRef | null) => {
       const resolvedList = list ?? legendListRef.current;
@@ -5353,6 +5361,7 @@ export default function ChatView(props: ChatViewProps) {
         anchorIndex,
         composerOverlayHeight: composerTimelineInset,
         anchorOffset: CHAT_TIMELINE_ANCHOR_OFFSET,
+        headerSize: timelineHeaderSizeRef.current,
       });
     },
     [composerTimelineInset],
@@ -5362,6 +5371,7 @@ export default function ChatView(props: ChatViewProps) {
       timelineContentOverflowsViewport((list ?? legendListRef.current)?.getState(), {
         composerInset: composerTimelineInset,
         anchorOffset: CHAT_TIMELINE_ANCHOR_OFFSET,
+        headerSize: timelineHeaderSizeRef.current,
       }),
     [composerTimelineInset],
   );
@@ -5400,23 +5410,48 @@ export default function ChatView(props: ChatViewProps) {
     pageScrollControllerRef.current?.releaseActiveKey();
   }, []);
   // Live-follow stays active after send/thread-open until an actual list scroll
-  // gesture opts out.
-  const scrollToEnd = useCallback((animated = false) => {
-    cancelPositionRestoreRef.current?.();
+  // gesture opts out. `keepAnchor` is for returning to the live edge after such
+  // a gesture: an installed send-time anchor is resumed rather than released,
+  // since releasing collapses its end space and drops the sent message from
+  // the top of the viewport to the bottom. Sends and tool activity never keep
+  // it; the previous turn's framing is over.
+  const scrollToEnd = useCallback(
+    (animated = false, options?: { readonly keepAnchor?: boolean }) => {
+      cancelPositionRestoreRef.current?.();
+      const resumeAnchor =
+        options?.keepAnchor === true && activeTimelineAnchorIndexRef.current !== null;
+      isAtEndRef.current = true;
+      timelineScrollModeRef.current = resumeAnchor ? "anchoring-new-turn" : "following-end";
+      liveFollowUserScrollGenerationRef.current = anchorUserScrollGenerationRef.current;
+      setTimelineLiveFollowEnabled(true);
+      pendingTimelineAnchorRef.current = null;
+      positionedTimelineAnchorRef.current = null;
+      settledTimelineAnchorRef.current = null;
+      if (!resumeAnchor) {
+        activeTimelineAnchorIndexRef.current = null;
+        setTimelineAnchor(releaseChatTimelineAnchor);
+      }
+      showScrollDebouncer.current.cancel();
+      setShowScrollToBottom(false);
+      requestAnimationFrame(() => {
+        void legendListRef.current?.scrollToEnd?.({ animated });
+      });
+    },
+    [],
+  );
+  // Holds a message the user just sent near the top of the viewport so its turn
+  // reads downward from it. ChatView drives the streaming scrolls itself while
+  // this "anchoring-new-turn" mode lasts; see releaseChatTimelineAnchor.
+  const anchorSentMessage = useCallback((threadRef: ScopedThreadRef, messageId: MessageId) => {
     isAtEndRef.current = true;
-    timelineScrollModeRef.current = "following-end";
+    timelineScrollModeRef.current = "anchoring-new-turn";
     liveFollowUserScrollGenerationRef.current = anchorUserScrollGenerationRef.current;
     setTimelineLiveFollowEnabled(true);
-    pendingTimelineAnchorRef.current = null;
-    positionedTimelineAnchorRef.current = null;
-    settledTimelineAnchorRef.current = null;
+    pendingTimelineAnchorRef.current = messageId;
     activeTimelineAnchorIndexRef.current = null;
     showScrollDebouncer.current.cancel();
     setShowScrollToBottom(false);
-    setTimelineAnchor(releaseChatTimelineAnchor);
-    requestAnimationFrame(() => {
-      void legendListRef.current?.scrollToEnd?.({ animated });
-    });
+    setTimelineAnchor({ threadKey: scopedThreadKey(threadRef), messageId });
   }, []);
   useLayoutEffect(() => {
     if (timelineScrollModeRef.current !== "anchoring-new-turn") {
@@ -5598,6 +5633,10 @@ export default function ChatView(props: ChatViewProps) {
   }, [activeThread?.id, isTimelineAtLogicalEnd, timelineRealContentOverflowsViewport]);
 
   const onTimelineAnchorReady = useCallback((messageId: MessageId, anchorIndex: number) => {
+    // The index is bookkeeping for the installed anchor and stays current in
+    // every mode: rows can be prepended while the user reads history, and a
+    // later return to the live edge resumes the framing from this index.
+    activeTimelineAnchorIndexRef.current = anchorIndex;
     // Anchored-end space can be remeasured when the turn completes. Once the
     // user has scrolled away (or returned to ordinary end-following), that
     // remeasurement must not restart the send-time anchor positioning.
@@ -5607,7 +5646,6 @@ export default function ChatView(props: ChatViewProps) {
     if (pendingTimelineAnchorRef.current === messageId) {
       pendingTimelineAnchorRef.current = null;
     }
-    activeTimelineAnchorIndexRef.current = anchorIndex;
     if (positionedTimelineAnchorRef.current === messageId) {
       return;
     }
@@ -5662,14 +5700,18 @@ export default function ChatView(props: ChatViewProps) {
       if (timelineScrollIntentRef.current === "toward-end") {
         composerRef.current?.restoreAfterTimelineReachedEnd();
       }
-      timelineScrollModeRef.current = "following-end";
+      // Reachable only once manual navigation has already broken follow. The
+      // user scrolled back to the live edge and expects the stream to stick
+      // to it again, exactly like the scroll-to-bottom pill: resume the
+      // anchored framing while the send-time anchor is still installed,
+      // otherwise fall back to ordinary end-following.
+      const resumeAnchor = activeTimelineAnchorIndexRef.current !== null;
+      timelineScrollModeRef.current = resumeAnchor ? "anchoring-new-turn" : "following-end";
       liveFollowUserScrollGenerationRef.current = anchorUserScrollGenerationRef.current;
       setTimelineLiveFollowEnabled(true);
-      // Reachable only once manual navigation has already broken follow, so
-      // the anchored turn framing is over: the user scrolled back to the live
-      // edge and expects the stream to stick to it again, exactly like the
-      // scroll-to-bottom pill.
-      setTimelineAnchor(releaseChatTimelineAnchor);
+      if (!resumeAnchor) {
+        setTimelineAnchor(releaseChatTimelineAnchor);
+      }
       showScrollDebouncer.current.cancel();
       setShowScrollToBottom(false);
     } else {
@@ -8235,22 +8277,19 @@ export default function ChatView(props: ChatViewProps) {
             ...(attachment.source ? { source: attachment.source } : {}),
           },
     );
+    // The first message of a thread always anchors so the opening turn reads
+    // from the top; later sends only do when the user opted in. A steer is
+    // excluded: the live reply keeps streaming above it, so there is nothing
+    // to read downward from and the anchor would chase a moving target.
     const shouldAnchorFirstMessage =
       activeThread.latestTurn === null &&
       !timelineMessages.some((message) => message.role === "user");
-    if (shouldAnchorFirstMessage) {
-      isAtEndRef.current = true;
-      timelineScrollModeRef.current = "anchoring-new-turn";
-      liveFollowUserScrollGenerationRef.current = anchorUserScrollGenerationRef.current;
-      setTimelineLiveFollowEnabled(true);
-      pendingTimelineAnchorRef.current = messageIdForSend;
-      activeTimelineAnchorIndexRef.current = null;
-      showScrollDebouncer.current.cancel();
-      setShowScrollToBottom(false);
-      setTimelineAnchor({
-        threadKey: scopedThreadKey(scopeThreadRef(activeThread.environmentId, threadIdForSend)),
-        messageId: messageIdForSend,
-      });
+    const shouldAnchorNewTurn = settings.chatTurnAnchor === "top" && phase !== "running";
+    if (shouldAnchorFirstMessage || shouldAnchorNewTurn) {
+      anchorSentMessage(
+        scopeThreadRef(activeThread.environmentId, threadIdForSend),
+        messageIdForSend,
+      );
     } else {
       scrollToEnd();
     }
@@ -8957,7 +8996,11 @@ export default function ChatView(props: ChatViewProps) {
       beginLocalDispatch({ preparingWorktree: false });
       setThreadError(threadIdForSend, null);
 
-      scrollToEnd();
+      if (settings.chatTurnAnchor === "top") {
+        anchorSentMessage(scopeThreadRef(environmentId, threadIdForSend), messageIdForSend);
+      } else {
+        scrollToEnd();
+      }
 
       setOptimisticUserMessages((existing) => [
         ...existing,
@@ -9063,9 +9106,11 @@ export default function ChatView(props: ChatViewProps) {
       persistThreadSettingsForNextTurn,
       resetLocalDispatch,
       runtimeMode,
+      anchorSentMessage,
       scrollToEnd,
       setComposerDraftInteractionMode,
       setThreadError,
+      settings.chatTurnAnchor,
       startThreadTurn,
       environmentId,
       composerRef,
@@ -9922,6 +9967,7 @@ export default function ChatView(props: ChatViewProps) {
                 liveFollowEnabled={!paintOnlyDisplayedTimeline && timelineLiveFollowEnabled}
                 onIsAtEndChange={onIsAtEndChange}
                 onContentOverflowChange={setTimelineOverflows}
+                onHeaderSizeChange={onTimelineHeaderSizeChange}
                 onToolOutputCollapsedAtEnd={onToolOutputCollapsedAtEnd}
                 onManualNavigation={cancelTimelineLiveFollowForUserNavigation}
                 cancelPositionRestoreRef={cancelPositionRestoreRef}
@@ -9949,7 +9995,7 @@ export default function ChatView(props: ChatViewProps) {
                     onPointerDown={(event) => event.preventDefault()}
                     onClick={() => {
                       composerRef.current?.restoreAfterTimelineReachedEnd();
-                      scrollToEnd(true);
+                      scrollToEnd(true, { keepAnchor: true });
                     }}
                     className="pointer-events-auto"
                     size="xs"

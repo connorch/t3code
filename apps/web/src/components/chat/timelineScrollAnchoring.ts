@@ -5,6 +5,13 @@ export const CHAT_TIMELINE_ANCHOR_OFFSET = 24;
 
 export type TimelineScrollMode = "following-end" | "anchoring-new-turn" | "free-scrolling";
 
+/**
+ * LegendList reports row positions relative to its rows layer, which starts
+ * `headerSize` into the scrollable content, while `scroll` is a content
+ * offset. Every comparison between the two below adds the header back in;
+ * leaving it out lands reveal scrolls a header short, with the last row's
+ * tail behind the composer.
+ */
 export interface TimelineListMeasurementState {
   readonly data: readonly unknown[];
   readonly scroll: number;
@@ -47,7 +54,11 @@ export function getRowBottom(state: TimelineListMeasurementState, index: number)
  */
 export function timelineContentOverflowsViewport(
   state: TimelineListMeasurementState | undefined,
-  input: { readonly composerInset: number; readonly anchorOffset: number },
+  input: {
+    readonly composerInset: number;
+    readonly anchorOffset: number;
+    readonly headerSize: number;
+  },
 ): boolean {
   if (!state || !state.data || state.data.length === 0) {
     return false;
@@ -61,30 +72,43 @@ export function timelineContentOverflowsViewport(
     return false;
   }
   const visibleScrollLength = Math.max(0, scrollLength - input.composerInset - input.anchorOffset);
-  return lastBottom > visibleScrollLength;
+  return input.headerSize + lastBottom > visibleScrollLength;
 }
 
+/**
+ * Geometry of the turn that starts at the anchored row, in scroll offsets.
+ * `targetScrollToRevealEnd` is the offset that places the last row's bottom
+ * `anchorOffset` above the composer overlay.
+ */
 export function getAnchoredTurnMetrics({
   state,
   anchorIndex,
   composerOverlayHeight,
   anchorOffset,
+  headerSize,
 }: {
   readonly state: TimelineListMeasurementState;
   readonly anchorIndex: number;
   readonly composerOverlayHeight: number;
   readonly anchorOffset: number;
+  readonly headerSize: number;
 }): AnchoredTurnMetrics | null {
   if (state.data.length === 0) {
     return null;
   }
 
   const boundedAnchorIndex = Math.max(0, Math.min(anchorIndex, state.data.length - 1));
-  const anchorTop = state.positionAtIndex(boundedAnchorIndex);
-  const lastBottom = getRowBottom(state, state.data.length - 1);
-  if (typeof anchorTop !== "number" || !Number.isFinite(anchorTop) || lastBottom === null) {
+  const anchorRowTop = state.positionAtIndex(boundedAnchorIndex);
+  const lastRowBottom = getRowBottom(state, state.data.length - 1);
+  if (
+    typeof anchorRowTop !== "number" ||
+    !Number.isFinite(anchorRowTop) ||
+    lastRowBottom === null
+  ) {
     return null;
   }
+  const anchorTop = headerSize + anchorRowTop;
+  const lastBottom = headerSize + lastRowBottom;
 
   const usableViewportHeight = Math.max(
     0,

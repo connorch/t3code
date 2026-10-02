@@ -9,6 +9,8 @@ import type {
   CodexFeedbackSubmission,
   EnvironmentThreadStatus,
 } from "@t3tools/client-runtime/state/threads";
+import { useAtomValue } from "@effect/atom-react";
+import { AsyncResult } from "effect/unstable/reactivity";
 import { useKeyboardChatComposerInset, useKeyboardScrollToEnd } from "@legendapp/list/keyboard";
 import { resolveProviderSkillsForCwd } from "@t3tools/client-runtime/providerSkills";
 import type { LegendListRef } from "@legendapp/list/react-native";
@@ -75,6 +77,7 @@ import { CHAT_CONTENT_MAX_WIDTH, type LayoutVariant } from "../../lib/layout";
 import { IOS_NAV_BAR_HEIGHT } from "../../lib/layoutMetrics";
 import { editPendingThreadMessage } from "../../state/edit-pending-thread-message";
 import { deviceEnvironment } from "../../state/device";
+import { mobilePreferencesAtom } from "../../state/preferences";
 import { useEnvironmentQuery } from "../../state/query";
 import { threadDevicePreviews } from "../devices/threadDevicePreviews";
 import type { QueuedThreadMessage } from "../../state/thread-outbox-model";
@@ -337,6 +340,10 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
   );
   const [anchorMessageId, setAnchorMessageId] = useState<MessageId | null>(null);
   const [submittedMessageId, setSubmittedMessageId] = useState<MessageId | null>(null);
+  const preferencesResult = useAtomValue(mobilePreferencesAtom);
+  const chatTurnAnchor =
+    (AsyncResult.isSuccess(preferencesResult) ? preferencesResult.value.chatTurnAnchor : null) ??
+    "bottom";
   const [endFollowEnabled, setEndFollowEnabled] = useState(true);
   // Android keys the safe-area padding on keyboard visibility (#5988): the
   // back gesture closes the keyboard while the editor stays focused, and a
@@ -790,12 +797,14 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
         hasStartedTurn: props.selectedThread.latestTurn !== null,
         hasUserMessage,
         queuedMessageCount: props.selectedThreadQueueCount,
+        turnAnchor: chatTurnAnchor,
       }),
     );
     composerEditorRef.current?.blur();
     return messageId;
   }, [
     anchorMessageId,
+    chatTurnAnchor,
     clearUsageLimitsFor,
     props.onSendMessage,
     props.selectedThread.latestTurn,

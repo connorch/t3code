@@ -44,6 +44,7 @@ export function SettingsThreadsRouteScreen() {
           contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, 18) + 18 }}
         >
           <AutoSettleSettingsRows />
+          <TimelineSettingsSection />
           <LegacySettingsSection />
         </ScrollView>
       </SettingsScreen>
@@ -211,6 +212,33 @@ function AutoSettleSettingsRows() {
           </View>
         </SettingsSection>
       ) : null}
+    </View>
+  );
+}
+
+/**
+ * Device-local counterpart of web's "Sent message position" client setting.
+ */
+function TimelineSettingsSection() {
+  const savePreferences = useAtomSet(updateMobilePreferencesAtom);
+  const preferences = useAtomValue(mobilePreferencesAtom);
+  const anchorsAtTop =
+    AsyncResult.isSuccess(preferences) && preferences.value.chatTurnAnchor === "top";
+
+  return (
+    <View className="gap-3">
+      <SettingsSection title="Timeline">
+        <SettingsSwitchRow
+          icon="arrow.up"
+          label="Sent messages at top"
+          value={anchorsAtTop}
+          onValueChange={(value) => savePreferences({ chatTurnAnchor: value ? "top" : "bottom" })}
+        />
+      </SettingsSection>
+      <Text className="px-2 text-sm text-foreground-muted">
+        Holds each message you send at the top of the screen so the reply reads downward. Off keeps
+        the conversation pinned to the latest message.
+      </Text>
     </View>
   );
 }
