@@ -5342,6 +5342,11 @@ export default function ChatView(props: ChatViewProps) {
     cancelTimelineLiveFollowForUserNavigationRef.current =
       cancelTimelineLiveFollowForUserNavigation;
   }, [cancelTimelineLiveFollowForUserNavigation]);
+  // Reported by the list; row positions it measures exclude this header.
+  const timelineHeaderSizeRef = useRef(0);
+  const onTimelineHeaderSizeChange = useCallback((headerSize: number) => {
+    timelineHeaderSizeRef.current = headerSize;
+  }, []);
   const getActiveTimelineTurnMetrics = useCallback(
     (list?: LegendListRef | null) => {
       const resolvedList = list ?? legendListRef.current;
@@ -5356,6 +5361,7 @@ export default function ChatView(props: ChatViewProps) {
         anchorIndex,
         composerOverlayHeight: composerTimelineInset,
         anchorOffset: CHAT_TIMELINE_ANCHOR_OFFSET,
+        headerSize: timelineHeaderSizeRef.current,
       });
     },
     [composerTimelineInset],
@@ -5365,6 +5371,7 @@ export default function ChatView(props: ChatViewProps) {
       timelineContentOverflowsViewport((list ?? legendListRef.current)?.getState(), {
         composerInset: composerTimelineInset,
         anchorOffset: CHAT_TIMELINE_ANCHOR_OFFSET,
+        headerSize: timelineHeaderSizeRef.current,
       }),
     [composerTimelineInset],
   );
@@ -9960,6 +9967,7 @@ export default function ChatView(props: ChatViewProps) {
                 liveFollowEnabled={!paintOnlyDisplayedTimeline && timelineLiveFollowEnabled}
                 onIsAtEndChange={onIsAtEndChange}
                 onContentOverflowChange={setTimelineOverflows}
+                onHeaderSizeChange={onTimelineHeaderSizeChange}
                 onToolOutputCollapsedAtEnd={onToolOutputCollapsedAtEnd}
                 onManualNavigation={cancelTimelineLiveFollowForUserNavigation}
                 cancelPositionRestoreRef={cancelPositionRestoreRef}

@@ -73,6 +73,7 @@ import {
 } from "react";
 import {
   LegendList,
+  type LegendListMetrics,
   type LegendListRef,
   type MaintainScrollAtEndOptions,
 } from "@legendapp/list/react";
@@ -460,6 +461,11 @@ interface MessagesTimelineProps {
    * Reported after scrolls, row size changes, and viewport resizes.
    */
   onContentOverflowChange?: (overflows: boolean) => void;
+  /**
+   * Height of the list header above the first row. Row positions from the
+   * list exclude it; see TimelineListMeasurementState.
+   */
+  onHeaderSizeChange?: (headerSize: number) => void;
   onToolOutputCollapsedAtEnd?: () => void;
   onManualNavigation: () => void;
   cancelPositionRestoreRef?: React.RefObject<(() => void) | null>;
@@ -520,6 +526,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   liveFollowEnabled,
   onIsAtEndChange,
   onContentOverflowChange,
+  onHeaderSizeChange,
   onToolOutputCollapsedAtEnd,
   onManualNavigation,
   cancelPositionRestoreRef,
@@ -987,11 +994,13 @@ export const MessagesTimeline = memo(function MessagesTimeline({
     [anchoredEndSpace, contentInsetEndAdjustment],
   );
 
+  const listHeaderSizeRef = useRef(0);
   const measureContentOverflow = useCallback(
     () =>
       timelineContentOverflowsViewport(listRef.current?.getState?.(), {
         composerInset: contentInsetEndAdjustment,
         anchorOffset: CHAT_TIMELINE_ANCHOR_OFFSET,
+        headerSize: listHeaderSizeRef.current,
       }),
     [contentInsetEndAdjustment, listRef],
   );
@@ -1013,6 +1022,16 @@ export const MessagesTimeline = memo(function MessagesTimeline({
     });
   }, [measureContentOverflow, onContentOverflowChange]);
   useEffect(() => cancelContentOverflowFrame, [cancelContentOverflowFrame]);
+  // The list emits its header size after this component's layout effects, so
+  // the overflow read is repeated once the real header height is known.
+  const onListMetricsChange = useCallback(
+    (metrics: LegendListMetrics) => {
+      listHeaderSizeRef.current = metrics.headerSize;
+      onHeaderSizeChange?.(metrics.headerSize);
+      reportContentOverflow();
+    },
+    [onHeaderSizeChange, reportContentOverflow],
+  );
   // The list's own layout effects have already run here, so estimated row
   // positions are in place. Reporting before the first paint lets a thread
   // open in its final composer layout instead of correcting it a frame later.
@@ -1329,6 +1348,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
             maintainScrollAtEndThreshold={1}
             onScroll={handleScroll}
             onItemSizeChanged={reportContentOverflow}
+            onMetricsChange={onListMetricsChange}
             className={cn(
               "scrollbar-gutter-both h-full min-h-0 overflow-x-hidden overscroll-y-contain px-3 [overflow-anchor:none] sm:px-5",
               topFadeEnabled && "topbar-scroll-fade",
