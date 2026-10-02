@@ -8250,11 +8250,14 @@ export default function ChatView(props: ChatViewProps) {
           },
     );
     // The first message of a thread always anchors so the opening turn reads
-    // from the top; later sends only do when the user opted in.
+    // from the top; later sends only do when the user opted in. A steer is
+    // excluded: the live reply keeps streaming above it, so there is nothing
+    // to read downward from and the anchor would chase a moving target.
     const shouldAnchorFirstMessage =
       activeThread.latestTurn === null &&
       !timelineMessages.some((message) => message.role === "user");
-    if (shouldAnchorFirstMessage || settings.chatTurnAnchor === "top") {
+    const shouldAnchorNewTurn = settings.chatTurnAnchor === "top" && phase !== "running";
+    if (shouldAnchorFirstMessage || shouldAnchorNewTurn) {
       anchorSentMessage(
         scopeThreadRef(activeThread.environmentId, threadIdForSend),
         messageIdForSend,

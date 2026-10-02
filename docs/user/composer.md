@@ -54,7 +54,7 @@ in the composer and waits if the agent needs an approval or an answer.
 By default the conversation stays pinned to the latest message. In
 **Settings → General → Sent message position**, choose **Top** to hold each
 message you send at the top of the view while the reply streams in below it.
-Messages that queue behind a running turn keep the current position. On mobile,
+Messages that queue behind or steer a running turn stay with the live stream instead. On mobile,
 the same choice is **Settings → Thread behavior → Sent messages at top**.
 
 ## Queue messages offline on mobile
