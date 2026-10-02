@@ -1,19 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import {
-  emptyGhostTooltip,
-  iconGhostsForOpenSurfaces,
-  shouldClaimSurfaceLauncherKey,
-} from "./RightPanelTabs.logic";
-
-const actions = [
-  { surfaceKind: "preview" as const, multiInstance: true, label: "Browser" },
-  { surfaceKind: "terminal" as const, multiInstance: true, label: "Terminal" },
-  { surfaceKind: "files" as const, multiInstance: false, label: "Files" },
-  { surfaceKind: "diff" as const, multiInstance: false, label: "Diff" },
-  { surfaceKind: "pull-request" as const, multiInstance: false, label: "Pull request" },
-  { surfaceKind: "agents" as const, multiInstance: false, label: "Agents" },
-];
+import { emptyGhostTooltip, shouldClaimSurfaceLauncherKey } from "./RightPanelTabs.logic";
 
 function keyEvent(overrides: Partial<KeyboardEvent> = {}): KeyboardEvent {
   return {
@@ -27,25 +14,6 @@ function keyEvent(overrides: Partial<KeyboardEvent> = {}): KeyboardEvent {
     ...overrides,
   } as KeyboardEvent;
 }
-
-describe("iconGhostsForOpenSurfaces", () => {
-  it("keeps multi-instance ghosts after that surface is already open", () => {
-    const ghosts = iconGhostsForOpenSurfaces(actions, ["terminal"]);
-    expect(ghosts.map((action) => action.label)).toEqual([
-      "Browser",
-      "Terminal",
-      "Files",
-      "Diff",
-      "Pull request",
-      "Agents",
-    ]);
-  });
-
-  it("drops singleton ghosts once that surface is a tab", () => {
-    const ghosts = iconGhostsForOpenSurfaces(actions, ["diff", "files", "agents", "pull-request"]);
-    expect(ghosts.map((action) => action.label)).toEqual(["Browser", "Terminal"]);
-  });
-});
 
 describe("emptyGhostTooltip", () => {
   it("shows the description and letter shortcut for an available surface", () => {

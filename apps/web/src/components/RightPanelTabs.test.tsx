@@ -95,7 +95,7 @@ describe("RightPanelTabs", () => {
     expect(html).not.toContain("open-surface-body");
   });
 
-  it("collapses remaining launchers to icon ghosts without letter shortcuts once a tab is open", () => {
+  it("swaps the ghost tabs for the add menu once a tab is open", () => {
     const html = render({
       surfaces: [
         {
@@ -109,19 +109,9 @@ describe("RightPanelTabs", () => {
       activeSurfaceId: "terminal:term-1",
     });
     expect(html).toContain("open-surface-body");
-    expect(html).toContain('aria-label="New terminal"');
-    expect(html).toContain('aria-label="New browser"');
+    expect(html).toContain('aria-label="Add panel surface"');
     expect(html).not.toContain("aria-keyshortcuts");
     expect(html).not.toContain("No surface open");
-  });
-
-  it("drops the Diff icon ghost after the singleton Diff tab is open", () => {
-    const html = render({
-      surfaces: [{ id: "diff", kind: "diff" }],
-      activeSurfaceId: "diff",
-    });
-    expect(html).toContain('aria-label="New terminal"');
-    expect(html).not.toContain('aria-label="Diff"');
   });
 });
 
