@@ -587,6 +587,9 @@ export function useSettingsRestore(onRestored?: () => void) {
         ? ["Diff whitespace changes"]
         : []),
       ...(settings.diffLayout !== DEFAULT_UNIFIED_SETTINGS.diffLayout ? ["Diff layout"] : []),
+      ...(settings.panelTabsWrap !== DEFAULT_UNIFIED_SETTINGS.panelTabsWrap
+        ? ["Wrap panel tabs"]
+        : []),
       ...(settings.proactivePanelsEnabled !== DEFAULT_UNIFIED_SETTINGS.proactivePanelsEnabled
         ? ["Proactive panels"]
         : []),
@@ -677,6 +680,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       settings.diffFilesCollapsed,
       settings.diffIgnoreWhitespace,
       settings.diffLayout,
+      settings.panelTabsWrap,
       settings.proactivePanelsEnabled,
       settings.environmentIdentificationMode,
       settings.contextWindowMeterEnabled,
@@ -781,6 +785,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       diffFilesCollapsed: DEFAULT_UNIFIED_SETTINGS.diffFilesCollapsed,
       diffIgnoreWhitespace: DEFAULT_UNIFIED_SETTINGS.diffIgnoreWhitespace,
       diffLayout: DEFAULT_UNIFIED_SETTINGS.diffLayout,
+      panelTabsWrap: DEFAULT_UNIFIED_SETTINGS.panelTabsWrap,
       proactivePanelsEnabled: DEFAULT_UNIFIED_SETTINGS.proactivePanelsEnabled,
       showSkillsInSlashMenu: DEFAULT_UNIFIED_SETTINGS.showSkillsInSlashMenu,
       composerCollapseOnScroll: DEFAULT_UNIFIED_SETTINGS.composerCollapseOnScroll,
@@ -2604,6 +2609,28 @@ export function GeneralSettingsPanel() {
                 </SelectItem>
               </SelectPopup>
             </Select>
+          }
+        />
+
+        <SettingsRow
+          {...searchableSetting("wrap-panel-tabs")}
+          description="Wrap right panel tabs onto extra rows instead of scrolling them sideways."
+          resetAction={
+            settings.panelTabsWrap !== DEFAULT_UNIFIED_SETTINGS.panelTabsWrap ? (
+              <SettingResetButton
+                label="wrap panel tabs"
+                onClick={() =>
+                  updateSettings({ panelTabsWrap: DEFAULT_UNIFIED_SETTINGS.panelTabsWrap })
+                }
+              />
+            ) : null
+          }
+          control={
+            <Switch
+              checked={settings.panelTabsWrap}
+              onCheckedChange={(checked) => updateSettings({ panelTabsWrap: Boolean(checked) })}
+              aria-label="Wrap panel tabs"
+            />
           }
         />
 

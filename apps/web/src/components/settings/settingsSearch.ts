@@ -342,6 +342,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["stacked split side by side unified inline view"],
   },
   {
+    id: "wrap-panel-tabs",
+    title: "Wrap panel tabs",
+    to: "/settings/general",
+    searchTerms: ["right panel tabs wrap rows multiple lines scroll overflow tab bar"],
+  },
+  {
     id: "proactive-panels",
     title: "Proactive panels",
     to: "/settings/general",
