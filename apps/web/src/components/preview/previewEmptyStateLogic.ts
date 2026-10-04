@@ -1,5 +1,5 @@
 import type {
-  OrchestrationThreadShell,
+  OrchestrationV2ThreadShell,
   PreviewSessionSnapshot,
   ProjectScript,
   ThreadId,
@@ -25,8 +25,8 @@ export function selectWorktreeServers<
   S extends { readonly terminal: { readonly threadId: ThreadId } | null },
 >(input: {
   readonly servers: ReadonlyArray<S>;
-  readonly activeThread: Pick<OrchestrationThreadShell, "worktreePath"> | null;
-  readonly projectThreads: ReadonlyArray<Pick<OrchestrationThreadShell, "id" | "worktreePath">>;
+  readonly activeThread: Pick<OrchestrationV2ThreadShell, "worktreePath"> | null;
+  readonly projectThreads: ReadonlyArray<Pick<OrchestrationV2ThreadShell, "id" | "worktreePath">>;
 }): ReadonlyArray<S> {
   const { activeThread } = input;
   if (activeThread === null) return [];

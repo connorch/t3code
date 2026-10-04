@@ -1,11 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import {
-  appendThreadTranscriptPrompt,
-  buildThreadTranscriptBlock,
-  extractPastedThreadTranscripts,
-  extractTrailingThreadTranscript,
-} from "./threadTranscript";
+import { buildThreadTranscriptBlock } from "./threadTranscript";
 
 const block = buildThreadTranscriptBlock({
   title: "Fix login flow",
@@ -48,41 +43,14 @@ describe("thread transcripts", () => {
     expect(result).not.toContain("Branch:");
   });
 
-  it("neutralizes nested transcript tags so the outer block survives a round trip", () => {
+  it("neutralizes nested transcript tags so the outer block stays one block", () => {
     const nested = buildThreadTranscriptBlock({
       title: "Outer",
       branch: null,
       messages: [{ role: "assistant", text: `Quoting:\n${block}` }],
     });
-    const extracted = extractPastedThreadTranscripts(nested);
-    expect(extracted.transcripts).toHaveLength(1);
-    expect(extracted.transcripts[0]?.title).toBe("Outer");
-    expect(extracted.remainingText).toBe("");
-  });
-
-  it("extracts pasted blocks and preserves surrounding text", () => {
-    const pasted = `Continue where this left off:\n\n${block}\n\nThanks!`;
-    const extracted = extractPastedThreadTranscripts(pasted);
-    expect(extracted.transcripts).toHaveLength(1);
-    expect(extracted.transcripts[0]?.title).toBe("Fix login flow");
-    expect(extracted.transcripts[0]?.messageCount).toBe(2);
-    expect(extracted.transcripts[0]?.block).toBe(block);
-    expect(extracted.remainingText).toBe("Continue where this left off:\n\nThanks!");
-  });
-
-  it("passes plain text through untouched", () => {
-    const extracted = extractPastedThreadTranscripts("just some pasted text");
-    expect(extracted.transcripts).toHaveLength(0);
-    expect(extracted.remainingText).toBe("just some pasted text");
-  });
-
-  it("appends to the prompt and extracts back out for display", () => {
-    const drafts = extractPastedThreadTranscripts(block).transcripts;
-    const sent = appendThreadTranscriptPrompt("Pick this up", drafts[0]!);
-    expect(sent.startsWith("Pick this up\n\n<thread_transcript>")).toBe(true);
-    const extracted = extractTrailingThreadTranscript(sent);
-    expect(extracted.promptText).toBe("Pick this up");
-    expect(extracted.transcript?.title).toBe("Fix login flow");
-    expect(extracted.transcript?.messageCount).toBe(2);
+    expect(nested.match(/<thread_transcript>/g)).toHaveLength(1);
+    expect(nested.match(/<\/thread_transcript>/g)).toHaveLength(1);
+    expect(nested).toContain("&lt;thread_transcript&gt;");
   });
 });

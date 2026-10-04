@@ -1,17 +1,45 @@
-import type { TurnId } from "@t3tools/contracts";
+import type { MessageId, RunId } from "@t3tools/contracts";
+
+export interface TimelineRunObservation {
+  readonly threadKey: string | null;
+  readonly hydrated: boolean;
+  readonly runId: RunId | null;
+}
+
+/** Opening a thread establishes a baseline; only later runs get new-turn framing. */
+export function observeTimelineRun(
+  previous: TimelineRunObservation | null,
+  input: TimelineRunObservation & {
+    readonly queued: boolean;
+    readonly messageId: MessageId | null;
+  },
+): { observation: TimelineRunObservation; anchorMessageId: MessageId | null } {
+  const observation = {
+    threadKey: input.threadKey,
+    hydrated: input.hydrated,
+    runId: input.queued ? null : input.runId,
+  };
+  if (previous?.threadKey !== input.threadKey || !previous.hydrated) {
+    return { observation, anchorMessageId: null };
+  }
+  if (
+    !input.hydrated ||
+    input.runId === null ||
+    input.queued ||
+    previous.runId === input.runId ||
+    input.messageId === null
+  ) {
+    return { observation: previous, anchorMessageId: null };
+  }
+  return { observation, anchorMessageId: input.messageId };
+}
+import type { RunAttemptId } from "@t3tools/contracts";
 
 // Match the titlebar fade inset so draft promotion preserves the first row's position.
 export const CHAT_TIMELINE_ANCHOR_OFFSET = 24;
 
 export type TimelineScrollMode = "following-end" | "anchoring-new-turn" | "free-scrolling";
 
-/**
- * LegendList reports row positions relative to its rows layer, which starts
- * `headerSize` into the scrollable content, while `scroll` is a content
- * offset. Every comparison between the two below adds the header back in;
- * leaving it out lands reveal scrolls a header short, with the last row's
- * tail behind the composer.
- */
 export interface TimelineListMeasurementState {
   readonly data: readonly unknown[];
   readonly scroll: number;
@@ -54,11 +82,7 @@ export function getRowBottom(state: TimelineListMeasurementState, index: number)
  */
 export function timelineContentOverflowsViewport(
   state: TimelineListMeasurementState | undefined,
-  input: {
-    readonly composerInset: number;
-    readonly anchorOffset: number;
-    readonly headerSize: number;
-  },
+  input: { readonly composerInset: number; readonly anchorOffset: number },
 ): boolean {
   if (!state || !state.data || state.data.length === 0) {
     return false;
@@ -72,43 +96,30 @@ export function timelineContentOverflowsViewport(
     return false;
   }
   const visibleScrollLength = Math.max(0, scrollLength - input.composerInset - input.anchorOffset);
-  return input.headerSize + lastBottom > visibleScrollLength;
+  return lastBottom > visibleScrollLength;
 }
 
-/**
- * Geometry of the turn that starts at the anchored row, in scroll offsets.
- * `targetScrollToRevealEnd` is the offset that places the last row's bottom
- * `anchorOffset` above the composer overlay.
- */
 export function getAnchoredTurnMetrics({
   state,
   anchorIndex,
   composerOverlayHeight,
   anchorOffset,
-  headerSize,
 }: {
   readonly state: TimelineListMeasurementState;
   readonly anchorIndex: number;
   readonly composerOverlayHeight: number;
   readonly anchorOffset: number;
-  readonly headerSize: number;
 }): AnchoredTurnMetrics | null {
   if (state.data.length === 0) {
     return null;
   }
 
   const boundedAnchorIndex = Math.max(0, Math.min(anchorIndex, state.data.length - 1));
-  const anchorRowTop = state.positionAtIndex(boundedAnchorIndex);
-  const lastRowBottom = getRowBottom(state, state.data.length - 1);
-  if (
-    typeof anchorRowTop !== "number" ||
-    !Number.isFinite(anchorRowTop) ||
-    lastRowBottom === null
-  ) {
+  const anchorTop = state.positionAtIndex(boundedAnchorIndex);
+  const lastBottom = getRowBottom(state, state.data.length - 1);
+  if (typeof anchorTop !== "number" || !Number.isFinite(anchorTop) || lastBottom === null) {
     return null;
   }
-  const anchorTop = headerSize + anchorRowTop;
-  const lastBottom = headerSize + lastRowBottom;
 
   const usableViewportHeight = Math.max(
     0,
@@ -137,10 +148,9 @@ export interface RememberedTimelinePosition {
   readonly scrollOffset: number;
   readonly atEnd: boolean;
   readonly disclosures?: {
-    readonly turns: ReadonlySet<TurnId>;
+    readonly runs: ReadonlySet<RunId>;
     readonly workGroups: ReadonlySet<string>;
-    readonly spawnEntries: ReadonlySet<string>;
-    readonly reasoningMessages: ReadonlySet<string>;
+    readonly attempts: ReadonlySet<RunAttemptId>;
     readonly workGroupState: {
       scrollPositions: Map<string, { readonly entryId: string; readonly offset: number }>;
       expandedEntries: Set<string>;

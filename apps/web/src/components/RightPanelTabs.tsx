@@ -12,6 +12,9 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { emptyGhostTooltip, shouldClaimSurfaceLauncherKey } from "./RightPanelTabs.logic";
+
+// Re-exported for RightPanelTabs.test.tsx, which imports the helper from here.
+export { surfaceShortcutTargetsTypingContext } from "./RightPanelTabs.logic";
 import { pullRequestHostOf, type SourceControlProviderKind } from "@t3tools/contracts";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
 import { useProjects, useServerConfigs, useThreadShells } from "~/state/entities";
@@ -30,7 +33,6 @@ import type {
 import { getTerminalLabel } from "@t3tools/shared/terminalLabels";
 import {
   type LucideIcon,
-  Bot,
   Smartphone,
   ChevronLeft,
   ChevronRight,
@@ -82,6 +84,7 @@ import { faviconUrlForOrigin } from "~/lib/favicon";
 import { useClientSettings } from "~/hooks/useSettings";
 import { useTheme } from "~/hooks/useTheme";
 import { useDeviceState } from "~/state/device";
+import type { PreviewPanelInlineSize } from "~/hooks/usePreviewPanelInlineSize";
 import {
   newestPullRequestSummary,
   pullRequestEnvironment,
@@ -105,6 +108,7 @@ interface RightPanelTabsProps {
   widthStorageKey?: string;
   /** Forwarded to PreviewPanelShell as the initial width before a user resize. */
   defaultWidth?: number;
+  inlineSize?: PreviewPanelInlineSize;
   layoutControls?: ReactNode;
   surfaces: readonly RightPanelSurface[];
   /** Fallback environment for surfaces that do not carry their own. */
@@ -140,7 +144,6 @@ interface RightPanelTabsProps {
   onAddFiles: () => void;
   onAddPullRequest: () => void;
   onAddPullRequests: () => void;
-  onAddAgents: () => void;
   onAddDevice: () => void;
   browserAvailable: boolean;
   terminalAvailable: boolean;
@@ -148,11 +151,8 @@ interface RightPanelTabsProps {
   filesAvailable: boolean;
   pullRequestAvailable: boolean;
   pullRequestsAvailable: boolean;
-  agentsAvailable: boolean;
   deviceAvailable: boolean;
   pullRequestStatusSeeds?: Readonly<Record<string, PullRequestTabStatusSeed>>;
-  /** Running + waiting subagents; badges the Agents launcher. */
-  liveAgentCount: number;
   children: ReactNode;
 }
 
@@ -179,7 +179,6 @@ const SURFACE_DISABLED_REASONS = {
   diff: "Diff is only available for server threads in Git repositories.",
   pullRequest: "This thread's branch has no pull request yet.",
   pullRequests: "No linked pull requests are available for this thread.",
-  agents: "Agents are only available from a thread.",
   device: "Devices are only available from a thread.",
 } as const;
 
@@ -256,23 +255,6 @@ export function surfaceShortcutActionForKey<
   );
 }
 
-/**
- * A focused editable is a typing context whether or not it has text yet: an
- * empty chat composer at rest is still where the user's next keystrokes are
- * meant to land, and claiming launcher letters from it would redirect prompts
- * into whatever surface opens. The `:not` clause lets `closest` see past
- * non-editable islands (`contenteditable="false"`) to an editable host around
- * them, matching ComposerPendingUserInputPanel's typing guard.
- */
-export function surfaceShortcutTargetsTypingContext(
-  target: { closest(selectors: string): unknown } | null,
-): boolean {
-  return (
-    target?.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"])') !=
-    null
-  );
-}
-
 function DisabledReasonTooltip(props: { reason: string; trigger: ReactElement }) {
   return (
     <Tooltip>
@@ -313,24 +295,11 @@ interface SurfaceAction {
   available: boolean;
   disabledReason: string | null;
   onClick: () => void;
-  badgeCount: number;
 }
 
 function ActionIcon({ action, className }: { action: SurfaceAction; className: string }) {
   const Icon = action.icon;
-  return (
-    <span className="relative inline-flex shrink-0">
-      <Icon className={className} />
-      {action.badgeCount > 0 ? (
-        <span
-          aria-hidden
-          className="absolute -top-1.5 -right-2 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-info px-1 text-3xs font-semibold tabular-nums text-white"
-        >
-          {action.badgeCount}
-        </span>
-      ) : null}
-    </span>
-  );
+  return <Icon className={cn("shrink-0", className)} />;
 }
 
 /** Labeled ghost tab shown in the empty tab strip; clicking it opens the surface in place. */
@@ -451,8 +420,6 @@ function surfaceTitle(
       return `#${surface.number}`;
     case "pull-requests":
       return "Pull requests";
-    case "agents":
-      return "Agents";
     case "device":
       return surface.title ?? surface.target?.name ?? "Device";
     case "preview": {
@@ -536,8 +503,6 @@ function SurfaceIcon({
       );
     case "pull-requests":
       return <PullRequestGlyph.link className="size-3 shrink-0" />;
-    case "agents":
-      return <Bot className="size-3 shrink-0" />;
     case "device":
       return surface.target?.platform === "ios" ? (
         <AppleIcon className="size-3 shrink-0" />
@@ -695,7 +660,6 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
   const addSurfaceActions: SurfaceAction[] = [
     {
       description: "New terminal",
-      badgeCount: 0,
       label: "Terminal",
       icon: TerminalSquare,
       shortcut: "T",
@@ -705,7 +669,6 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
     },
     {
       description: "Open files",
-      badgeCount: 0,
       label: "Files",
       icon: Files,
       shortcut: "F",
@@ -715,7 +678,6 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
     },
     {
       description: "Open diff",
-      badgeCount: 0,
       label: "Diff",
       icon: FileDiff,
       shortcut: "D",
@@ -725,7 +687,6 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
     },
     {
       description: "Open pull request",
-      badgeCount: 0,
       label: "Pull request",
       icon: PullRequestGlyph.pullRequest,
       shortcut: "P",
@@ -735,7 +696,6 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
     },
     {
       description: "New browser",
-      badgeCount: 0,
       label: "Browser",
       icon: Globe2,
       shortcut: "B",
@@ -745,7 +705,6 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
     },
     {
       description: "Open linked pull requests",
-      badgeCount: 0,
       label: "Linked pull requests",
       icon: PullRequestGlyph.link,
       shortcut: "L",
@@ -754,18 +713,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
       onClick: props.onAddPullRequests,
     },
     {
-      description: "Open agents",
-      badgeCount: props.liveAgentCount,
-      label: "Agents",
-      icon: Bot,
-      shortcut: "A",
-      available: props.agentsAvailable,
-      disabledReason: SURFACE_DISABLED_REASONS.agents,
-      onClick: props.onAddAgents,
-    },
-    {
       description: "Open device",
-      badgeCount: 0,
       label: "Device",
       icon: Smartphone,
       shortcut: "M",
@@ -969,6 +917,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
       {...(props.open !== undefined ? { open: props.open } : {})}
       {...(props.widthStorageKey !== undefined ? { widthStorageKey: props.widthStorageKey } : {})}
       {...(props.defaultWidth !== undefined ? { defaultWidth: props.defaultWidth } : {})}
+      {...(props.inlineSize ? { inlineSize: props.inlineSize } : {})}
     >
       <div
         className={cn(
@@ -1125,7 +1074,17 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
                             </button>
                           }
                         />
-                        <TooltipPopup>{title}</TooltipPopup>
+                        <TooltipPopup>
+                          {surface.kind === "device" ? (
+                            <DeviceTabTooltip
+                              surface={surface}
+                              environmentId={props.environmentId}
+                              title={title}
+                            />
+                          ) : (
+                            title
+                          )}
+                        </TooltipPopup>
                       </Tooltip>
                     )}
                   </SortableTab>

@@ -65,14 +65,11 @@ function render(overrides: Partial<Parameters<typeof RightPanelTabs>[0]> = {}) {
       onAddDiff={noop}
       onAddFiles={noop}
       onAddPullRequest={noop}
-      onAddAgents={noop}
       browserAvailable
       terminalAvailable
       diffAvailable
       filesAvailable
       pullRequestAvailable
-      agentsAvailable
-      liveAgentCount={0}
       {...overrides}
     >
       <div>open-surface-body</div>
@@ -88,7 +85,6 @@ describe("RightPanelTabs", () => {
     expect(html).toContain("Files");
     expect(html).toContain("Diff");
     expect(html).toContain("Pull request");
-    expect(html).toContain("Agents");
     expect(html).toContain("No surface open");
     expect(html).toContain('aria-keyshortcuts="t"');
     expect(html).not.toContain("Open a surface");
@@ -203,16 +199,13 @@ function renderTabs(
       onAddPullRequests={() => undefined}
       onAddDiff={() => undefined}
       onAddFiles={() => undefined}
-      onAddAgents={() => undefined}
       onAddDevice={() => undefined}
-      liveAgentCount={0}
       browserAvailable
       terminalAvailable={false}
       diffAvailable={false}
       filesAvailable={false}
       pullRequestAvailable={false}
       pullRequestsAvailable={false}
-      agentsAvailable={false}
       deviceAvailable={false}
     >
       <div>content</div>

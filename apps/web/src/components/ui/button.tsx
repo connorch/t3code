@@ -65,11 +65,6 @@ const buttonVariants = cva(
           "border-transparent bg-secondary text-secondary-foreground [:active,[data-pressed]]:bg-secondary/80 [:hover,[data-pressed]]:bg-secondary/90",
         "warning-outline":
           "border-warning/32 bg-warning-surface text-warning-foreground shadow-xs/5 [:disabled,:active,[data-pressed]]:shadow-none [:hover,[data-pressed]]:border-warning/40 [:hover,[data-pressed]]:bg-warning/16 dark:[:hover,[data-pressed]]:bg-warning/24",
-        // GitHub-style change request state chips: green while open, purple once merged.
-        success:
-          "not-disabled:inset-shadow-[0_1px_--theme(--color-white/16%)] border-success-strong bg-success-strong text-white shadow-success-strong/24 shadow-xs [:active,[data-pressed]]:inset-shadow-[0_1px_--theme(--color-black/8%)] [:disabled,:active,[data-pressed]]:shadow-none [:hover,[data-pressed]]:bg-success-strong/90",
-        merged:
-          "not-disabled:inset-shadow-[0_1px_--theme(--color-white/16%)] border-merged bg-merged text-white shadow-merged/24 shadow-xs [:active,[data-pressed]]:inset-shadow-[0_1px_--theme(--color-black/8%)] [:disabled,:active,[data-pressed]]:shadow-none [:hover,[data-pressed]]:bg-merged/90",
       },
     },
   },

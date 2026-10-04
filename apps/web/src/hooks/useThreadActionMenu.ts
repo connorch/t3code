@@ -1,5 +1,5 @@
+import { scopeProjectRef } from "@t3tools/client-runtime/environment";
 import { requestCustomSnooze } from "../components/CustomSnoozeDialog";
-import { scopeProjectRef, scopedThreadKey } from "@t3tools/client-runtime/environment";
 import {
   type AtomCommandResult,
   isAtomCommandInterrupted,
@@ -25,12 +25,15 @@ import {
   readEnvironmentSupportsSettlement,
   readEnvironmentSupportsSnooze,
   readEnvironmentSupportsTitleRegeneration,
-  readThreadDetail,
+  readThreadVisibleTurnItems,
   readThreadShell,
   readThreadShells,
   useProjects,
 } from "../state/entities";
-import { buildThreadTranscriptBlock } from "../lib/threadTranscript";
+import {
+  buildThreadTranscriptBlock,
+  transcriptMessagesFromTurnItems,
+} from "../lib/threadTranscript";
 import { usePrimaryEnvironmentId } from "../state/environments";
 import { readLocalApi } from "../localApi";
 import {
@@ -39,9 +42,9 @@ import {
   selectProjectGroupingSettings,
 } from "../logicalProject";
 import { buildPhysicalToLogicalProjectKeyMap } from "../sidebarProjectGrouping";
-import { useUiStateStore } from "../uiStateStore";
 import { worktreeCardSiblings } from "../components/Sidebar.worktree";
 import { useSidebarWorktreeCardsEnabled } from "./useSettings";
+import { threadRuntimeCanArchive } from "@t3tools/client-runtime/state/models";
 import { useCopyToClipboard } from "./useCopyToClipboard";
 import { useNewThreadHandler } from "./useHandleNewThread";
 import { useClientSettings } from "./useSettings";
@@ -97,13 +100,13 @@ export function useThreadActionMenu(input: {
     setThreadAutoSettle,
     archiveThread,
     deleteThread,
+    markThreadUnread,
   } = useThreadActions();
   const worktreeCardsEnabled = useSidebarWorktreeCardsEnabled();
   const updateThreadMetadata = useAtomCommand(threadEnvironment.updateMetadata, {
     reportFailure: false,
   });
   const handleNewThread = useNewThreadHandler();
-  const markThreadUnread = useUiStateStore((s) => s.markThreadUnread);
   const confirmThreadDelete = useClientSettings((s) => s.confirmThreadDelete);
   const confirmThreadArchive = useClientSettings((s) => s.confirmThreadArchive);
   const timestampFormat = useClientSettings((s) => s.timestampFormat);
@@ -132,7 +135,7 @@ export function useThreadActionMenu(input: {
       toastManager.add({
         type: "success",
         title: "Transcript copied",
-        description: `Paste it into another thread's composer to attach "${title}".`,
+        description: title,
       });
     },
     onError: (error) => failureToast("Failed to copy transcript", error),
@@ -158,11 +161,9 @@ export function useThreadActionMenu(input: {
         };
         const isRegeneratingTitle = thread.titleRegeneration != null;
         const snoozePresets = resolveSnoozePresets(now, timestampFormat);
-        const threadDetail = readThreadDetail(threadRef);
-        const transcriptMessages =
-          threadDetail?.messages.filter(
-            (message) => !message.streaming && message.text.trim().length > 0,
-          ) ?? [];
+        const transcriptMessages = transcriptMessagesFromTurnItems(
+          readThreadVisibleTurnItems(threadRef),
+        );
         // A card is pinned while any member is: the menu offers "Unpin
         // worktree" on an unpinned member of a pinned card.
         const worktreeSiblings = worktreeCardsEnabled
@@ -174,15 +175,13 @@ export function useThreadActionMenu(input: {
           isPinned:
             thread.pinnedAt != null || worktreeSiblings.some((sibling) => sibling.pinnedAt != null),
           worktreeSiblingCount: worktreeSiblings.length,
-          // The chat header has no project-scoped thread list behind the
-          // menu, so the "Filter by project" affordance is sidebar-only.
           projectFilter: null,
           isSettled: supports.settlement && thread.settledOverride === "settled",
           autoSettleEnabled: thread.autoSettleDisabledAt == null,
           isSnoozed: supports.snooze && effectiveSnoozed(thread, { now: now.toISOString() }),
           canSnoozeNow: canSnooze(thread, { now: now.toISOString() }),
           isRegeneratingTitle,
-          isRunning: thread.session?.status === "running" && thread.session.activeTurnId != null,
+          isRunning: !threadRuntimeCanArchive(thread.runtime),
           supports,
           snoozePresets,
         });
@@ -278,7 +277,7 @@ export function useThreadActionMenu(input: {
             );
             return;
           case "mark-unread":
-            markThreadUnread(scopedThreadKey(threadRef), thread.latestTurn?.completedAt);
+            markThreadUnread(threadRef);
             return;
           case "copy-path": {
             const workspacePath = thread.worktreePath ?? projectCwd;
