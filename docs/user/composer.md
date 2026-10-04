@@ -55,14 +55,6 @@ running the send button shows which action it will take. Long-press it to use th
 other action for a single message, or hold `Cmd` while sending from a hardware
 keyboard. The button only offers Steer when the running agent supports it.
 
-## Where a sent message lands
-
-By default the conversation stays pinned to the latest message. In
-**Settings → General → Sent message position**, choose **Top** to hold each
-message you send at the top of the view while the reply streams in below it.
-Messages that queue behind or steer a running turn stay with the live stream instead. On mobile,
-the same choice is **Settings → Thread behavior → Sent messages at top**.
-
 ## Queue messages offline on mobile
 
 Mobile keeps local copies of draft attachments, so you can preview them and queue

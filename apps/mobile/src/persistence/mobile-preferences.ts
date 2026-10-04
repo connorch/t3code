@@ -5,11 +5,7 @@ import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
-import type {
-  ChatTurnAnchor,
-  ProviderInstanceId,
-  SidebarProjectGroupingMode,
-} from "@t3tools/contracts";
+import type { ProviderInstanceId, SidebarProjectGroupingMode } from "@t3tools/contracts";
 import type { ComposerEnterBehavior } from "../lib/composerEnterBehavior";
 import type { FollowUpBehavior } from "../lib/followUpBehavior";
 import { MOBILE_THEME_IDS, type MobileThemeId, type MobileThemeMode } from "../lib/mobileTheme";
@@ -35,8 +31,6 @@ export interface Preferences {
   readonly collapsedProjectGroups?: readonly string[];
   /** What the Return key does in the composer on a hardware keyboard. iOS only. */
   readonly composerEnterBehavior?: ComposerEnterBehavior;
-  /** Device-local counterpart of the web client's `chatTurnAnchor` setting. */
-  readonly chatTurnAnchor?: ChatTurnAnchor;
   /**
    * Device-local mirror of the web `followUpBehavior` client setting: whether a
    * message sent during a running turn queues behind it or steers it.
@@ -109,7 +103,6 @@ function sanitizePreferences(parsed: Preferences): Preferences {
     connectOnboardingOptOutAccounts?: ReadonlyArray<string>;
     collapsedProjectGroups?: readonly string[];
     composerEnterBehavior?: ComposerEnterBehavior;
-    chatTurnAnchor?: ChatTurnAnchor;
     followUpBehavior?: FollowUpBehavior;
     projectGroupingEnabled?: boolean;
     projectGroupingMode?: SidebarProjectGroupingMode;
@@ -170,9 +163,6 @@ function sanitizePreferences(parsed: Preferences): Preferences {
   }
   if (parsed.composerEnterBehavior === "send" || parsed.composerEnterBehavior === "newline") {
     preferences.composerEnterBehavior = parsed.composerEnterBehavior;
-  }
-  if (parsed.chatTurnAnchor === "bottom" || parsed.chatTurnAnchor === "top") {
-    preferences.chatTurnAnchor = parsed.chatTurnAnchor;
   }
   if (parsed.followUpBehavior === "queue" || parsed.followUpBehavior === "steer") {
     preferences.followUpBehavior = parsed.followUpBehavior;

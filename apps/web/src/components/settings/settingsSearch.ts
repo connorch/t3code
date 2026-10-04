@@ -415,12 +415,6 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["queue steer running turn send default behavior composer"],
   },
   {
-    id: "sent-message-position",
-    title: "Sent message position",
-    to: "/settings/general",
-    searchTerms: ["scroll anchor top bottom new message turn timeline reading position"],
-  },
-  {
     id: "provider-update-checks",
     title: "Provider update checks",
     to: "/settings/general",

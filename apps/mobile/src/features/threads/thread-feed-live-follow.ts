@@ -1,5 +1,3 @@
-import type { ChatTurnAnchor } from "@t3tools/contracts";
-
 export type ThreadFeedLiveFollowEvent =
   | { readonly type: "reset" }
   | { readonly type: "user-scroll-begin" }
@@ -51,31 +49,16 @@ export function shouldFollowThreadWorkGroupAppend(input: {
 
 /**
  * Which sent message the feed should hold near the top while its turn streams.
- * `bottom` anchors only the first message of a thread; `top` re-anchors every
- * direct send. A message that queues behind others is not the live turn, so it
- * leaves the current framing alone either way.
+ * Every direct send re-anchors to itself so the reply reads downward from it.
+ * A message that queues behind others is not the live turn, so it leaves the
+ * current framing alone.
  */
 export function resolveThreadFeedSubmissionAnchor<AnchorId>(input: {
   readonly currentAnchorMessageId: AnchorId | null;
   readonly submittedMessageId: AnchorId;
-  readonly hasStartedTurn: boolean;
-  readonly hasUserMessage: boolean;
   readonly queuedMessageCount: number;
-  readonly turnAnchor: ChatTurnAnchor;
 }): AnchorId | null {
-  if (input.turnAnchor === "top") {
-    return input.queuedMessageCount > 0 ? input.currentAnchorMessageId : input.submittedMessageId;
-  }
-
-  if (input.hasStartedTurn || input.hasUserMessage) {
-    return null;
-  }
-
-  if (input.currentAnchorMessageId !== null) {
-    return input.currentAnchorMessageId;
-  }
-
-  return input.queuedMessageCount > 0 ? null : input.submittedMessageId;
+  return input.queuedMessageCount > 0 ? input.currentAnchorMessageId : input.submittedMessageId;
 }
 
 export function resolveThreadFeedLiveFollow(

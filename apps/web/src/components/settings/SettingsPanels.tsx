@@ -621,9 +621,6 @@ export function useSettingsRestore(onRestored?: () => void) {
       ...(settings.followUpBehavior !== DEFAULT_UNIFIED_SETTINGS.followUpBehavior
         ? ["Follow-up behavior"]
         : []),
-      ...(settings.chatTurnAnchor !== DEFAULT_UNIFIED_SETTINGS.chatTurnAnchor
-        ? ["Sent message position"]
-        : []),
       ...(settings.contextWindowMeterEnabled !== DEFAULT_UNIFIED_SETTINGS.contextWindowMeterEnabled
         ? ["Context window indicator"]
         : []),
@@ -688,7 +685,6 @@ export function useSettingsRestore(onRestored?: () => void) {
       settings.composerRichTextEnabled,
       settings.sendShortcut,
       settings.followUpBehavior,
-      settings.chatTurnAnchor,
       settings.addProjectBaseDirectory,
       settings.defaultThreadEnvMode,
       settings.newWorktreesStartFromOrigin,
@@ -813,7 +809,6 @@ export function useSettingsRestore(onRestored?: () => void) {
       composerRichTextEnabled: DEFAULT_UNIFIED_SETTINGS.composerRichTextEnabled,
       sendShortcut: DEFAULT_UNIFIED_SETTINGS.sendShortcut,
       followUpBehavior: DEFAULT_UNIFIED_SETTINGS.followUpBehavior,
-      chatTurnAnchor: DEFAULT_UNIFIED_SETTINGS.chatTurnAnchor,
       contextWindowMeterEnabled: DEFAULT_UNIFIED_SETTINGS.contextWindowMeterEnabled,
       environmentIdentificationMode: DEFAULT_UNIFIED_SETTINGS.environmentIdentificationMode,
       glassOpacity: DEFAULT_UNIFIED_SETTINGS.glassOpacity,
@@ -2918,43 +2913,6 @@ export function GeneralSettingsPanel() {
               <SelectPopup align="end" alignItemWithTrigger={false}>
                 <SelectItem value="queue">Queue</SelectItem>
                 <SelectItem value="steer">Steer</SelectItem>
-              </SelectPopup>
-            </Select>
-          }
-        />
-
-        <SettingsRow
-          {...searchableSetting("sent-message-position")}
-          description="Top holds each message you send at the top of the view so the reply reads downward. Bottom keeps the conversation pinned to the latest message."
-          resetAction={
-            settings.chatTurnAnchor !== DEFAULT_UNIFIED_SETTINGS.chatTurnAnchor ? (
-              <SettingResetButton
-                label="sent message position"
-                onClick={() =>
-                  updateSettings({ chatTurnAnchor: DEFAULT_UNIFIED_SETTINGS.chatTurnAnchor })
-                }
-              />
-            ) : null
-          }
-          control={
-            <Select
-              value={settings.chatTurnAnchor}
-              onValueChange={(value) => {
-                if (value === "bottom" || value === "top") {
-                  updateSettings({ chatTurnAnchor: value });
-                }
-              }}
-            >
-              <SelectTrigger
-                size="sm"
-                className="w-auto min-w-0"
-                aria-label="Sent message position"
-              >
-                <SelectValue>{settings.chatTurnAnchor === "top" ? "Top" : "Bottom"}</SelectValue>
-              </SelectTrigger>
-              <SelectPopup align="end" alignItemWithTrigger={false}>
-                <SelectItem value="bottom">Bottom</SelectItem>
-                <SelectItem value="top">Top</SelectItem>
               </SelectPopup>
             </Select>
           }
