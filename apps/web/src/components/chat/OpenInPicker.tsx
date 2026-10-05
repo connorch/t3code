@@ -18,6 +18,7 @@ import {
 import { useEnvironment } from "../../state/environments";
 import { ChevronDownIcon, FolderClosedIcon, SquareArrowOutUpRightIcon } from "lucide-react";
 
+import { Button } from "../ui/button";
 import { Group, GroupSeparator } from "../ui/group";
 import {
   Menu,
@@ -30,6 +31,7 @@ import {
   MenuSubPopup,
   MenuTrigger,
 } from "../ui/menu";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import {
   AntigravityIcon,
   CursorIcon,
@@ -216,7 +218,8 @@ export const OpenInPicker = memo(function OpenInPicker({
   presentation?: "toolbar" | "menu";
   compact?: boolean;
   enableShortcut?: boolean;
-  displayMode?: "toolbar" | "panel";
+  /** `icon` is a single titlebar button that opens the preferred editor, with no picker. */
+  displayMode?: "toolbar" | "panel" | "icon";
 }) {
   const isPanel = displayMode === "panel";
   const ActionGroup = isPanel ? "div" : Group;
@@ -297,6 +300,39 @@ export const OpenInPicker = memo(function OpenInPicker({
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
   }, [enableShortcut, keybindings, openInCwd, openInEditor, preferredEditor]);
+  if (displayMode === "icon") {
+    const label = `Open in ${primaryOption?.label ?? "editor"}`;
+    return (
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <Button
+              className="shrink-0 [-webkit-app-region:no-drag]"
+              variant="ghost"
+              size="icon-sm"
+              aria-label={label}
+              disabled={!preferredEditor || !openInCwd || remote.mode === "remote-unavailable"}
+              onClick={() => openInEditor(preferredEditor)}
+            />
+          }
+        >
+          {primaryOption ? (
+            <primaryOption.Icon
+              aria-hidden="true"
+              className={cn("size-4", getOpenInIconClass(primaryOption.kind))}
+            />
+          ) : (
+            <SquareArrowOutUpRightIcon aria-hidden="true" className="size-4" />
+          )}
+        </TooltipTrigger>
+        <TooltipPopup side="bottom">
+          {label}
+          {openFavoriteEditorShortcutLabel ? ` (${openFavoriteEditorShortcutLabel})` : ""}
+        </TooltipPopup>
+      </Tooltip>
+    );
+  }
+
   const primaryLabel = isPanel ? `Open in ${primaryOption?.label ?? "editor"}` : "Open";
 
   const editorItems = (

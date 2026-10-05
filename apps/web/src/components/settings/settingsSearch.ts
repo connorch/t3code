@@ -379,6 +379,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["right panel tabs wrap rows multiple lines scroll overflow tab bar"],
   },
   {
+    id: "thread-details-open-by-default",
+    title: "Show thread details",
+    to: "/settings/general",
+    searchTerms: ["thread panel details card workspace sidebar open closed hide default"],
+  },
+  {
     id: "proactive-panels",
     title: "Proactive panels",
     to: "/settings/general",

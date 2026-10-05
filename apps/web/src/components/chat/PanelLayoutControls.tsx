@@ -5,7 +5,7 @@ import {
   PanelRightIcon,
   SquareMenuIcon,
 } from "lucide-react";
-import { memo, type ReactElement } from "react";
+import { memo, type ReactElement, type ReactNode } from "react";
 
 import type { ThreadPanelPresentation } from "../../rightPanelLayout";
 import { PopoverCreateHandle, PopoverTrigger } from "../ui/popover";
@@ -14,6 +14,8 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 
 export interface PanelLayoutControlsProps {
   showThreadPanelControl?: boolean;
+  /** Rendered just before the thread details toggle, and only alongside it. */
+  threadPanelLeadingControl?: ReactNode;
   showTerminalControl?: boolean;
   showRightPanelControl?: boolean;
   terminalAvailable: boolean;
@@ -35,6 +37,7 @@ export interface PanelLayoutControlsProps {
 
 export const PanelLayoutControls = memo(function PanelLayoutControls({
   showThreadPanelControl = true,
+  threadPanelLeadingControl,
   showTerminalControl = true,
   showRightPanelControl = true,
   terminalAvailable,
@@ -88,6 +91,7 @@ export const PanelLayoutControls = memo(function PanelLayoutControls({
       className="flex h-full shrink-0 items-center gap-1 [-webkit-app-region:no-drag]"
       data-panel-layout-controls
     >
+      {showThreadPanelControl ? threadPanelLeadingControl : null}
       {showThreadPanelControl
         ? threadPanelPresentation === "popover"
           ? threadPanelTooltip(

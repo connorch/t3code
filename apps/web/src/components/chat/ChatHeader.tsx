@@ -40,6 +40,8 @@ interface ChatHeaderProps {
   isServerThread: boolean;
   activeProject: EnvironmentProject | null;
   rightPanelOpen: boolean;
+  /** The titlebar shows the open-in-editor button beside the panel toggles. */
+  editorControlVisible: boolean;
   onNewThreadInProject: () => void;
   onOpenProjectSettings?: (() => void) | undefined;
 }
@@ -72,6 +74,7 @@ export const ChatHeader = memo(function ChatHeader({
   isServerThread,
   activeProject,
   rightPanelOpen,
+  editorControlVisible,
   onNewThreadInProject,
   onOpenProjectSettings,
 }: ChatHeaderProps) {
@@ -232,7 +235,14 @@ export const ChatHeader = memo(function ChatHeader({
     <div
       className={cn(
         "flex min-w-0 flex-1 items-center gap-2 sm:gap-3",
-        rightPanelOpen ? "pr-10" : "pr-24",
+        // Room for the fixed titlebar controls; each extra button needs 2rem.
+        rightPanelOpen
+          ? editorControlVisible
+            ? "pr-18"
+            : "pr-10"
+          : editorControlVisible
+            ? "pr-32"
+            : "pr-24",
       )}
       onContextMenu={handleHeaderContextMenu}
     >

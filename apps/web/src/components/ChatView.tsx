@@ -240,6 +240,7 @@ import {
   pullRequestSurface,
   selectActiveRightPanel,
   selectActiveRightPanelSurface,
+  selectThreadDetailsOpenByDefault,
   selectThreadPanelOpen,
   selectThreadRightPanelState,
   type RightPanelSurface,
@@ -424,6 +425,7 @@ import {
 } from "./composerFooterLayout";
 import { ChatHeader } from "./chat/ChatHeader";
 import { useRemoteOpenState } from "~/remoteOpen";
+import { OpenInPicker } from "./chat/OpenInPicker";
 import { shouldShowOpenInPicker } from "./chat/OpenInPicker.logic";
 import { useOpenFavoriteEditorShortcut } from "./chat/OpenInPickerShortcut";
 import {
@@ -2302,11 +2304,13 @@ export default function ChatView(props: ChatViewProps) {
   const [threadPanelPresentation, setThreadPanelPresentation] =
     useState<ThreadPanelPresentation>("inline");
   const [threadPanelPopoverHandle] = useState(PopoverCreateHandle);
+  const threadDetailsOpenByDefault = useClientSettings(selectThreadDetailsOpenByDefault);
   const threadPanelOpen = useRightPanelStore((state) =>
     selectThreadPanelOpen(
       state.threadPanelVisibilityByThreadKey,
       activeThreadRef,
       threadPanelPresentation,
+      threadDetailsOpenByDefault,
     ),
   );
 
@@ -3965,6 +3969,22 @@ export default function ChatView(props: ChatViewProps) {
     availableEditors,
     openInCwd: gitCwd,
   });
+  const openInEditorEnvironmentId = activeThread?.environmentId ?? environmentId;
+  // Titlebar shortcut beside the thread details toggle; the details card keeps its full picker.
+  const headerEditorControl = useMemo(
+    () =>
+      showOpenInPicker && gitCwd ? (
+        <OpenInPicker
+          environmentId={openInEditorEnvironmentId}
+          keybindings={keybindings}
+          availableEditors={availableEditors}
+          openInCwd={gitCwd}
+          enableShortcut={false}
+          displayMode="icon"
+        />
+      ) : null,
+    [availableEditors, gitCwd, keybindings, openInEditorEnvironmentId, showOpenInPicker],
+  );
   const manualCompactionProviderAvailable = useMemo(
     () =>
       hasAvailableCompactionProvider({
@@ -10488,6 +10508,7 @@ export default function ChatView(props: ChatViewProps) {
     threadPanelOpen,
     threadPanelPresentation,
     threadPanelPopoverHandle,
+    threadPanelLeadingControl: headerEditorControl,
     threadPanelShortcutLabel: shortcutLabelForCommand(keybindings, "threadPanel.toggle"),
     threadPanelHasAttention:
       activeEnvironmentUnavailableState !== null || showVersionMismatchBanner,
@@ -10624,6 +10645,7 @@ export default function ChatView(props: ChatViewProps) {
             activeThreadTitle={activeThread.title}
             activeProject={activeProject ?? null}
             rightPanelOpen={inlineRightPanelOwnsTitleBar}
+            editorControlVisible={headerEditorControl !== null}
             onNewThreadInProject={handleNewThreadInActiveProject}
             {...(activeDraftLogicalProjectKey
               ? { onOpenProjectSettings: handleOpenDraftProjectSettings }
