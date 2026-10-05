@@ -411,6 +411,15 @@ function ProjectDetail({
       if (confirmed._tag === "Failure" || !confirmed.value) return;
 
       const draftStore = useComposerDraftStore.getState();
+      // A deleted checkout must not keep its link alive, or re-adding the
+      // folder would silently rejoin the group. Tracked per success so a
+      // failure later in the loop still clears the ones already gone.
+      let remainingLinks = projectLinks;
+      const persistLinks = () => {
+        if (remainingLinks !== projectLinks) {
+          void updateSettings({ sidebarProjectLinks: remainingLinks });
+        }
+      };
       for (const member of members) {
         const memberThreads = projectThreads.filter(
           (thread) =>
@@ -428,8 +437,10 @@ function ProjectDetail({
         );
         if (result._tag === "Failure") {
           reportFailure(`Failed to remove "${member.title}"`, result);
+          persistLinks();
           return;
         }
+        remainingLinks = unlinkProject(remainingLinks, member.physicalProjectKey);
         const projectRef = scopeProjectRef(member.environmentId, member.id);
         releaseProjectDraftUploads(
           projectRef,
@@ -441,15 +452,7 @@ function ProjectDetail({
         }
         draftStore.clearProjectDraftThreadId(projectRef);
       }
-      // A deleted checkout must not keep its link alive, or re-adding the
-      // folder would silently rejoin the group.
-      const remainingLinks = members.reduce(
-        (links, member) => unlinkProject(links, member.physicalProjectKey),
-        projectLinks,
-      );
-      if (remainingLinks !== projectLinks) {
-        void updateSettings({ sidebarProjectLinks: remainingLinks });
-      }
+      persistLinks();
 
       if (isWholeGroup && !hasOtherMembers) {
         void navigate({ to: "/", replace: true });
