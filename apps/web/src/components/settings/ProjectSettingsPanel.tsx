@@ -314,11 +314,15 @@ function ProjectDetail({
   const hasMultipleCheckouts = group.memberProjects.length > 1;
 
   // ----- manual links -----
+  // Links are a device preference over the whole logical project, so they
+  // ignore the machine/checkout filter that scopes `group` elsewhere.
+  const fullGroup =
+    allGroups.find((candidate) => candidate.projectKey === group.projectKey) ?? group;
   const projectLinks = useClientSettings(selectProjectGroupingSettings).sidebarProjectLinks;
   const updateSettings = useUpdateClientSettings();
   const [linkDialogOpen, setLinkDialogOpen] = useState(false);
   const [isLinking, setIsLinking] = useState(false);
-  const linkedMembers = group.memberProjects.filter(
+  const linkedMembers = fullGroup.memberProjects.filter(
     (member) => projectLinks[member.physicalProjectKey] !== undefined,
   );
   const linkCandidates = useMemo(
@@ -329,7 +333,7 @@ function ProjectDetail({
     async (input: { target: SidebarProjectSnapshot; name: string }) => {
       setIsLinking(true);
       try {
-        const members = [...group.memberProjects, ...input.target.memberProjects];
+        const members = [...fullGroup.memberProjects, ...input.target.memberProjects];
         if (members.some((member) => member.title !== input.name)) {
           const renamed = await updateMembers(
             members,
@@ -341,7 +345,7 @@ function ProjectDetail({
         await updateSettings({
           sidebarProjectLinks: linkProjectGroups({
             links: projectLinks,
-            memberKeys: group.memberProjects.map((member) => member.physicalProjectKey),
+            memberKeys: fullGroup.memberProjects.map((member) => member.physicalProjectKey),
             targetMemberKeys: input.target.memberProjects.map(
               (member) => member.physicalProjectKey,
             ),
@@ -353,7 +357,7 @@ function ProjectDetail({
         setIsLinking(false);
       }
     },
-    [group.memberProjects, projectLinks, updateMembers, updateSettings],
+    [fullGroup.memberProjects, projectLinks, updateMembers, updateSettings],
   );
   const unlink = useCallback(
     (member: SidebarProjectGroupMember) => {
@@ -437,6 +441,15 @@ function ProjectDetail({
         }
         draftStore.clearProjectDraftThreadId(projectRef);
       }
+      // A deleted checkout must not keep its link alive, or re-adding the
+      // folder would silently rejoin the group.
+      const remainingLinks = members.reduce(
+        (links, member) => unlinkProject(links, member.physicalProjectKey),
+        projectLinks,
+      );
+      if (remainingLinks !== projectLinks) {
+        void updateSettings({ sidebarProjectLinks: remainingLinks });
+      }
 
       if (isWholeGroup && !hasOtherMembers) {
         void navigate({ to: "/", replace: true });
@@ -448,8 +461,10 @@ function ProjectDetail({
       group.memberProjects.length,
       hasOtherMembers,
       navigate,
+      projectLinks,
       reportFailure,
       threads,
+      updateSettings,
     ],
   );
 
@@ -646,7 +661,7 @@ function ProjectDetail({
       />
       {linkDialogOpen ? (
         <LinkProjectDialog
-          currentGroup={group}
+          currentGroup={fullGroup}
           candidates={linkCandidates}
           isSubmitting={isLinking}
           onOpenChange={setLinkDialogOpen}

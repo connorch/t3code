@@ -39,11 +39,12 @@ export function linkProjectGroups(input: {
 
 /**
  * Removes one project from its link. A link left with a single member is
- * dropped entirely so a lone project returns to normal grouping.
+ * dropped entirely so a lone project returns to normal grouping. Returns the
+ * same object when nothing changed so callers can skip a settings write.
  */
-export function unlinkProject(links: ProjectLinks, memberKey: string): Record<string, string> {
+export function unlinkProject(links: ProjectLinks, memberKey: string): ProjectLinks {
   const linkId = links[memberKey];
-  if (linkId === undefined) return { ...links };
+  if (linkId === undefined) return links;
   const next: Record<string, string> = {};
   let remaining = 0;
   for (const [key, id] of Object.entries(links)) {

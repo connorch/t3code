@@ -76,7 +76,8 @@ describe("unlinkProject", () => {
     ).toEqual({ "linux:/c": "two" });
   });
 
-  it("is a no-op for an unlinked project", () => {
-    expect(unlinkProject({ "studio:/a": "one" }, "macbook:/b")).toEqual({ "studio:/a": "one" });
+  it("returns the same map for an unlinked project", () => {
+    const links = { "studio:/a": "one" };
+    expect(unlinkProject(links, "macbook:/b")).toBe(links);
   });
 });
