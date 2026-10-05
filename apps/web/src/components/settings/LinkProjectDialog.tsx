@@ -24,14 +24,22 @@ import {
 import { Input } from "../ui/input";
 import { SelectButton } from "../ui/select";
 
-/** Where a candidate group lives, so same-named projects on different machines stay apart. */
+/**
+ * Where a candidate group lives, so same-named projects stay apart. A single
+ * checkout shows its path too, since two folders on one machine share a label.
+ */
 function describeGroupLocation(group: SidebarProjectSnapshot): string {
-  const labels = group.memberProjects
+  const only = group.memberProjects.length === 1 ? group.memberProjects[0] : undefined;
+  if (only) {
+    return only.environmentLabel
+      ? `${only.environmentLabel} · ${only.workspaceRoot}`
+      : only.workspaceRoot;
+  }
+  return group.memberProjects
     .map((member) => member.environmentLabel)
     .filter((label): label is string => label !== null)
-    .filter((label, index, all) => all.indexOf(label) === index);
-  if (labels.length > 0) return labels.join(", ");
-  return group.memberProjects[0]?.workspaceRoot ?? "";
+    .filter((label, index, all) => all.indexOf(label) === index)
+    .join(", ");
 }
 
 /**
@@ -134,8 +142,12 @@ export function LinkProjectDialog({
                     >
                       <ProjectFavicon project={group} className="size-4 shrink-0" />
                       <span className="min-w-0 flex-1 truncate text-sm">{group.displayName}</span>
-                      <span className="min-w-0 max-w-[50%] truncate text-xs text-muted-foreground">
-                        {describeGroupLocation(group)}
+                      {/* Truncates from the start so the folder name stays visible. */}
+                      <span
+                        className="min-w-0 max-w-[60%] truncate text-xs text-muted-foreground"
+                        dir="rtl"
+                      >
+                        <bdi>{describeGroupLocation(group)}</bdi>
                       </span>
                     </ComboboxItem>
                   ))}
