@@ -31,6 +31,7 @@ const repositoryIdentity = {
 const defaultGroupingSettings = {
   sidebarProjectGroupingMode: "repository" as const,
   sidebarProjectGroupingOverrides: {},
+  sidebarProjectLinks: {},
 };
 
 function makeProject(overrides: Partial<Project> = {}): Project {
@@ -133,8 +134,8 @@ describe("environment grouping", () => {
 
     expect(
       deriveLogicalProjectKeyFromSettings(project, {
+        ...defaultGroupingSettings,
         sidebarProjectGroupingMode: "separate",
-        sidebarProjectGroupingOverrides: {},
       }),
     ).toBe(derivePhysicalProjectKey(project));
   });
@@ -158,6 +159,7 @@ describe("environment grouping", () => {
 
     expect(
       deriveLogicalProjectKeyFromSettings(project, {
+        ...defaultGroupingSettings,
         sidebarProjectGroupingMode: "separate",
         sidebarProjectGroupingOverrides: {
           [derivePhysicalProjectKey(project)]: "repository",

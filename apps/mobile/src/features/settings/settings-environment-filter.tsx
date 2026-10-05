@@ -41,7 +41,11 @@ export function SettingsEnvironmentFilterProvider(props: { readonly children: Re
     () =>
       buildProjectGroups({
         projects,
-        settings: { sidebarProjectGroupingMode: groupingMode, sidebarProjectGroupingOverrides: {} },
+        settings: {
+          sidebarProjectGroupingMode: groupingMode,
+          sidebarProjectGroupingOverrides: {},
+          sidebarProjectLinks: {},
+        },
       }),
     [projects, groupingMode],
   );

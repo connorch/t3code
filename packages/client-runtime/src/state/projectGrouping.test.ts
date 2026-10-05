@@ -5,6 +5,7 @@ import type { EnvironmentProject } from "./models.ts";
 import { chooseLoadBalancedEnvironment } from "../load-balancing.ts";
 import {
   buildProjectGroups,
+  deriveLogicalProjectKeyFromSettings,
   derivePhysicalProjectKey,
   type ProjectGroupingSettings,
 } from "./projectGrouping.ts";
@@ -109,10 +110,12 @@ function makeProject(
 function settings(
   mode: ProjectGroupingSettings["sidebarProjectGroupingMode"],
   overrides: ProjectGroupingSettings["sidebarProjectGroupingOverrides"] = {},
+  links: ProjectGroupingSettings["sidebarProjectLinks"] = {},
 ): ProjectGroupingSettings {
   return {
     sidebarProjectGroupingMode: mode,
     sidebarProjectGroupingOverrides: overrides,
+    sidebarProjectLinks: links,
   };
 }
 
@@ -277,5 +280,76 @@ describe("buildProjectGroups", () => {
     });
     expect(groups).toHaveLength(1);
     expect(groups[0]?.members.map((member) => member.project.id)).toEqual(["winner", "sibling"]);
+  });
+
+  describe("manual project links", () => {
+    const studio = EnvironmentId.make("studio");
+    const macbook = EnvironmentId.make("macbook");
+    const studioProjects = makeProject("studio-projects", "/Users/connor/Projects", {
+      environmentId: studio,
+      repositoryIdentity: null,
+      title: "Projects",
+    });
+    const macbookProjects = makeProject("macbook-projects", "/Users/cc/Projects", {
+      environmentId: macbook,
+      repositoryIdentity: null,
+      title: "Projects",
+    });
+    const links = {
+      [derivePhysicalProjectKey(studioProjects)]: "link-1",
+      [derivePhysicalProjectKey(macbookProjects)]: "link-1",
+    };
+
+    it("collapses linked projects without a repository into one group", () => {
+      const groups = buildProjectGroups({
+        projects: [studioProjects, macbookProjects],
+        settings: settings("repository", {}, links),
+      });
+
+      expect(groups).toHaveLength(1);
+      expect(groups[0]?.key).toBe("link:link-1");
+      expect(groups[0]?.label).toBe("Projects");
+      expect(groups[0]?.members.map((member) => member.project.environmentId)).toEqual([
+        studio,
+        macbook,
+      ]);
+      expect(groups[0]?.memberProjectRefs).toHaveLength(2);
+    });
+
+    it("lets a link beat a separate override and pull a project out of its repository group", () => {
+      const repoClone = makeProject("t3code", "/work/t3code");
+      const linkedClone = makeProject("t3code-2", "/work/t3code-2");
+      const groups = buildProjectGroups({
+        projects: [repoClone, linkedClone, studioProjects],
+        settings: settings(
+          "repository",
+          { [derivePhysicalProjectKey(linkedClone)]: "separate" },
+          {
+            [derivePhysicalProjectKey(linkedClone)]: "link-2",
+            [derivePhysicalProjectKey(studioProjects)]: "link-2",
+          },
+        ),
+      });
+
+      expect(groups.map((group) => group.key)).toEqual([
+        repositoryIdentity.canonicalKey,
+        "link:link-2",
+      ]);
+      expect(groups[1]?.members.map((member) => member.project.id)).toEqual([
+        "t3code-2",
+        "studio-projects",
+      ]);
+    });
+
+    it("derives the link key from settings so every caller agrees with the sidebar", () => {
+      const linkSettings = settings("separate", {}, links);
+      expect(deriveLogicalProjectKeyFromSettings(studioProjects, linkSettings)).toBe("link:link-1");
+      expect(deriveLogicalProjectKeyFromSettings(macbookProjects, linkSettings)).toBe(
+        "link:link-1",
+      );
+      expect(
+        deriveLogicalProjectKeyFromSettings(makeProject("other", "/work/other"), linkSettings),
+      ).toBe(derivePhysicalProjectKey(makeProject("other", "/work/other")));
+    });
   });
 });
