@@ -605,6 +605,10 @@ export function useSettingsRestore(onRestored?: () => void) {
       ...(settings.panelTabsWrap !== DEFAULT_UNIFIED_SETTINGS.panelTabsWrap
         ? ["Wrap panel tabs"]
         : []),
+      ...(settings.threadDetailsOpenByDefault !==
+      DEFAULT_UNIFIED_SETTINGS.threadDetailsOpenByDefault
+        ? ["Show thread details"]
+        : []),
       ...(settings.proactivePanelsEnabled !== DEFAULT_UNIFIED_SETTINGS.proactivePanelsEnabled
         ? ["Proactive panels"]
         : []),
@@ -692,6 +696,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       settings.diffIgnoreWhitespace,
       settings.diffLayout,
       settings.panelTabsWrap,
+      settings.threadDetailsOpenByDefault,
       settings.proactivePanelsEnabled,
       settings.environmentIdentificationMode,
       settings.contextWindowMeterEnabled,
@@ -803,6 +808,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       diffIgnoreWhitespace: DEFAULT_UNIFIED_SETTINGS.diffIgnoreWhitespace,
       diffLayout: DEFAULT_UNIFIED_SETTINGS.diffLayout,
       panelTabsWrap: DEFAULT_UNIFIED_SETTINGS.panelTabsWrap,
+      threadDetailsOpenByDefault: DEFAULT_UNIFIED_SETTINGS.threadDetailsOpenByDefault,
       proactivePanelsEnabled: DEFAULT_UNIFIED_SETTINGS.proactivePanelsEnabled,
       showSkillsInSlashMenu: DEFAULT_UNIFIED_SETTINGS.showSkillsInSlashMenu,
       composerCollapseOnScroll: DEFAULT_UNIFIED_SETTINGS.composerCollapseOnScroll,
@@ -2719,6 +2725,33 @@ export function GeneralSettingsPanel() {
               checked={settings.panelTabsWrap}
               onCheckedChange={(checked) => updateSettings({ panelTabsWrap: Boolean(checked) })}
               aria-label="Wrap panel tabs"
+            />
+          }
+        />
+
+        <SettingsRow
+          {...searchableSetting("thread-details-open-by-default")}
+          description="Open the thread details card in threads you haven't toggled it in."
+          resetAction={
+            settings.threadDetailsOpenByDefault !==
+            DEFAULT_UNIFIED_SETTINGS.threadDetailsOpenByDefault ? (
+              <SettingResetButton
+                label="show thread details"
+                onClick={() =>
+                  updateSettings({
+                    threadDetailsOpenByDefault: DEFAULT_UNIFIED_SETTINGS.threadDetailsOpenByDefault,
+                  })
+                }
+              />
+            ) : null
+          }
+          control={
+            <Switch
+              checked={settings.threadDetailsOpenByDefault}
+              onCheckedChange={(checked) =>
+                updateSettings({ threadDetailsOpenByDefault: Boolean(checked) })
+              }
+              aria-label="Show thread details"
             />
           }
         />

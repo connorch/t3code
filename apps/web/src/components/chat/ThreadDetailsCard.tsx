@@ -3,7 +3,12 @@ import type { ScopedThreadRef } from "@t3tools/contracts";
 import { ScrollArea } from "../ui/scroll-area";
 import { cn } from "../../lib/utils";
 import { Popover, PopoverPopup, PopoverCreateHandle } from "../ui/popover";
-import { selectThreadPanelOpen, useRightPanelStore } from "../../rightPanelStore";
+import { useClientSettings } from "../../hooks/useSettings";
+import {
+  selectThreadDetailsOpenByDefault,
+  selectThreadPanelOpen,
+  useRightPanelStore,
+} from "../../rightPanelStore";
 import type { ThreadPanelPresentation } from "../../rightPanelLayout";
 import { useChatCanvas } from "./ChatCanvasContext";
 import {
@@ -37,11 +42,22 @@ export function ThreadDetailsCard({
     ? resolveThreadDetailsCardLayout({ container: canvas.container, ...canvas.layout })
     : null;
   const mode = placement ? "inline" : "popover";
+  const openByDefault = useClientSettings(selectThreadDetailsOpenByDefault);
   const inlineOpen = useRightPanelStore((state) =>
-    selectThreadPanelOpen(state.threadPanelVisibilityByThreadKey, threadRef, "inline"),
+    selectThreadPanelOpen(
+      state.threadPanelVisibilityByThreadKey,
+      threadRef,
+      "inline",
+      openByDefault,
+    ),
   );
   const popoverOpen = useRightPanelStore((state) =>
-    selectThreadPanelOpen(state.threadPanelVisibilityByThreadKey, threadRef, "popover"),
+    selectThreadPanelOpen(
+      state.threadPanelVisibilityByThreadKey,
+      threadRef,
+      "popover",
+      openByDefault,
+    ),
   );
   const [contentElement, setContentElement] = useState<HTMLDivElement | null>(null);
   const measurementKey = `${threadRef.environmentId}:${threadRef.threadId}:${preferredPlacement?.width ?? "popup"}`;
