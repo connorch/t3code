@@ -12,6 +12,8 @@ import { normalizeProjectPathForComparison } from "./projects.ts";
 export interface ProjectGroupingSettings {
   readonly sidebarProjectGroupingMode: SidebarProjectGroupingMode;
   readonly sidebarProjectGroupingOverrides: Record<string, SidebarProjectGroupingMode>;
+  /** Physical project key -> link id. See `ClientSettings.sidebarProjectLinks`. */
+  readonly sidebarProjectLinks: Record<string, string>;
 }
 
 export type ProjectGroupingMode = SidebarProjectGroupingMode;
@@ -20,6 +22,7 @@ export function selectProjectGroupingSettings(settings: ClientSettings): Project
   return {
     sidebarProjectGroupingMode: settings.sidebarProjectGroupingMode,
     sidebarProjectGroupingOverrides: settings.sidebarProjectGroupingOverrides,
+    sidebarProjectLinks: settings.sidebarProjectLinks,
   };
 }
 
@@ -86,6 +89,18 @@ export function getProjectOrderKey(
   return derivePhysicalProjectKey(project);
 }
 
+/**
+ * Logical key for a manually linked project, or null when it is not linked.
+ * A link beats every grouping mode, including a `separate` override.
+ */
+export function deriveLinkedProjectKey(
+  project: Pick<EnvironmentProject, "environmentId" | "workspaceRoot">,
+  settings: Pick<ProjectGroupingSettings, "sidebarProjectLinks">,
+): string | null {
+  const linkId = settings.sidebarProjectLinks[derivePhysicalProjectKey(project)];
+  return linkId ? `link:${linkId}` : null;
+}
+
 export function resolveProjectGroupingMode(
   project: Pick<EnvironmentProject, "environmentId" | "workspaceRoot">,
   settings: ProjectGroupingSettings,
@@ -147,9 +162,12 @@ export function deriveLogicalProjectKeyFromSettings(
   >,
   settings: ProjectGroupingSettings,
 ): string {
-  return deriveLogicalProjectKey(project, {
-    groupingMode: resolveProjectGroupingMode(project, settings),
-  });
+  return (
+    deriveLinkedProjectKey(project, settings) ??
+    deriveLogicalProjectKey(project, {
+      groupingMode: resolveProjectGroupingMode(project, settings),
+    })
+  );
 }
 
 export function deriveProjectGroupLabel(input: {
@@ -267,9 +285,11 @@ export function buildProjectGroups<TProject extends EnvironmentProject>(input: {
       shouldReplacePhysicalProjectWinner(current, candidate) ? candidate : current,
     );
     const identitySource = selectProjectIdentitySource(physicalProjects, winner);
-    const logicalKey = deriveLogicalProjectKey(identitySource, {
-      groupingMode: resolveProjectGroupingMode(winner, input.settings),
-    });
+    const logicalKey =
+      deriveLinkedProjectKey(winner, input.settings) ??
+      deriveLogicalProjectKey(identitySource, {
+        groupingMode: resolveProjectGroupingMode(winner, input.settings),
+      });
     logicalKeyByPhysicalKey.set(physicalProjectKey, logicalKey);
     const member = { physicalProjectKey, project: winner };
     const existing = groupedMembers.get(logicalKey);

@@ -53,6 +53,7 @@ export function buildHomeProjectScopes(input: {
     settings: {
       sidebarProjectGroupingMode: input.projectGroupingMode,
       sidebarProjectGroupingOverrides: {},
+      sidebarProjectLinks: {},
     },
   }).map((group) => {
     return {

@@ -1,5 +1,6 @@
 export {
   buildProjectGroups,
+  deriveLinkedProjectKey,
   deriveLogicalProjectKey,
   deriveLogicalProjectKeyFromSettings,
   derivePhysicalProjectKey,

@@ -71,9 +71,14 @@ generation. The same rows edit environment defaults or project overrides dependi
 project crumb.
 
 The Project category, shown while a project is selected, holds the project's name, icon, actions,
-checkouts and removal. Actions belong to a project: editing them creates the project's own list
-on each selected environment, and reset returns to the environment's shared list. A project's
-`t3.json` actions can be imported there.
+checkouts, linked projects and removal. Actions belong to a project: editing them creates the
+project's own list on each selected environment, and reset returns to the environment's shared
+list. A project's `t3.json` actions can be imported there.
+
+Projects that share a Git remote are grouped automatically. **Link with...** groups any other
+project, on this or another machine, as the same project even without a shared repository, so new
+threads can start on either machine. Links are saved on the device where you create them;
+**Unlink** separates a project again.
 
 Settings a repository can also declare in `t3.json`, such as the workspace for new threads,
 resolve in one order: a project override, then the environment setting, then `t3.json`, then the

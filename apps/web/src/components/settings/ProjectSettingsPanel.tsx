@@ -14,8 +14,11 @@ import { InfoIcon, Trash2Icon } from "lucide-react";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useComposerDraftStore } from "../../composerDraftStore";
+import { useClientSettings, useUpdateClientSettings } from "../../hooks/useSettings";
 import { releaseProjectDraftUploads } from "../../lib/composerDraftUploads";
+import { randomUUID } from "../../lib/utils";
 import { readLocalApi } from "../../localApi";
+import { selectProjectGroupingSettings } from "../../logicalProject";
 import {
   type SidebarProjectGroupMember,
   type SidebarProjectSnapshot,
@@ -39,9 +42,14 @@ import {
   canPickExternalProjectFavicon,
   ProjectFaviconPickerDialog,
 } from "./ProjectFaviconPickerDialog";
+import { LinkProjectDialog } from "./LinkProjectDialog";
 import { ProjectActionsSettings } from "./ProjectActionsSettings";
 import { ProjectDefaultsSettings } from "./ProjectDefaultsSettings";
-import { projectGroupTitleNeedsUpdate } from "./ProjectSettingsPanel.logic";
+import {
+  linkProjectGroups,
+  projectGroupTitleNeedsUpdate,
+  unlinkProject,
+} from "./ProjectSettingsPanel.logic";
 import { useSettingsProjectGroups } from "./useSettingsProjectGroups";
 
 const ProjectIconPickerDialog = lazy(() =>
@@ -152,6 +160,7 @@ export function ProjectSettingsPanel({
     <ProjectDetail
       key={`${selected.projectKey}:${environmentId ?? "all"}:${checkoutKey ?? "all"}`}
       group={scopedGroup}
+      allGroups={groups}
       hasOtherMembers={members.length < selected.memberProjects.length}
     />
   );
@@ -159,9 +168,11 @@ export function ProjectSettingsPanel({
 
 function ProjectDetail({
   group,
+  allGroups,
   hasOtherMembers,
 }: {
   group: SidebarProjectSnapshot;
+  allGroups: ReadonlyArray<SidebarProjectSnapshot>;
   hasOtherMembers: boolean;
 }) {
   const navigate = useNavigate({ from: "/settings" });
@@ -205,9 +216,11 @@ function ProjectDetail({
   }, []);
 
   // Group-shared fields live on each physical project record, so a
-  // group-level edit fans out to every member.
-  const updateAllMembers = useCallback(
+  // group-level edit fans out to every member. Linking passes the members
+  // of both groups so the new name lands everywhere at once.
+  const updateMembers = useCallback(
     async (
+      members: ReadonlyArray<SidebarProjectGroupMember>,
       input: Partial<{
         title: string;
         faviconPath: string | null;
@@ -215,7 +228,7 @@ function ProjectDetail({
       }>,
       failureTitle: string,
     ): Promise<AtomCommandResult<void, unknown>> => {
-      const unavailable = group.memberProjects.find((member) => {
+      const unavailable = members.find((member) => {
         const environment = environmentById.get(member.environmentId);
         return environment?.connection.phase !== "connected" || !environment.serverConfig;
       });
@@ -227,7 +240,7 @@ function ProjectDetail({
         reportFailure(failureTitle, result);
         return result;
       }
-      for (const member of group.memberProjects) {
+      for (const member of members) {
         const result = mapAtomCommandResult(
           await updateProject({
             environmentId: member.environmentId,
@@ -239,7 +252,7 @@ function ProjectDetail({
           // A partial fan-out is possible: earlier members already took the
           // write. Name the environment so the user knows where it stopped.
           reportFailure(
-            group.memberProjects.length > 1
+            members.length > 1
               ? `${failureTitle} on ${member.environmentLabel ?? "the current environment"}`
               : failureTitle,
             result,
@@ -249,7 +262,12 @@ function ProjectDetail({
       }
       return AsyncResult.success(undefined);
     },
-    [environmentById, group.memberProjects, reportFailure, updateProject],
+    [environmentById, reportFailure, updateProject],
+  );
+  const updateAllMembers = useCallback(
+    (input: Parameters<typeof updateMembers>[1], failureTitle: string) =>
+      updateMembers(group.memberProjects, input, failureTitle),
+    [group.memberProjects, updateMembers],
   );
 
   const renameGroup = useCallback(
@@ -294,6 +312,57 @@ function ProjectDetail({
   );
 
   const hasMultipleCheckouts = group.memberProjects.length > 1;
+
+  // ----- manual links -----
+  const projectLinks = useClientSettings(selectProjectGroupingSettings).sidebarProjectLinks;
+  const updateSettings = useUpdateClientSettings();
+  const [linkDialogOpen, setLinkDialogOpen] = useState(false);
+  const [isLinking, setIsLinking] = useState(false);
+  const linkedMembers = group.memberProjects.filter(
+    (member) => projectLinks[member.physicalProjectKey] !== undefined,
+  );
+  const linkCandidates = useMemo(
+    () => allGroups.filter((candidate) => candidate.projectKey !== group.projectKey),
+    [allGroups, group.projectKey],
+  );
+  const linkWith = useCallback(
+    async (input: { target: SidebarProjectSnapshot; name: string }) => {
+      setIsLinking(true);
+      try {
+        const members = [...group.memberProjects, ...input.target.memberProjects];
+        if (members.some((member) => member.title !== input.name)) {
+          const renamed = await updateMembers(
+            members,
+            { title: input.name },
+            "Failed to rename linked project",
+          );
+          if (renamed._tag === "Failure") return;
+        }
+        await updateSettings({
+          sidebarProjectLinks: linkProjectGroups({
+            links: projectLinks,
+            memberKeys: group.memberProjects.map((member) => member.physicalProjectKey),
+            targetMemberKeys: input.target.memberProjects.map(
+              (member) => member.physicalProjectKey,
+            ),
+            newLinkId: randomUUID,
+          }),
+        });
+        setLinkDialogOpen(false);
+      } finally {
+        setIsLinking(false);
+      }
+    },
+    [group.memberProjects, projectLinks, updateMembers, updateSettings],
+  );
+  const unlink = useCallback(
+    (member: SidebarProjectGroupMember) => {
+      void updateSettings({
+        sidebarProjectLinks: unlinkProject(projectLinks, member.physicalProjectKey),
+      });
+    },
+    [projectLinks, updateSettings],
+  );
 
   const removeMembers = useCallback(
     async (members: ReadonlyArray<SidebarProjectGroupMember>) => {
@@ -406,6 +475,42 @@ function ProjectDetail({
     </SettingsSection>
   );
 
+  const linkedProjects = (
+    <SettingsSection title="Linked projects">
+      {linkedMembers.map((member) => (
+        <SettingsRow
+          key={member.physicalProjectKey}
+          title={member.environmentLabel ?? "Environment"}
+          description={member.workspaceRoot}
+          control={
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => unlink(member)}
+              aria-label={`Unlink ${member.workspaceRoot}`}
+            >
+              Unlink
+            </Button>
+          }
+        />
+      ))}
+      <SettingsRow
+        title="Link another project"
+        description="Treat another project, on this or another machine, as this project. Saved on this device."
+        control={
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={linkCandidates.length === 0}
+            onClick={() => setLinkDialogOpen(true)}
+          >
+            Link with...
+          </Button>
+        }
+      />
+    </SettingsSection>
+  );
+
   return (
     <>
       <SettingsPageContainer className="gap-6">
@@ -492,6 +597,7 @@ function ProjectDetail({
         <ProjectDefaultsSettings category="project" />
         <ProjectActionsSettings />
         {hasMultipleCheckouts ? checkoutChoices : null}
+        {linkedProjects}
         <SettingsSection title="Danger">
           <SettingsRow
             title={
@@ -538,6 +644,15 @@ function ProjectDetail({
         open={faviconPickerOpen}
         projectName={group.displayName}
       />
+      {linkDialogOpen ? (
+        <LinkProjectDialog
+          currentGroup={group}
+          candidates={linkCandidates}
+          isSubmitting={isLinking}
+          onOpenChange={setLinkDialogOpen}
+          onSubmit={(input) => void linkWith(input)}
+        />
+      ) : null}
       {iconPickerOpen ? (
         <Suspense fallback={null}>
           <ProjectIconPickerDialog
