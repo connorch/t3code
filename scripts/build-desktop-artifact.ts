@@ -1318,6 +1318,64 @@ ${associatedDomains}
 `;
 }
 
+// Self-signed certificate that unsigned local macOS builds look for when no
+// Developer ID identity is in the keychain. docs/operations/development.md
+// explains how to create it.
+export const LOCAL_MAC_SIGNING_CERTIFICATE_NAME = "T3 Code Local Signing";
+
+/**
+ * Picks the signing identity for an unsigned local macOS build from
+ * `security find-identity -v -p codesigning` output: the configured identity
+ * (name or SHA-1), else the first Developer ID Application identity, else the
+ * local self-signed certificate. Returns the SHA-1, which electron-builder
+ * matches against the same list without rejecting Apple name prefixes.
+ */
+export function selectLocalMacSigningIdentity(
+  findIdentityOutput: string,
+  configured: string | undefined,
+): string | undefined {
+  const identities = findIdentityOutput.split("\n").flatMap((line) => {
+    const match = /^\s*\d+\)\s+([0-9A-F]{40})\s+"(.+)"$/i.exec(line);
+    return match?.[1] && match[2] ? [{ hash: match[1].toUpperCase(), name: match[2] }] : [];
+  });
+  const find = (predicate: (identity: (typeof identities)[number]) => boolean) =>
+    identities.find(predicate)?.hash;
+
+  if (configured) {
+    return find(({ hash, name }) => name === configured || hash === configured.toUpperCase());
+  }
+  return (
+    find(({ name }) => name.startsWith("Developer ID Application:")) ??
+    find(({ name }) => name === LOCAL_MAC_SIGNING_CERTIFICATE_NAME)
+  );
+}
+
+// macOS records privacy grants such as Local Network against the app's
+// designated requirement. An ad-hoc signature's requirement is its cdhash,
+// which changes on every rebuild, so local builds sign with a stable keychain
+// identity when one exists and fall back to ad-hoc with a warning otherwise.
+const resolveLocalMacSigningIdentity = Effect.fn("resolveLocalMacSigningIdentity")(function* () {
+  const configured = Option.getOrUndefined(
+    yield* Config.String("T3CODE_MAC_SIGNING_IDENTITY").pipe(Config.option),
+  )?.trim();
+  const result = yield* spawnAndCollectOutput(
+    ChildProcess.make("security", ["find-identity", "-v", "-p", "codesigning"]),
+  ).pipe(Effect.orElseSucceed(() => ({ stdout: "", stderr: "", exitCode: 1 })));
+  const identity = selectLocalMacSigningIdentity(result.stdout, configured || undefined);
+
+  if (identity) {
+    yield* Effect.log(`[desktop-artifact] Signing local macOS build with identity ${identity}.`);
+  } else {
+    yield* Effect.logWarning(
+      configured
+        ? `[desktop-artifact] T3CODE_MAC_SIGNING_IDENTITY '${configured}' is not a valid code signing identity in the keychain.`
+        : `[desktop-artifact] No Developer ID or '${LOCAL_MAC_SIGNING_CERTIFICATE_NAME}' code signing identity found in the keychain.`,
+      "Falling back to an ad-hoc signature: macOS privacy grants such as Local Network will not survive a rebuild. See docs/operations/development.md#local-macos-signing.",
+    );
+  }
+  return identity;
+});
+
 export function resolveFffNativeDependencies(
   platform: typeof BuildPlatform.Type,
   arch: typeof BuildArch.Type,
@@ -2722,6 +2780,8 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
       extendInfo: {
         NSScreenCaptureUsageDescription:
           "T3 Code captures the active window when you use the window capture shortcut.",
+        NSLocalNetworkUsageDescription:
+          "T3 Code runs your terminals and agents, which connect to devices on your local network.",
       },
       protocols: [
         {
@@ -3816,6 +3876,12 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
     delete buildEnv.APPLE_API_KEY;
     delete buildEnv.APPLE_API_KEY_ID;
     delete buildEnv.APPLE_API_ISSUER;
+    if (options.platform === "mac" && hostPlatform === "darwin") {
+      const localIdentity = yield* resolveLocalMacSigningIdentity();
+      if (localIdentity) {
+        buildEnv.CSC_NAME = localIdentity;
+      }
+    }
   }
 
   if (hostPlatform === "win32") {
