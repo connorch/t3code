@@ -90,6 +90,10 @@ T3CODE_IOS_PERSONAL_TEAM_BUNDLE_ID=com.example.t3code \
 vp run ios:release
 ```
 
+To put a Personal Team Release build of the current checkout on a connected iPhone, with OTA
+updates disabled, set `T3CODE_IOS_PERSONAL_TEAM_BUNDLE_ID` in the repo `.env` and run
+`scripts/install-ios-local.sh`.
+
 Build and run the local iOS preview app:
 
 ```bash
