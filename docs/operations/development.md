@@ -194,6 +194,26 @@ NSIS is downloaded by electron-builder. WSL support additionally needs the Linux
 passed as `--wsl-runtime`; see the
 [release runbook](./release.md#windows-payload-topology-and-update-validation).
 
+### Local macOS signing
+
+macOS ties privacy grants such as Local Network to the app's signature. An ad-hoc signature
+changes on every rebuild, so the grant silently stops applying to the next build. Builds without
+`--signed` therefore sign with a stable keychain identity, picked in this order:
+
+1. `T3CODE_MAC_SIGNING_IDENTITY`, as a certificate name or SHA-1 from
+   `security find-identity -v -p codesigning`.
+2. The first `Developer ID Application` identity in the keychain.
+3. A self-signed certificate named `T3 Code Local Signing`.
+
+With none of these, the build falls back to ad-hoc signing and logs a warning. To create the
+self-signed certificate, open Keychain Access, choose **Keychain Access > Certificate Assistant >
+Create a Certificate**, name it `T3 Code Local Signing`, and set Identity Type to **Self Signed
+Root** and Certificate Type to **Code Signing**. To avoid replacing it yearly, choose **Let me
+override defaults** and raise the validity period, for example to 3650 days. Then open the
+certificate and set **Trust > Code Signing** to **Always Trust**; until then
+`security find-identity -v -p codesigning` does not list it. The first signed build asks for
+keychain access to the key; choose **Always Allow**.
+
 ### Signing and passkeys
 
 Add `--signed` after configuring the platform credentials in the

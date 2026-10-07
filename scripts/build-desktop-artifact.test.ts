@@ -22,6 +22,7 @@ import {
   createStageWorkspaceConfig,
   createStagePatchedDependencies,
   createBuildConfig,
+  selectLocalMacSigningIdentity,
   DESKTOP_ELECTRON_LANGUAGES,
   DESKTOP_FILE_EXCLUSIONS,
   DESKTOP_EXTRA_RESOURCES,
@@ -258,6 +259,31 @@ const makeWindowsPayloadFixture = Effect.fn("test.makeWindowsPayloadFixture")(fu
 });
 
 it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
+  it("prefers a configured, then Developer ID, then local self-signed macOS identity", () => {
+    const developerId = "1111111111111111111111111111111111111111";
+    const selfSigned = "2222222222222222222222222222222222222222";
+    const other = "3333333333333333333333333333333333333333";
+    const output = [
+      `  1) ${other} "Other Local"`,
+      `  2) ${selfSigned} "T3 Code Local Signing"`,
+      `  3) ${developerId} "Developer ID Application: Example (TEAM123456)"`,
+      "     3 valid identities found",
+    ].join("\n");
+
+    assert.equal(selectLocalMacSigningIdentity(output, undefined), developerId);
+    assert.equal(selectLocalMacSigningIdentity(output, "Other Local"), other);
+    assert.equal(selectLocalMacSigningIdentity(output, selfSigned.toLowerCase()), selfSigned);
+    assert.equal(selectLocalMacSigningIdentity(output, "Missing"), undefined);
+    assert.equal(
+      selectLocalMacSigningIdentity(output.replace(/^.*Developer ID.*$/m, ""), undefined),
+      selfSigned,
+    );
+    assert.equal(
+      selectLocalMacSigningIdentity(`  1) ${other} "Other Local"`, undefined),
+      undefined,
+    );
+  });
+
   it("resolves the dedicated nightly updater channel from nightly versions", () => {
     assert.equal(resolveDesktopUpdateChannel("0.0.17-nightly.20260413.42"), "nightly");
     assert.equal(resolveDesktopUpdateChannel("0.0.17"), "latest");
