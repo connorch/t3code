@@ -3,7 +3,7 @@ import {
   mapAtomCommandResult,
   type AtomCommandResult,
 } from "@t3tools/client-runtime/state/runtime";
-import { AsyncResult } from "effect/unstable/reactivity";
+import { AsyncResult } from "effect/reactivity";
 
 import { resolveDiscoveredServerUrl } from "~/browser/browserTargetResolver";
 import { focusBrowserSurfaceForUrl } from "~/browser/focusBrowserSurfaceForUrl";

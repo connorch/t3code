@@ -206,7 +206,7 @@ describe("right panel new-tab shortcut", () => {
     };
     await renderPanel(panel);
     await press("t", { metaKey: true });
-    await press("ArrowDown");
+    // Files is the second entry: the menu lists Terminal, Files, Diff, Pull request, Browser.
     await press("ArrowDown");
     await press("ArrowDown");
     expect(document.activeElement?.textContent).toContain("Files");

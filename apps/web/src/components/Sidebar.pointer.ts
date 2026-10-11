@@ -11,8 +11,9 @@ export function SidebarDragLifecycle({ onUnmount }: { onUnmount: () => void }) {
 type Options = {
   distance: number;
   /** A press held still this long (or Option at press) targets the row
-   * alone inside its worktree card; any earlier movement lifts the card. */
-  holdMs: number;
+   * alone inside its worktree card; any earlier movement lifts the card.
+   * Gestures without cards (the action sweeps) leave it unset. */
+  holdMs?: number;
   onAttach: (sensor: SidebarPointerSensor) => void;
   onFinish: (started: boolean) => void;
   /** Return true to claim the move: the sort gesture then ignores this pointer position. */
@@ -59,7 +60,7 @@ export class SidebarPointerSensor {
     this.document.addEventListener("dragstart", this.preventDefault);
     this.document.addEventListener("contextmenu", this.preventDefault);
     if (this.pointer.altKey) this.mode = "row";
-    else {
+    else if (props.options.holdMs !== undefined) {
       this.holdTimer = setTimeout(() => {
         this.holdTimer = null;
         if (this.phase === "pending") this.mode = "row";

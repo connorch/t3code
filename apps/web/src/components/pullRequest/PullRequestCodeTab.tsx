@@ -1593,7 +1593,7 @@ function PullRequestCodeTab({
             // Find can ask again before the unfolded file arrives, so this unfolds and never folds.
             onRevealSearchMatch={(item) =>
               setToggledFiles((current) =>
-                toggleFileDiffFoldForViewed(item.id, false, effectiveFoldOverride, current),
+                toggleFileDiffFoldForViewed(item.id, false, effectiveFold, current),
               )
             }
             unsafeCSSExtra={REPLACE_FILE_COUNTS_CSS}
