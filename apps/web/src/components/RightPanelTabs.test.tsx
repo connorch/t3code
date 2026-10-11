@@ -1,6 +1,7 @@
 import { EnvironmentId, type ThreadPullRequestLink } from "@t3tools/contracts";
 import type { DesktopPreviewFavicon, PreviewSessionSnapshot } from "@t3tools/contracts";
 import { renderToStaticMarkup } from "react-dom/server";
+import { DEFAULT_RESOLVED_KEYBINDINGS } from "@t3tools/shared/keybindings";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
@@ -41,6 +42,15 @@ function render(overrides: Partial<Parameters<typeof RightPanelTabs>[0]> = {}) {
   return renderToStaticMarkup(
     <RightPanelTabs
       mode="sheet"
+      keybindings={DEFAULT_RESOLVED_KEYBINDINGS}
+      getShortcutContext={() => ({
+        terminalFocus: false,
+        terminalOpen: false,
+        previewFocus: false,
+        previewOpen: false,
+        isWeb: true,
+        isDesktop: false,
+      })}
       environmentId={null}
       onAddBrowserInProfile={noop}
       onAddPullRequests={noop}
@@ -54,7 +64,6 @@ function render(overrides: Partial<Parameters<typeof RightPanelTabs>[0]> = {}) {
       desktopByTabId={{}}
       terminalLabelsById={new Map()}
       onActivate={noop}
-      onReorderSurface={noop}
       onCloseSurface={noop}
       onCloseOtherSurfaces={noop}
       onCloseSurfacesToRight={noop}
@@ -174,6 +183,15 @@ function renderTabs(
   return renderToStaticMarkup(
     <RightPanelTabs
       mode="inline"
+      keybindings={DEFAULT_RESOLVED_KEYBINDINGS}
+      getShortcutContext={() => ({
+        terminalFocus: false,
+        terminalOpen: false,
+        previewFocus: false,
+        previewOpen: false,
+        isWeb: true,
+        isDesktop: false,
+      })}
       surfaces={second ? [previewSurface, secondSurface] : [previewSurface]}
       environmentId={null}
       activeSurfaceId={previewSurface.id}
@@ -186,7 +204,6 @@ function renderTabs(
       {...(previewRuntimeTabId ? { previewRuntimeTabId } : {})}
       terminalLabelsById={new Map()}
       onActivate={() => undefined}
-      onReorderSurface={() => undefined}
       onCloseSurface={() => undefined}
       onCloseOtherSurfaces={() => undefined}
       onCloseSurfacesToRight={() => undefined}
