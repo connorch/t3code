@@ -10,8 +10,8 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 
-# Set by the Linux path. The trap outlives the function that fills it in, so
-# this cannot be a local.
+# Set by the signing and Linux paths. The trap outlives the function that fills
+# it in, so this cannot be a local.
 WORK_DIR=""
 cleanup() {
   if [ -n "$WORK_DIR" ]; then
@@ -31,8 +31,62 @@ for arg in "$@"; do
   esac
 done
 
+# The build signs with a stable identity so macOS keeps the Local Network
+# grant across rebuilds (docs/operations/development.md#local-macos-signing).
+# Without one it falls back to ad-hoc, so the first run on a Mac creates
+# "T3 Code Local Signing" in the System keychain, the only keychain a
+# Tailscale SSH session searches, so local and remote builds sign alike.
+ensure_signing_identity() {
+  local name="T3 Code Local Signing"
+  local system_keychain="/Library/Keychains/System.keychain"
+
+  if [ -n "${T3CODE_MAC_SIGNING_IDENTITY:-}" ] ||
+    security find-identity -v -p codesigning | grep -qE "\"($name|Developer ID Application:.*)\""; then
+    return
+  fi
+
+  # A second certificate would reset the grant, so an existing identity this
+  # session cannot use (over Tailscale SSH, the login keychain is out of reach)
+  # is never replaced.
+  if security find-certificate -c "$name" "$HOME/Library/Keychains/login.keychain-db" >/dev/null 2>&1; then
+    echo "\"$name\" is in the login keychain but is not a valid code signing identity here." >&2
+    echo "Tailscale SSH sessions search only the System keychain. Copy it there once, at this Mac:" >&2
+    echo "  1. Keychain Access > My Certificates: export \"$name\" to ~/t3.p12" >&2
+    echo "  2. sudo security import ~/t3.p12 -k $system_keychain -P '<password>' -T /usr/bin/codesign && rm ~/t3.p12" >&2
+    exit 1
+  fi
+
+  # Creating it needs sudo, which needs a terminal.
+  if [ ! -t 0 ]; then
+    echo "No \"$name\" code signing identity. Run this script once in a terminal on this Mac to create it." >&2
+    exit 1
+  fi
+
+  echo "Creating self-signed code signing certificate \"$name\" in the System keychain (asks for your password)..."
+  WORK_DIR="$(mktemp -d)"
+  openssl req -x509 -newkey rsa:2048 -nodes -days 3650 \
+    -keyout "$WORK_DIR/key.pem" -out "$WORK_DIR/cert.pem" \
+    -subj "/CN=$name" \
+    -addext "basicConstraints=critical,CA:false" \
+    -addext "keyUsage=critical,digitalSignature" \
+    -addext "extendedKeyUsage=critical,codeSigning" >/dev/null 2>&1
+  # Legacy PKCS#12 encryption: the keychain importer rejects OpenSSL 3's default.
+  openssl pkcs12 -export -legacy -passout pass:local \
+    -inkey "$WORK_DIR/key.pem" -in "$WORK_DIR/cert.pem" -out "$WORK_DIR/identity.p12"
+  # -T lets codesign, and only codesign, use the private key without prompting.
+  sudo security import "$WORK_DIR/identity.p12" -k "$system_keychain" -P local \
+    -T /usr/bin/codesign >/dev/null
+  sudo security add-trusted-cert -d -r trustRoot -p codeSign -k "$system_keychain" "$WORK_DIR/cert.pem"
+
+  if ! security find-identity -v -p codesigning | grep -q "\"$name\""; then
+    echo "Certificate was imported but is not a valid code signing identity." >&2
+    exit 1
+  fi
+}
+
 install_macos() {
   if [ "$SKIP_BUILD" = false ]; then
+    ensure_signing_identity
     pnpm dist:desktop:dmg:arm64
   fi
 

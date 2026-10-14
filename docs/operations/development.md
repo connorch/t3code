@@ -205,30 +205,34 @@ changes on every rebuild, so the grant silently stops applying to the next build
 2. The first `Developer ID Application` identity in the keychain.
 3. A self-signed certificate named `T3 Code Local Signing`.
 
-With none of these, the build falls back to ad-hoc signing and logs a warning. To create the
-self-signed certificate, open Keychain Access, choose **Keychain Access > Certificate Assistant >
-Create a Certificate**, name it `T3 Code Local Signing`, and set Identity Type to **Self Signed
-Root** and Certificate Type to **Code Signing**. To avoid replacing it yearly, choose **Let me
-override defaults** and raise the validity period, for example to 3650 days. Then open the
-certificate and set **Trust > Code Signing** to **Always Trust**; until then
+With none of these, the build falls back to ad-hoc signing and logs a warning.
+`pnpm install:desktop:local` avoids that: on a Mac with no identity, its first run in a terminal
+creates `T3 Code Local Signing` in the System keychain (it asks for your password), where both
+local builds and Tailscale SSH builds find it. Only `codesign` can use the key, without a prompt.
+Any account on the Mac can then sign with it, so only do this on a Mac you trust.
+
+To create the certificate by hand instead, open Keychain Access, choose **Keychain Access >
+Certificate Assistant > Create a Certificate**, name it `T3 Code Local Signing`, and set Identity
+Type to **Self Signed Root** and Certificate Type to **Code Signing**. To avoid replacing it
+yearly, choose **Let me override defaults** and raise the validity period, for example to 3650
+days. Then open the certificate and set **Trust > Code Signing** to **Always Trust**; until then
 `security find-identity -v -p codesigning` does not list it. The first signed build asks for
 keychain access to the key; choose **Always Allow**.
 
-Builds over Tailscale SSH, such as a remote `pnpm install:desktop:local`, cannot see the login
-keychain: the session searches only the System keychain, so the build finds no identity and falls
-back to ad-hoc. (Over macOS's own SSH, the login keychain is searched but locked; run
-`security unlock-keychain` first instead.) To sign over Tailscale SSH, copy the identity into the
-System keychain once per Mac. In Keychain Access, under **My Certificates**, export
-`T3 Code Local Signing` to a `.p12`, then:
+A certificate in the login keychain, made by hand like this, is out of reach of builds over
+Tailscale SSH, such as a remote `pnpm install:desktop:local`: the session searches only the System
+keychain, so the build would fall back to ad-hoc, and the install script stops instead. (Over
+macOS's own SSH, the login keychain is searched but locked; run `security unlock-keychain` first
+instead.) To sign over Tailscale SSH, copy the identity into the System keychain once per Mac. In
+Keychain Access, under **My Certificates**, export `T3 Code Local Signing` to a `.p12`, then:
 
 ```sh
 sudo security import ~/t3.p12 -k /Library/Keychains/System.keychain -P '<password>' -T /usr/bin/codesign
 rm ~/t3.p12
 ```
 
-`-T /usr/bin/codesign` lets only `codesign` use the key, without a prompt. Keep the login copy:
-it is the same key, so local and Tailscale SSH builds produce the same signature and keep the
-same grants. Any account on the Mac can then sign with it, so only do this on a Mac you trust.
+Keep the login copy: it is the same key, so local and Tailscale SSH builds produce the same
+signature and keep the same grants.
 
 ### Signing and passkeys
 
