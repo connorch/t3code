@@ -214,10 +214,12 @@ certificate and set **Trust > Code Signing** to **Always Trust**; until then
 `security find-identity -v -p codesigning` does not list it. The first signed build asks for
 keychain access to the key; choose **Always Allow**.
 
-Builds over SSH, such as a remote `pnpm install:desktop:local`, cannot see the login keychain: a
-Tailscale SSH session searches only the System keychain, so the build finds no identity and falls
-back to ad-hoc. To sign there too, copy the identity into the System keychain once per Mac. In
-Keychain Access, under **My Certificates**, export `T3 Code Local Signing` to a `.p12`, then:
+Builds over Tailscale SSH, such as a remote `pnpm install:desktop:local`, cannot see the login
+keychain: the session searches only the System keychain, so the build finds no identity and falls
+back to ad-hoc. (Over macOS's own SSH, the login keychain is searched but locked; run
+`security unlock-keychain` first instead.) To sign over Tailscale SSH, copy the identity into the
+System keychain once per Mac. In Keychain Access, under **My Certificates**, export
+`T3 Code Local Signing` to a `.p12`, then:
 
 ```sh
 sudo security import ~/t3.p12 -k /Library/Keychains/System.keychain -P '<password>' -T /usr/bin/codesign
@@ -225,7 +227,7 @@ rm ~/t3.p12
 ```
 
 `-T /usr/bin/codesign` lets only `codesign` use the key, without a prompt. Keep the login copy:
-it is the same key, so local and SSH builds produce the same signature and keep the same grants.
+it is the same key, so local and Tailscale SSH builds produce the same signature and keep the same grants.
 Any account on the Mac can then sign with it, so only do this on a Mac you trust.
 
 ### Signing and passkeys
