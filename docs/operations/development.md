@@ -227,8 +227,8 @@ rm ~/t3.p12
 ```
 
 `-T /usr/bin/codesign` lets only `codesign` use the key, without a prompt. Keep the login copy:
-it is the same key, so local and Tailscale SSH builds produce the same signature and keep the same grants.
-Any account on the Mac can then sign with it, so only do this on a Mac you trust.
+it is the same key, so local and Tailscale SSH builds produce the same signature and keep the
+same grants. Any account on the Mac can then sign with it, so only do this on a Mac you trust.
 
 ### Signing and passkeys
 
