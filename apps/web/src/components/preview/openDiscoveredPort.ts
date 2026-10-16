@@ -3,7 +3,7 @@ import {
   mapAtomCommandResult,
   type AtomCommandResult,
 } from "@t3tools/client-runtime/state/runtime";
-import { AsyncResult } from "effect/unstable/reactivity";
+import { AsyncResult } from "effect/reactivity";
 
 import { resolveDiscoveredServerUrl } from "~/browser/browserTargetResolver";
 import { focusBrowserSurfaceForUrl } from "~/browser/focusBrowserSurfaceForUrl";
@@ -11,13 +11,17 @@ import type { BrowserSettingsReadError, OpenPreviewMutation } from "~/browser/op
 import { recordVisitForThread } from "~/browserHistoryStore";
 import { useRightPanelStore } from "~/rightPanelStore";
 import { openPreviewSession } from "./openPreviewSession";
+import { previewRuntimeFor } from "~/browser/previewRuntime";
 
 export async function openDiscoveredPort<E>(input: {
   readonly threadRef: ScopedThreadRef;
   readonly port: DiscoveredLocalServer;
   readonly openPreview: OpenPreviewMutation<E>;
 }): Promise<AtomCommandResult<void, E | BrowserSettingsReadError>> {
-  const resolvedUrl = resolveDiscoveredServerUrl(input.threadRef.environmentId, input.port.url);
+  const resolvedUrl =
+    previewRuntimeFor(input.threadRef.environmentId) === "server"
+      ? input.port.url
+      : resolveDiscoveredServerUrl(input.threadRef.environmentId, input.port.url);
   if (focusBrowserSurfaceForUrl(input.threadRef, resolvedUrl)) {
     recordVisitForThread(input.threadRef, input.port.url);
     return AsyncResult.success(undefined);

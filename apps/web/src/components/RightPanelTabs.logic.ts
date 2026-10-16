@@ -47,7 +47,8 @@ export function shouldClaimSurfaceLauncherKey(event: KeyboardEvent): boolean {
   if (event.metaKey || event.ctrlKey || event.altKey) return false;
   if (typeof document !== "undefined" && document.querySelector(LAUNCHER_SHORTCUT_BLOCKING_LAYERS))
     return false;
-  const target = event.target;
+  // composedPath sees into shadow roots, where `target` is retargeted to the host.
+  const target = event.composedPath?.()[0] ?? event.target;
   if (
     typeof Element !== "undefined" &&
     target instanceof Element &&

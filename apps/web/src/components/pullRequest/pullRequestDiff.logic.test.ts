@@ -5,9 +5,9 @@ import {
   isFileDiffCollapsed,
   isLineInFileDiff,
   toggleFileDiffFoldForViewed,
+  unfoldFileDiff,
 } from "./pullRequestDiff.logic";
 
-/** Only the hunk ranges matter here; the viewer fills the rest in when it renders. */
 function fileWithHunks(
   hunks: ReadonlyArray<{
     deletionStart: number;
@@ -31,7 +31,6 @@ describe("isLineInFileDiff", () => {
   });
 
   it("includes the first line of a hunk and excludes the one past its last", () => {
-    // The boundaries are where an off-by-one would quietly move a conversation between lists.
     expect(isLineInFileDiff(file, "right", 10)).toBe(true);
     expect(isLineInFileDiff(file, "right", 14)).toBe(true);
     expect(isLineInFileDiff(file, "right", 15)).toBe(false);
@@ -41,7 +40,6 @@ describe("isLineInFileDiff", () => {
   });
 
   it("keeps the two sides apart, since one line number means two lines", () => {
-    // The second hunk is a pure insertion: it deletes nothing, so nothing is on its left.
     expect(isLineInFileDiff(file, "right", 43)).toBe(true);
     expect(isLineInFileDiff(file, "left", 40)).toBe(false);
   });
@@ -70,8 +68,6 @@ describe("isFileDiffCollapsed", () => {
   });
 
   it("keeps a file the reader folded closed as the next slice arrives", () => {
-    // The file keys grow with every slice, so the answer for one already folded must not depend
-    // on how many of them there are by then.
     const toggled = new Set(["b.ts"]);
     expect(isFileDiffCollapsed("b.ts", "none", false, toggled)).toBe(true);
     expect(isFileDiffCollapsed("c.ts", "none", false, toggled)).toBe(false);
@@ -118,5 +114,18 @@ describe("toggleFileDiffFoldForViewed", () => {
   it("touches only the file that was ticked", () => {
     const toggled = new Set(["a.ts", "b.ts"]);
     expect([...toggleFileDiffFoldForViewed("a.ts", false, "none", toggled)]).toEqual(["b.ts"]);
+  });
+});
+
+describe("unfoldFileDiff", () => {
+  it("opens a file that its viewed tick folds, and stays open when asked again", () => {
+    const once = unfoldFileDiff("a.ts", "viewed", true, new Set());
+    expect(isFileDiffCollapsed("a.ts", "viewed", true, once)).toBe(false);
+    expect(unfoldFileDiff("a.ts", "viewed", true, once)).toBe(once);
+  });
+
+  it("leaves an already open file alone", () => {
+    const toggled = new Set<string>();
+    expect(unfoldFileDiff("a.ts", "none", false, toggled)).toBe(toggled);
   });
 });
