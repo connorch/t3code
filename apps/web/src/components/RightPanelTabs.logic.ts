@@ -37,6 +37,28 @@ export function surfaceShortcutTargetsTypingContext(
   );
 }
 
+const visibleLaunchers = new Set<(key: string) => boolean>();
+
+/** Registers a visible launcher's letter claim; returns its unregister. */
+export function registerSurfaceLauncher(claimsKey: (key: string) => boolean): () => void {
+  visibleLaunchers.add(claimsKey);
+  return () => {
+    visibleLaunchers.delete(claimsKey);
+  };
+}
+
+/**
+ * Chat type-to-focus attaches its window capture listener at mount, before any
+ * launcher opens, so it would take every letter first. It asks here and leaves
+ * the letters a visible launcher opens a surface for.
+ */
+export function surfaceLauncherClaimsKey(key: string): boolean {
+  for (const claimsKey of visibleLaunchers) {
+    if (claimsKey(key)) return true;
+  }
+  return false;
+}
+
 /**
  * Letter shortcuts work while the empty launcher is visible, not only while it
  * is focused. Typing contexts, modifier chords, and already-handled events

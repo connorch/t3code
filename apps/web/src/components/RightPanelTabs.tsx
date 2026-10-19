@@ -1,6 +1,7 @@
 import {
   emptyGhostTooltip,
   LAUNCHER_SHORTCUT_BLOCKING_LAYERS,
+  registerSurfaceLauncher,
   shouldClaimSurfaceLauncherKey,
 } from "./RightPanelTabs.logic";
 
@@ -939,10 +940,19 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
     event.stopPropagation();
     action.onClick();
   });
+  const launcherClaimsKey = useEffectEvent((key: string) =>
+    addSurfaceActions.some(
+      (action) => action.available && action.shortcut.toLowerCase() === key.toLowerCase(),
+    ),
+  );
   useEffect(() => {
     if (!isLauncherVisible) return;
     window.addEventListener("keydown", onLauncherKeyDown, true);
-    return () => window.removeEventListener("keydown", onLauncherKeyDown, true);
+    const unregister = registerSurfaceLauncher(launcherClaimsKey);
+    return () => {
+      window.removeEventListener("keydown", onLauncherKeyDown, true);
+      unregister();
+    };
   }, [isLauncherVisible]);
 
   const handleAddSurfaceMenuKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
