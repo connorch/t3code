@@ -126,6 +126,7 @@ describe("worktreeCardSiblings", () => {
       archivedAt?: string | null;
       settledOverride?: Shell["settledOverride"];
       snoozedUntil?: string | null;
+      subagent?: boolean;
     } = {},
   ): Shell => ({
     id,
@@ -139,6 +140,7 @@ describe("worktreeCardSiblings", () => {
     hasPendingUserInput: false,
     session: null,
     latestTurn: null,
+    lineage: { relationshipToParent: overrides.subagent ? "subagent" : null },
   });
   it("excludes the thread itself and members that left the card", () => {
     const now = "2026-09-17T12:00:00.000Z";
@@ -151,6 +153,7 @@ describe("worktreeCardSiblings", () => {
         shell("archived", { archivedAt: now }),
         shell("elsewhere", { worktreePath: "/wt/y" }),
         shell("root", { worktreePath: null }),
+        shell("subagent", { subagent: true }),
       ],
       shell("self"),
       { now },

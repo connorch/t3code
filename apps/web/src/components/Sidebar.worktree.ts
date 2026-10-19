@@ -184,10 +184,15 @@ type WorktreeSiblingShell = WorktreeCardThread &
     readonly archivedAt: string | null;
     readonly settledOverride: SidebarThreadSummary["settledOverride"];
     readonly pinnedAt?: string | null | undefined;
+    readonly lineage: Pick<SidebarThreadSummary["lineage"], "relationshipToParent">;
   };
 
+// Subagent threads never render in the sidebar, so they are not card members:
+// counting them would show a card as pinned through a hidden row and fan card
+// gestures out to it.
 function isLiveCardMember(shell: WorktreeSiblingShell, options: { readonly now: string }) {
   return (
+    shell.lineage.relationshipToParent !== "subagent" &&
     shell.archivedAt === null &&
     shell.settledOverride !== "settled" &&
     !effectiveSnoozed(shell, options)
