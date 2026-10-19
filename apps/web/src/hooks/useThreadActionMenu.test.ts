@@ -52,6 +52,7 @@ vi.mock("../state/entities", () => ({
   readEnvironmentSupportsSettlement: () => true,
   readEnvironmentSupportsSnooze: () => true,
   readEnvironmentSupportsTitleRegeneration: () => true,
+  readThreadVisibleTurnItems: () => [],
   readThreadShell: () => ({
     id: "thread",
     environmentId: "secondary",
@@ -120,6 +121,7 @@ vi.mock("./useSettings", () => ({
       confirmThreadArchive: true,
       timestampFormat: "12-hour",
     }),
+  useSidebarWorktreeCardsEnabled: () => false,
 }));
 vi.mock("./useThreadActions", () => ({
   useThreadActions: () =>

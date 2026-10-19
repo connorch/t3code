@@ -772,9 +772,13 @@ export function useThreadActions() {
     const scope = opts.scope ?? "worktree";
     const shell = readThreadShell(target);
     const orderKey = shell?.pinOrderKey ?? undefined;
+    const pinnedSiblings =
+      scope === "worktree"
+        ? readWorktreeSiblings(target).filter((sibling) => sibling.pinnedAt != null)
+        : [];
     const action = ThreadUndo.begin("pin", scopedThreadKey(target));
     const result =
-      shell?.pinnedAt == null && scope === "worktree"
+      shell?.pinnedAt == null && pinnedSiblings.length > 0
         ? AsyncResult.success(undefined)
         : await unpinThreadMutation({
             environmentId: target.environmentId,
@@ -784,17 +788,14 @@ export function useThreadActions() {
       action.finish();
       return result;
     }
-    if (scope === "worktree") {
-      for (const sibling of readWorktreeSiblings(target)) {
-        if (sibling.pinnedAt == null) continue;
-        const siblingResult = await unpinThreadMutation({
-          environmentId: sibling.environmentId,
-          input: { threadId: sibling.id },
-        });
-        if (siblingResult._tag === "Failure") {
-          action.finish();
-          return siblingResult;
-        }
+    for (const sibling of pinnedSiblings) {
+      const siblingResult = await unpinThreadMutation({
+        environmentId: sibling.environmentId,
+        input: { threadId: sibling.id },
+      });
+      if (siblingResult._tag === "Failure") {
+        action.finish();
+        return siblingResult;
       }
     }
     // Undo re-pins with the same scope, so a worktree unpin brings the

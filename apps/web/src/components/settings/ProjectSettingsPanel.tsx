@@ -337,30 +337,30 @@ function ProjectDetail({
     (member) => projectLinks[member.physicalProjectKey] !== undefined,
   );
   const linkCandidates = allGroups.filter((candidate) => candidate.projectKey !== group.projectKey);
-  const linkWith = async (input: { target: SidebarProjectSnapshot; name: string }) => {
-    setIsLinking(true);
-    try {
-      const members = [...fullGroup.memberProjects, ...input.target.memberProjects];
-      if (members.some((member) => member.title !== input.name)) {
-        const renamed = await updateMembers(
-          members,
-          { title: input.name },
-          "Failed to rename linked project",
-        );
-        if (renamed._tag === "Failure") return;
-      }
-      await updateClientSettings({
-        sidebarProjectLinks: linkProjectGroups({
-          links: projectLinks,
-          memberKeys: fullGroup.memberProjects.map((member) => member.physicalProjectKey),
-          targetMemberKeys: input.target.memberProjects.map((member) => member.physicalProjectKey),
-          newLinkId: randomUUID,
-        }),
-      });
-      setLinkDialogOpen(false);
-    } finally {
-      setIsLinking(false);
+  const linkProjects = async (input: { target: SidebarProjectSnapshot; name: string }) => {
+    const members = [...fullGroup.memberProjects, ...input.target.memberProjects];
+    if (members.some((member) => member.title !== input.name)) {
+      const renamed = await updateMembers(
+        members,
+        { title: input.name },
+        "Failed to rename linked project",
+      );
+      if (renamed._tag === "Failure") return;
     }
+    await updateClientSettings({
+      sidebarProjectLinks: linkProjectGroups({
+        links: projectLinks,
+        memberKeys: fullGroup.memberProjects.map((member) => member.physicalProjectKey),
+        targetMemberKeys: input.target.memberProjects.map((member) => member.physicalProjectKey),
+        newLinkId: randomUUID,
+      }),
+    });
+    setLinkDialogOpen(false);
+  };
+  // React Compiler cannot compile try/finally, so the busy flag clears in .finally.
+  const linkWith = (input: { target: SidebarProjectSnapshot; name: string }) => {
+    setIsLinking(true);
+    return linkProjects(input).finally(() => setIsLinking(false));
   };
   const unlink = (member: SidebarProjectGroupMember) => {
     void updateClientSettings({

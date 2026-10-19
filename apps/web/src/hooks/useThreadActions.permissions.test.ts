@@ -163,6 +163,7 @@ vi.mock("./useSettings", () => ({
       confirmThreadDelete: true,
       confirmThreadUnpin: true,
     }),
+  useSidebarWorktreeCardsEnabled: () => false,
 }));
 
 import { useThreadActions } from "./useThreadActions";
