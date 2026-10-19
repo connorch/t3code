@@ -21,7 +21,6 @@ import * as Cause from "effect/Cause";
 import * as Schema from "effect/Schema";
 import { AsyncResult } from "effect/reactivity";
 import { useRouter } from "@tanstack/react-router";
-import { useCallback, useMemo, useRef } from "react";
 
 import {
   getFallbackThreadIdAfterDelete,
@@ -30,7 +29,6 @@ import {
 } from "../components/Sidebar.logic";
 import { useComposerDraftStore } from "../composerDraftStore";
 import { environmentSession, readEnvironmentScope } from "../state/session";
-import { terminalEnvironment } from "../state/terminal";
 import { appAtomRegistry } from "../rpc/atomRegistry";
 import { environmentServerConfigsAtom } from "../state/server";
 import { isScratchProject } from "@t3tools/client-runtime/state/projects";
@@ -228,38 +226,32 @@ function useMarkThreadUnread() {
     reportFailure: false,
   });
   const markThreadUnreadLocal = useUiStateStore((state) => state.markThreadUnread);
-  return useCallback(
-    (target: ScopedThreadRef) => {
-      if (readEnvironmentSupportsVisitedTracking(target.environmentId)) {
-        void markThreadUnreadMutation({
-          environmentId: target.environmentId,
-          input: { threadId: target.threadId },
-        });
-        return;
-      }
-      const thread = readThreadShell(target);
-      markThreadUnreadLocal(scopedThreadKey(target), thread?.latestRun?.completedAt);
-    },
-    [markThreadUnreadLocal, markThreadUnreadMutation],
-  );
+  return (target: ScopedThreadRef) => {
+    if (readEnvironmentSupportsVisitedTracking(target.environmentId)) {
+      void markThreadUnreadMutation({
+        environmentId: target.environmentId,
+        input: { threadId: target.threadId },
+      });
+      return;
+    }
+    const thread = readThreadShell(target);
+    markThreadUnreadLocal(scopedThreadKey(target), thread?.latestRun?.completedAt);
+  };
 }
 
 export function useAcknowledgeThreadWoke() {
   const visitThreadMutation = useAtomCommand(threadEnvironment.visit, { reportFailure: false });
   const markThreadVisited = useUiStateStore((state) => state.markThreadVisited);
-  return useCallback(
-    (target: ScopedThreadRef, wokeAt: string) => {
-      if (readEnvironmentSupportsVisitedTracking(target.environmentId)) {
-        void visitThreadMutation({
-          environmentId: target.environmentId,
-          input: { threadId: target.threadId, visitedAt: wokeAt },
-        });
-        return;
-      }
-      markThreadVisited(scopedThreadKey(target), wokeAt);
-    },
-    [markThreadVisited, visitThreadMutation],
-  );
+  return (target: ScopedThreadRef, wokeAt: string) => {
+    if (readEnvironmentSupportsVisitedTracking(target.environmentId)) {
+      void visitThreadMutation({
+        environmentId: target.environmentId,
+        input: { threadId: target.threadId, visitedAt: wokeAt },
+      });
+      return;
+    }
+    markThreadVisited(scopedThreadKey(target), wokeAt);
+  };
 }
 
 function threadOperationFailure(target: ScopedThreadRef) {
@@ -329,17 +321,14 @@ export function useThreadActions() {
   const worktreeCardsEnabled = useSidebarWorktreeCardsEnabled();
   // The other live threads in the target's worktree card, or none when cards
   // are off. Read at call time: the card is a view over current shells.
-  const readWorktreeSiblings = useCallback(
-    (target: ScopedThreadRef) => {
-      if (!worktreeCardsEnabled) return [];
-      const shell = readThreadShell(target);
-      if (!shell) return [];
-      return worktreeCardSiblings(readThreadShells(), shell, {
-        now: new Date().toISOString(),
-      }).filter((sibling) => sibling.environmentId === target.environmentId);
-    },
-    [worktreeCardsEnabled],
-  );
+  const readWorktreeSiblings = (target: ScopedThreadRef) => {
+    if (!worktreeCardsEnabled) return [];
+    const shell = readThreadShell(target);
+    if (!shell) return [];
+    return worktreeCardSiblings(readThreadShells(), shell, {
+      now: new Date().toISOString(),
+    }).filter((sibling) => sibling.environmentId === target.environmentId);
+  };
   const clearComposerDraftForThread = useComposerDraftStore((store) => store.clearDraftThread);
   const clearProjectDraftThreadById = useComposerDraftStore(
     (store) => store.clearProjectDraftThreadById,
@@ -348,14 +337,8 @@ export function useThreadActions() {
   const markThreadVisited = useUiStateStore((state) => state.markThreadVisited);
   const router = useRouter();
   const handleNewThread = useNewThreadHandler();
-  // Keep a ref so archiveThread can call handleNewThread without appearing in
-  // its dependency array — handleNewThread is inherently unstable (depends on
-  // the projects list) and would otherwise cascade new references into every
-  // sidebar row via archiveThread → attemptArchiveThread.
-  const handleNewThreadRef = useRef(handleNewThread);
-  handleNewThreadRef.current = handleNewThread;
 
-  const resolveThreadTarget = useCallback((target: ScopedThreadRef) => {
+  const resolveThreadTarget = (target: ScopedThreadRef) => {
     const thread = readThreadShell(target);
     if (!thread) {
       return null;
@@ -364,784 +347,691 @@ export function useThreadActions() {
       thread,
       threadRef: target,
     };
-  }, []);
-  const getCurrentRouteThreadRef = useCallback(() => {
+  };
+  const getCurrentRouteThreadRef = () => {
     const currentRouteParams = router.state.matches[router.state.matches.length - 1]?.params ?? {};
     return resolveThreadRouteRef(currentRouteParams);
-  }, [router]);
+  };
 
-  const unarchiveThread = useCallback(
-    async (target: ScopedThreadRef, opts: { navigate?: boolean } = {}) => {
-      ThreadUndo.invalidate("archive", scopedThreadKey(target));
-      const result = await unarchiveThreadMutation({
+  const unarchiveThread = async (target: ScopedThreadRef, opts: { navigate?: boolean } = {}) => {
+    ThreadUndo.invalidate("archive", scopedThreadKey(target));
+    const result = await unarchiveThreadMutation({
+      environmentId: target.environmentId,
+      input: { threadId: target.threadId },
+    });
+    if (result._tag === "Failure") {
+      return result;
+    }
+    refreshArchivedThreadsForEnvironment(target.environmentId);
+    if (opts.navigate) {
+      return settlePromise(() =>
+        router.navigate({
+          to: "/$environmentId/$threadId",
+          params: buildThreadRouteParams(target),
+        }),
+      );
+    }
+    return result;
+  };
+
+  const archiveThread = async (target: ScopedThreadRef, opts: { onArchived?: () => void } = {}) => {
+    const resolved = resolveThreadTarget(target);
+    if (!resolved) return AsyncResult.success(undefined);
+    const { thread, threadRef } = resolved;
+    if (!threadRuntimeCanArchive(thread.runtime)) {
+      return AsyncResult.failure(
+        Cause.fail(
+          new ThreadArchiveBlockedError({
+            environmentId: threadRef.environmentId,
+            threadId: threadRef.threadId,
+          }),
+        ),
+      );
+    }
+
+    const currentRouteThreadRef = getCurrentRouteThreadRef();
+    const shouldNavigateAway =
+      currentRouteThreadRef?.threadId === threadRef.threadId &&
+      currentRouteThreadRef.environmentId === threadRef.environmentId;
+    // Resolved before the mutation lands so the archived thread is still in
+    // the store to read its worktree from.
+    const siblingThreadId = shouldNavigateAway
+      ? getWorktreeSiblingThreadIdAfterArchive({
+          threads: readEnvironmentThreadRefs(threadRef.environmentId).flatMap((ref) => {
+            const shell = readThreadShell(ref);
+            return shell === null ? [] : [shell];
+          }),
+          archivedThreadId: threadRef.threadId,
+          sortOrder: sidebarThreadSortOrder,
+        })
+      : null;
+    const action = ThreadUndo.begin("archive", scopedThreadKey(threadRef));
+    const archiveResult = await archiveThreadMutation({
+      environmentId: threadRef.environmentId,
+      input: { threadId: threadRef.threadId },
+    });
+    if (archiveResult._tag === "Failure") {
+      action.finish();
+      return archiveResult;
+    }
+    const wokeAt = threadWokeAt(thread, { now: new Date().toISOString() });
+    if (wokeAt !== null) {
+      markThreadVisited(scopedThreadKey(threadRef), wokeAt);
+    }
+    refreshArchivedThreadsForEnvironment(threadRef.environmentId);
+    opts.onArchived?.();
+    showThreadUndoNotice({
+      action: "Archived",
+      claim: action,
+      undo: () => unarchiveThread(threadRef, { navigate: shouldNavigateAway }),
+      failureTitle: "Failed to undo archive",
+    });
+
+    if (shouldNavigateAway) {
+      // Both branches are awaited for their side effect only; `handleNewThread`
+      // resolves with the created thread, which would otherwise widen the union
+      // settlePromise infers.
+      const navigationResult = await settlePromise(async () => {
+        if (siblingThreadId) {
+          await router.navigate({
+            to: "/$environmentId/$threadId",
+            params: buildThreadRouteParams(
+              scopeThreadRef(threadRef.environmentId, siblingThreadId),
+            ),
+            replace: true,
+          });
+          return;
+        }
+        await handleNewThread(scopeProjectRef(thread.environmentId, thread.projectId));
+      });
+      if (navigationResult._tag === "Failure") {
+        return navigationResult;
+      }
+      return archiveResult;
+    }
+
+    return archiveResult;
+  };
+
+  const deleteThread = async (
+    target: ScopedThreadRef,
+    opts: {
+      deletedThreadKeys?: ReadonlySet<string>;
+      /** Remove an orphaned worktree without asking - the caller already confirmed. */
+      deleteOrphanedWorktree?: boolean;
+    } = {},
+  ) => {
+    const permissionFailure = threadOperationFailure(target);
+    if (permissionFailure) return permissionFailure;
+    const resolved = resolveThreadTarget(target);
+    if (!resolved) {
+      const result = await deleteThreadMutation({
         environmentId: target.environmentId,
         input: { threadId: target.threadId },
       });
-      if (result._tag === "Failure") {
-        return result;
-      }
-      refreshArchivedThreadsForEnvironment(target.environmentId);
-      if (opts.navigate) {
-        return settlePromise(() =>
-          router.navigate({
-            to: "/$environmentId/$threadId",
-            params: buildThreadRouteParams(target),
-          }),
-        );
+      if (result._tag === "Success") {
+        refreshArchivedThreadsForEnvironment(target.environmentId);
+        clearThreadPreviewState(target);
       }
       return result;
-    },
-    [router, unarchiveThreadMutation],
-  );
-
-  const archiveThread = useCallback(
-    async (target: ScopedThreadRef, opts: { onArchived?: () => void } = {}) => {
-      const resolved = resolveThreadTarget(target);
-      if (!resolved) return AsyncResult.success(undefined);
-      const { thread, threadRef } = resolved;
-      if (!threadRuntimeCanArchive(thread.runtime)) {
-        return AsyncResult.failure(
-          Cause.fail(
-            new ThreadArchiveBlockedError({
-              environmentId: threadRef.environmentId,
-              threadId: threadRef.threadId,
+    }
+    const { thread, threadRef } = resolved;
+    const threads = readEnvironmentThreadRefs(threadRef.environmentId).flatMap((ref) => {
+      const shell = readThreadShell(ref);
+      return shell === null ? [] : [shell];
+    });
+    const threadProject = readProject({
+      environmentId: threadRef.environmentId,
+      projectId: thread.projectId,
+    });
+    const deletedIds =
+      opts.deletedThreadKeys && opts.deletedThreadKeys.size > 0
+        ? new Set<ThreadId>(
+            [...opts.deletedThreadKeys].flatMap((threadKey) => {
+              const ref = parseScopedThreadKey(threadKey);
+              return ref && ref.environmentId === threadRef.environmentId ? [ref.threadId] : [];
             }),
-          ),
-        );
+          )
+        : undefined;
+    const survivingThreads =
+      deletedIds && deletedIds.size > 0
+        ? threads.filter((entry) => entry.id === threadRef.threadId || !deletedIds.has(entry.id))
+        : threads;
+    const orphanedWorktreePath = getOrphanedWorktreePathForThread(
+      survivingThreads,
+      threadRef.threadId,
+    );
+    const displayWorktreePath = orphanedWorktreePath
+      ? formatWorktreePathForDisplay(orphanedWorktreePath)
+      : null;
+    const environmentConfig = appAtomRegistry
+      .get(environmentServerConfigsAtom)
+      .get(threadRef.environmentId);
+    const localApi = readLocalApi();
+    let canDeleteWorktree = false;
+    if (
+      orphanedWorktreePath !== null &&
+      threadProject !== null &&
+      !isScratchProject(threadProject, environmentConfig?.scratchWorkspaceRoot) &&
+      localApi
+    ) {
+      const sessionResult = await loadSessionState(threadRef.environmentId);
+      const permissionFailure = threadOperationFailure(threadRef);
+      if (permissionFailure) return permissionFailure;
+      canDeleteWorktree =
+        sessionResult._tag === "Success" &&
+        sessionGrantsScope(sessionResult.value, AuthSourceControlWriteScope);
+    }
+    let shouldDeleteWorktree = false;
+    const environmentSettings = environmentConfig?.settings;
+    const automaticWorktreeCleanup = environmentSettings
+      ? resolveWorktreeCleanup(environmentSettings, thread.projectId).worktreeOnDelete
+      : false;
+    if (canDeleteWorktree && opts.deleteOrphanedWorktree) {
+      shouldDeleteWorktree = true;
+    } else if (canDeleteWorktree && localApi && !automaticWorktreeCleanup) {
+      const confirmationResult = await settlePromise(() =>
+        localApi.dialogs.confirm(
+          [
+            "This thread is the only one linked to this worktree:",
+            displayWorktreePath ?? orphanedWorktreePath,
+            "",
+            "Delete the worktree too?",
+          ].join("\n"),
+          { variant: "destructive" },
+        ),
+      );
+      if (confirmationResult._tag === "Failure") {
+        return confirmationResult;
       }
+      shouldDeleteWorktree = confirmationResult.value;
+    }
 
-      const currentRouteThreadRef = getCurrentRouteThreadRef();
-      const shouldNavigateAway =
-        currentRouteThreadRef?.threadId === threadRef.threadId &&
-        currentRouteThreadRef.environmentId === threadRef.environmentId;
-      // Resolved before the mutation lands so the archived thread is still in
-      // the store to read its worktree from.
-      const siblingThreadId = shouldNavigateAway
-        ? getWorktreeSiblingThreadIdAfterArchive({
-            threads: readEnvironmentThreadRefs(threadRef.environmentId).flatMap((ref) => {
-              const shell = readThreadShell(ref);
-              return shell === null ? [] : [shell];
-            }),
-            archivedThreadId: threadRef.threadId,
-            sortOrder: sidebarThreadSortOrder,
-          })
-        : null;
-      const action = ThreadUndo.begin("archive", scopedThreadKey(threadRef));
-      const archiveResult = await archiveThreadMutation({
+    if (thread.runtime !== null) {
+      await stopThreadSession({
         environmentId: threadRef.environmentId,
         input: { threadId: threadRef.threadId },
       });
-      if (archiveResult._tag === "Failure") {
-        action.finish();
-        return archiveResult;
-      }
-      const wokeAt = threadWokeAt(thread, { now: new Date().toISOString() });
-      if (wokeAt !== null) {
-        markThreadVisited(scopedThreadKey(threadRef), wokeAt);
-      }
-      refreshArchivedThreadsForEnvironment(threadRef.environmentId);
-      opts.onArchived?.();
-      showThreadUndoNotice({
-        action: "Archived",
-        claim: action,
-        undo: () => unarchiveThread(threadRef, { navigate: shouldNavigateAway }),
-        failureTitle: "Failed to undo archive",
-      });
+    }
 
-      if (shouldNavigateAway) {
-        // Both branches are awaited for their side effect only; `handleNewThread`
-        // resolves with the created thread, which would otherwise widen the union
-        // settlePromise infers.
-        const navigationResult = await settlePromise(async () => {
-          if (siblingThreadId) {
-            await router.navigate({
+    const deletedThreadIds = deletedIds ?? new Set<ThreadId>();
+    const currentRouteThreadRef = getCurrentRouteThreadRef();
+    const shouldNavigateToFallback =
+      currentRouteThreadRef?.threadId === threadRef.threadId &&
+      currentRouteThreadRef.environmentId === threadRef.environmentId;
+    const fallbackThreadId = getFallbackThreadIdAfterDelete({
+      threads,
+      deletedThreadId: threadRef.threadId,
+      deletedThreadIds,
+      sortOrder: sidebarThreadSortOrder,
+    });
+    const deleteResult = await deleteThreadMutation({
+      environmentId: threadRef.environmentId,
+      input: { threadId: threadRef.threadId },
+    });
+    if (deleteResult._tag === "Failure") {
+      return deleteResult;
+    }
+    refreshArchivedThreadsForEnvironment(threadRef.environmentId);
+    releaseComposerDraftUploads(threadRef);
+    clearComposerDraftForThread(threadRef);
+    clearProjectDraftThreadById(
+      scopeProjectRef(threadRef.environmentId, thread.projectId),
+      threadRef,
+    );
+    clearTerminalUiState(threadRef);
+    clearThreadPreviewState(threadRef);
+
+    if (shouldNavigateToFallback) {
+      const fallbackThread = fallbackThreadId
+        ? readThreadShell(scopeThreadRef(threadRef.environmentId, fallbackThreadId))
+        : null;
+      await navigateAfterThreadDeletion(() =>
+        fallbackThread
+          ? router.navigate({
               to: "/$environmentId/$threadId",
               params: buildThreadRouteParams(
-                scopeThreadRef(threadRef.environmentId, siblingThreadId),
+                scopeThreadRef(fallbackThread.environmentId, fallbackThread.id),
               ),
               replace: true,
-            });
-            return;
-          }
-          await handleNewThreadRef.current(scopeProjectRef(thread.environmentId, thread.projectId));
-        });
-        if (navigationResult._tag === "Failure") {
-          return navigationResult;
-        }
-        return archiveResult;
-      }
-
-      return archiveResult;
-    },
-    [
-      archiveThreadMutation,
-      getCurrentRouteThreadRef,
-      markThreadVisited,
-      resolveThreadTarget,
-      router,
-      sidebarThreadSortOrder,
-      unarchiveThread,
-    ],
-  );
-
-  const deleteThread = useCallback(
-    async (
-      target: ScopedThreadRef,
-      opts: {
-        deletedThreadKeys?: ReadonlySet<string>;
-        /** Remove an orphaned worktree without asking - the caller already confirmed. */
-        deleteOrphanedWorktree?: boolean;
-      } = {},
-    ) => {
-      const permissionFailure = threadOperationFailure(target);
-      if (permissionFailure) return permissionFailure;
-      const resolved = resolveThreadTarget(target);
-      if (!resolved) {
-        const result = await deleteThreadMutation({
-          environmentId: target.environmentId,
-          input: { threadId: target.threadId },
-        });
-        if (result._tag === "Success") {
-          refreshArchivedThreadsForEnvironment(target.environmentId);
-          clearThreadPreviewState(target);
-        }
-        return result;
-      }
-      const { thread, threadRef } = resolved;
-      const threads = readEnvironmentThreadRefs(threadRef.environmentId).flatMap((ref) => {
-        const shell = readThreadShell(ref);
-        return shell === null ? [] : [shell];
-      });
-      const threadProject = readProject({
-        environmentId: threadRef.environmentId,
-        projectId: thread.projectId,
-      });
-      const deletedIds =
-        opts.deletedThreadKeys && opts.deletedThreadKeys.size > 0
-          ? new Set<ThreadId>(
-              [...opts.deletedThreadKeys].flatMap((threadKey) => {
-                const ref = parseScopedThreadKey(threadKey);
-                return ref && ref.environmentId === threadRef.environmentId ? [ref.threadId] : [];
-              }),
-            )
-          : undefined;
-      const survivingThreads =
-        deletedIds && deletedIds.size > 0
-          ? threads.filter((entry) => entry.id === threadRef.threadId || !deletedIds.has(entry.id))
-          : threads;
-      const orphanedWorktreePath = getOrphanedWorktreePathForThread(
-        survivingThreads,
-        threadRef.threadId,
-      );
-      const displayWorktreePath = orphanedWorktreePath
-        ? formatWorktreePathForDisplay(orphanedWorktreePath)
-        : null;
-      const environmentConfig = appAtomRegistry
-        .get(environmentServerConfigsAtom)
-        .get(threadRef.environmentId);
-      const localApi = readLocalApi();
-      let canDeleteWorktree = false;
-      if (
-        orphanedWorktreePath !== null &&
-        threadProject !== null &&
-        !isScratchProject(threadProject, environmentConfig?.scratchWorkspaceRoot) &&
-        localApi
-      ) {
-        const sessionResult = await loadSessionState(threadRef.environmentId);
-        const permissionFailure = threadOperationFailure(threadRef);
-        if (permissionFailure) return permissionFailure;
-        canDeleteWorktree =
-          sessionResult._tag === "Success" &&
-          sessionGrantsScope(sessionResult.value, AuthSourceControlWriteScope);
-      }
-      let shouldDeleteWorktree = false;
-      const environmentSettings = environmentConfig?.settings;
-      const automaticWorktreeCleanup = environmentSettings
-        ? resolveWorktreeCleanup(environmentSettings, thread.projectId).worktreeOnDelete
-        : false;
-      if (canDeleteWorktree && opts.deleteOrphanedWorktree) {
-        shouldDeleteWorktree = true;
-      } else if (canDeleteWorktree && localApi && !automaticWorktreeCleanup) {
-        const confirmationResult = await settlePromise(() =>
-          localApi.dialogs.confirm(
-            [
-              "This thread is the only one linked to this worktree:",
-              displayWorktreePath ?? orphanedWorktreePath,
-              "",
-              "Delete the worktree too?",
-            ].join("\n"),
-            { variant: "destructive" },
-          ),
-        );
-        if (confirmationResult._tag === "Failure") {
-          return confirmationResult;
-        }
-        shouldDeleteWorktree = confirmationResult.value;
-      }
-
-      if (thread.runtime !== null) {
-        await stopThreadSession({
-          environmentId: threadRef.environmentId,
-          input: { threadId: threadRef.threadId },
-        });
-      }
-
-      const deletedThreadIds = deletedIds ?? new Set<ThreadId>();
-      const currentRouteThreadRef = getCurrentRouteThreadRef();
-      const shouldNavigateToFallback =
-        currentRouteThreadRef?.threadId === threadRef.threadId &&
-        currentRouteThreadRef.environmentId === threadRef.environmentId;
-      const fallbackThreadId = getFallbackThreadIdAfterDelete({
-        threads,
-        deletedThreadId: threadRef.threadId,
-        deletedThreadIds,
-        sortOrder: sidebarThreadSortOrder,
-      });
-      const deleteResult = await deleteThreadMutation({
-        environmentId: threadRef.environmentId,
-        input: { threadId: threadRef.threadId },
-      });
-      if (deleteResult._tag === "Failure") {
-        return deleteResult;
-      }
-      refreshArchivedThreadsForEnvironment(threadRef.environmentId);
-      releaseComposerDraftUploads(threadRef);
-      clearComposerDraftForThread(threadRef);
-      clearProjectDraftThreadById(
-        scopeProjectRef(threadRef.environmentId, thread.projectId),
-        threadRef,
-      );
-      clearTerminalUiState(threadRef);
-      clearThreadPreviewState(threadRef);
-
-      if (shouldNavigateToFallback) {
-        const fallbackThread = fallbackThreadId
-          ? readThreadShell(scopeThreadRef(threadRef.environmentId, fallbackThreadId))
-          : null;
-        await navigateAfterThreadDeletion(() =>
-          fallbackThread
-            ? router.navigate({
-                to: "/$environmentId/$threadId",
-                params: buildThreadRouteParams(
-                  scopeThreadRef(fallbackThread.environmentId, fallbackThread.id),
-                ),
-                replace: true,
-              })
-            : router.navigate({ to: "/", replace: true }),
-        );
-      }
-
-      if (!shouldDeleteWorktree || !orphanedWorktreePath || !threadProject) {
-        return deleteResult;
-      }
-
-      const removeResult = readEnvironmentScope(
-        threadRef.environmentId,
-        AuthSourceControlWriteScope,
-      )
-        ? await removeWorktree({
-            environmentId: threadRef.environmentId,
-            input: {
-              cwd: threadProject.workspaceRoot,
-              path: orphanedWorktreePath,
-              force: true,
-            },
-          })
-        : AsyncResult.failure(
-            Cause.fail(
-              new EnvironmentAuthorizationError({
-                message: "This connection can no longer remove worktrees.",
-                requiredScope: AuthSourceControlWriteScope,
-              }),
-            ),
-          );
-      const refreshResult =
-        removeResult._tag === "Success"
-          ? await refreshVcsStatus({
-              environmentId: threadRef.environmentId,
-              input: { cwd: threadProject.workspaceRoot },
             })
-          : null;
-      const cleanupFailure =
-        removeResult._tag === "Failure"
-          ? removeResult
-          : refreshResult?._tag === "Failure"
-            ? refreshResult
-            : null;
-      if (cleanupFailure) {
-        const removalFailed = removeResult._tag === "Failure";
-        const error = squashAtomCommandFailure(cleanupFailure);
-        const message = error instanceof Error ? error.message : "An error occurred.";
-        console.error("Worktree cleanup failed after thread deletion", {
-          threadId: threadRef.threadId,
-          projectCwd: threadProject.workspaceRoot,
-          worktreePath: orphanedWorktreePath,
-          error,
-        });
-        toastManager.add(
-          stackedThreadToast({
-            type: "error",
-            title: removalFailed
-              ? "Failed to delete worktree"
-              : "Worktree deleted, but Git status refresh failed",
-            description: removalFailed
-              ? `Could not remove ${displayWorktreePath ?? orphanedWorktreePath}. ${message}`
-              : message,
-          }),
-        );
-        // The thread was deleted. Cleanup has its own toast; returning its
-        // failure would make callers incorrectly report a thread deletion error.
-      }
-      return deleteResult;
-    },
-    [
-      clearComposerDraftForThread,
-      clearProjectDraftThreadById,
-      clearTerminalUiState,
-      deleteThreadMutation,
-      getCurrentRouteThreadRef,
-      loadSessionState,
-      refreshVcsStatus,
-      removeWorktree,
-      router,
-      resolveThreadTarget,
-      sidebarThreadSortOrder,
-      stopThreadSession,
-    ],
-  );
+          : router.navigate({ to: "/", replace: true }),
+      );
+    }
 
-  const unsettleThread = useCallback(
-    async (target: ScopedThreadRef) => {
-      if (!readEnvironmentSupportsSettlement(target.environmentId)) {
-        return AsyncResult.failure(
+    if (!shouldDeleteWorktree || !orphanedWorktreePath || !threadProject) {
+      return deleteResult;
+    }
+
+    const removeResult = readEnvironmentScope(threadRef.environmentId, AuthSourceControlWriteScope)
+      ? await removeWorktree({
+          environmentId: threadRef.environmentId,
+          input: {
+            cwd: threadProject.workspaceRoot,
+            path: orphanedWorktreePath,
+            force: true,
+          },
+        })
+      : AsyncResult.failure(
           Cause.fail(
-            new ThreadSettlementUnsupportedError({
-              environmentId: target.environmentId,
-              threadId: target.threadId,
+            new EnvironmentAuthorizationError({
+              message: "This connection can no longer remove worktrees.",
+              requiredScope: AuthSourceControlWriteScope,
             }),
           ),
         );
-      }
-      ThreadUndo.invalidate("settle", scopedThreadKey(target));
-      // reason "user" pins the thread active: auto-settle (PR merged /
-      // inactivity) stays suppressed until real activity clears the pin.
-      return unsettleThreadMutation({
-        environmentId: target.environmentId,
-        input: { threadId: target.threadId, reason: "user" },
+    const refreshResult =
+      removeResult._tag === "Success"
+        ? await refreshVcsStatus({
+            environmentId: threadRef.environmentId,
+            input: { cwd: threadProject.workspaceRoot },
+          })
+        : null;
+    const cleanupFailure =
+      removeResult._tag === "Failure"
+        ? removeResult
+        : refreshResult?._tag === "Failure"
+          ? refreshResult
+          : null;
+    if (cleanupFailure) {
+      const removalFailed = removeResult._tag === "Failure";
+      const error = squashAtomCommandFailure(cleanupFailure);
+      const message = error instanceof Error ? error.message : "An error occurred.";
+      console.error("Worktree cleanup failed after thread deletion", {
+        threadId: threadRef.threadId,
+        projectCwd: threadProject.workspaceRoot,
+        worktreePath: orphanedWorktreePath,
+        error,
       });
-    },
-    [unsettleThreadMutation],
-  );
+      toastManager.add(
+        stackedThreadToast({
+          type: "error",
+          title: removalFailed
+            ? "Failed to delete worktree"
+            : "Worktree deleted, but Git status refresh failed",
+          description: removalFailed
+            ? `Could not remove ${displayWorktreePath ?? orphanedWorktreePath}. ${message}`
+            : message,
+        }),
+      );
+      // The thread was deleted. Cleanup has its own toast; returning its
+      // failure would make callers incorrectly report a thread deletion error.
+    }
+    return deleteResult;
+  };
+
+  const unsettleThread = async (target: ScopedThreadRef) => {
+    if (!readEnvironmentSupportsSettlement(target.environmentId)) {
+      return AsyncResult.failure(
+        Cause.fail(
+          new ThreadSettlementUnsupportedError({
+            environmentId: target.environmentId,
+            threadId: target.threadId,
+          }),
+        ),
+      );
+    }
+    ThreadUndo.invalidate("settle", scopedThreadKey(target));
+    // reason "user" pins the thread active: auto-settle (PR merged /
+    // inactivity) stays suppressed until real activity clears the pin.
+    return unsettleThreadMutation({
+      environmentId: target.environmentId,
+      input: { threadId: target.threadId, reason: "user" },
+    });
+  };
 
   // A worktree card is pinned while any live member is, so a keyboard or
   // header toggle on an unpinned member of a pinned card must unpin.
-  const isWorktreeCardPinned = useCallback(
-    (target: ScopedThreadRef) =>
-      readThreadShell(target)?.pinnedAt != null ||
-      readWorktreeSiblings(target).some((sibling) => sibling.pinnedAt != null),
-    [readWorktreeSiblings],
-  );
+  const isWorktreeCardPinned = (target: ScopedThreadRef) =>
+    readThreadShell(target)?.pinnedAt != null ||
+    readWorktreeSiblings(target).some((sibling) => sibling.pinnedAt != null);
 
-  const setThreadAutoSettle = useCallback(
-    async (target: ScopedThreadRef, enabled: boolean) => {
-      if (!readEnvironmentSupportsAutoSettleOptOut(target.environmentId)) {
-        return AsyncResult.failure(
-          Cause.fail(
-            new ThreadAutoSettleOptOutUnsupportedError({
-              environmentId: target.environmentId,
-              threadId: target.threadId,
-            }),
-          ),
-        );
-      }
-      return setThreadAutoSettleMutation({
-        environmentId: target.environmentId,
-        input: { threadId: target.threadId, enabled },
-      });
-    },
-    [setThreadAutoSettleMutation],
-  );
+  const setThreadAutoSettle = async (target: ScopedThreadRef, enabled: boolean) => {
+    if (!readEnvironmentSupportsAutoSettleOptOut(target.environmentId)) {
+      return AsyncResult.failure(
+        Cause.fail(
+          new ThreadAutoSettleOptOutUnsupportedError({
+            environmentId: target.environmentId,
+            threadId: target.threadId,
+          }),
+        ),
+      );
+    }
+    return setThreadAutoSettleMutation({
+      environmentId: target.environmentId,
+      input: { threadId: target.threadId, enabled },
+    });
+  };
 
-  const pinThread = useCallback(
-    async (target: ScopedThreadRef, opts: { orderKey?: string; scope?: ThreadPinScope } = {}) => {
-      if (!readEnvironmentSupportsPinning(target.environmentId)) {
-        return AsyncResult.failure(
-          Cause.fail(
-            new ThreadPinningUnsupportedError({
-              environmentId: target.environmentId,
-              threadId: target.threadId,
-            }),
-          ),
-        );
-      }
-      // orderKey rides only to servers that decode it; pre-reorder servers get the bare pin they
-      // understand and the thread stays keyless.
-      const supportsReorder = readEnvironmentSupportsPinReorder(target.environmentId);
-      const runTop = smallestPinnedOrderKey();
-      const orderKey = supportsReorder ? (opts.orderKey ?? topOfPinnedRunOrderKey()) : undefined;
-      ThreadUndo.invalidate("pin", scopedThreadKey(target));
-      const result = await pinThreadMutation({
-        environmentId: target.environmentId,
+  const pinThread = async (
+    target: ScopedThreadRef,
+    opts: { orderKey?: string; scope?: ThreadPinScope } = {},
+  ) => {
+    if (!readEnvironmentSupportsPinning(target.environmentId)) {
+      return AsyncResult.failure(
+        Cause.fail(
+          new ThreadPinningUnsupportedError({
+            environmentId: target.environmentId,
+            threadId: target.threadId,
+          }),
+        ),
+      );
+    }
+    // orderKey rides only to servers that decode it; pre-reorder servers get the bare pin they
+    // understand and the thread stays keyless.
+    const supportsReorder = readEnvironmentSupportsPinReorder(target.environmentId);
+    const runTop = smallestPinnedOrderKey();
+    const orderKey = supportsReorder ? (opts.orderKey ?? topOfPinnedRunOrderKey()) : undefined;
+    ThreadUndo.invalidate("pin", scopedThreadKey(target));
+    const result = await pinThreadMutation({
+      environmentId: target.environmentId,
+      input: {
+        threadId: target.threadId,
+        ...(orderKey !== undefined ? { orderKey } : {}),
+      },
+    });
+    if (result._tag === "Failure" || (opts.scope ?? "worktree") === "thread") return result;
+    // Unpinned siblings follow the thread into the pinned block, keyed in
+    // sequence between it and the run's previous top so the card stays
+    // whole on every client. Stop on the first failure; each landed pin
+    // is a complete placement on its own.
+    let previous = orderKey ?? null;
+    for (const sibling of readWorktreeSiblings(target)) {
+      if (sibling.pinnedAt != null) continue;
+      const siblingKey =
+        supportsReorder && orderKey !== undefined
+          ? (pinOrderKeyBetween(previous, runTop) ?? undefined)
+          : undefined;
+      const siblingResult = await pinThreadMutation({
+        environmentId: sibling.environmentId,
         input: {
-          threadId: target.threadId,
-          ...(orderKey !== undefined ? { orderKey } : {}),
+          threadId: sibling.id,
+          ...(siblingKey !== undefined ? { orderKey: siblingKey } : {}),
         },
       });
-      if (result._tag === "Failure" || (opts.scope ?? "worktree") === "thread") return result;
-      // Unpinned siblings follow the thread into the pinned block, keyed in
-      // sequence between it and the run's previous top so the card stays
-      // whole on every client. Stop on the first failure; each landed pin
-      // is a complete placement on its own.
-      let previous = orderKey ?? null;
-      for (const sibling of readWorktreeSiblings(target)) {
-        if (sibling.pinnedAt != null) continue;
-        const siblingKey =
-          supportsReorder && orderKey !== undefined
-            ? (pinOrderKeyBetween(previous, runTop) ?? undefined)
-            : undefined;
-        const siblingResult = await pinThreadMutation({
-          environmentId: sibling.environmentId,
-          input: {
-            threadId: sibling.id,
-            ...(siblingKey !== undefined ? { orderKey: siblingKey } : {}),
-          },
-        });
-        if (siblingResult._tag === "Failure") return siblingResult;
-        previous = siblingKey ?? previous;
-      }
-      return result;
-    },
-    [pinThreadMutation, readWorktreeSiblings],
-  );
+      if (siblingResult._tag === "Failure") return siblingResult;
+      previous = siblingKey ?? previous;
+    }
+    return result;
+  };
 
-  const unpinThread = useCallback(
-    async (target: ScopedThreadRef, opts: { scope?: ThreadPinScope } = {}) => {
-      if (!readEnvironmentSupportsPinning(target.environmentId)) {
-        return AsyncResult.failure(
-          Cause.fail(
-            new ThreadPinningUnsupportedError({
-              environmentId: target.environmentId,
-              threadId: target.threadId,
-            }),
-          ),
-        );
-      }
-      // A card is pinned while any member is, so an unpinned member can be
-      // asked to unpin its worktree: the thread itself is skipped, its
-      // pinned siblings are not.
-      const scope = opts.scope ?? "worktree";
-      const shell = readThreadShell(target);
-      const orderKey = shell?.pinOrderKey ?? undefined;
-      const action = ThreadUndo.begin("pin", scopedThreadKey(target));
-      const result =
-        shell?.pinnedAt == null && scope === "worktree"
-          ? AsyncResult.success(undefined)
-          : await unpinThreadMutation({
-              environmentId: target.environmentId,
-              input: { threadId: target.threadId },
-            });
-      if (result._tag === "Failure") {
-        action.finish();
-        return result;
-      }
-      if (scope === "worktree") {
-        for (const sibling of readWorktreeSiblings(target)) {
-          if (sibling.pinnedAt == null) continue;
-          const siblingResult = await unpinThreadMutation({
-            environmentId: sibling.environmentId,
-            input: { threadId: sibling.id },
+  const unpinThread = async (target: ScopedThreadRef, opts: { scope?: ThreadPinScope } = {}) => {
+    if (!readEnvironmentSupportsPinning(target.environmentId)) {
+      return AsyncResult.failure(
+        Cause.fail(
+          new ThreadPinningUnsupportedError({
+            environmentId: target.environmentId,
+            threadId: target.threadId,
+          }),
+        ),
+      );
+    }
+    // A card is pinned while any member is, so an unpinned member can be
+    // asked to unpin its worktree: the thread itself is skipped, its
+    // pinned siblings are not.
+    const scope = opts.scope ?? "worktree";
+    const shell = readThreadShell(target);
+    const orderKey = shell?.pinOrderKey ?? undefined;
+    const action = ThreadUndo.begin("pin", scopedThreadKey(target));
+    const result =
+      shell?.pinnedAt == null && scope === "worktree"
+        ? AsyncResult.success(undefined)
+        : await unpinThreadMutation({
+            environmentId: target.environmentId,
+            input: { threadId: target.threadId },
           });
-          if (siblingResult._tag === "Failure") {
-            action.finish();
-            return siblingResult;
-          }
+    if (result._tag === "Failure") {
+      action.finish();
+      return result;
+    }
+    if (scope === "worktree") {
+      for (const sibling of readWorktreeSiblings(target)) {
+        if (sibling.pinnedAt == null) continue;
+        const siblingResult = await unpinThreadMutation({
+          environmentId: sibling.environmentId,
+          input: { threadId: sibling.id },
+        });
+        if (siblingResult._tag === "Failure") {
+          action.finish();
+          return siblingResult;
         }
       }
-      // Undo re-pins with the same scope, so a worktree unpin brings the
-      // whole card back and a single-thread unpin only that thread.
-      if (action.isCurrent()) {
-        showThreadUndoNotice({
-          action: "Unpinned",
-          claim: action,
-          undo: () => pinThread(target, { ...(orderKey === undefined ? {} : { orderKey }), scope }),
-          failureTitle: "Failed to undo unpin",
-        });
-      } else {
-        action.finish();
-      }
-      return result;
-    },
-    [pinThread, readWorktreeSiblings, unpinThreadMutation],
-  );
-
-  const settleThread = useCallback(
-    async (target: ScopedThreadRef) => {
-      if (!readEnvironmentSupportsSettlement(target.environmentId)) {
-        return AsyncResult.failure(
-          Cause.fail(
-            new ThreadSettlementUnsupportedError({
-              environmentId: target.environmentId,
-              threadId: target.threadId,
-            }),
-          ),
-        );
-      }
-      const resolved = resolveThreadTarget(target);
-      const wokeAt = resolved
-        ? threadWokeAt(resolved.thread, { now: new Date().toISOString() })
-        : null;
-      // Settling also drops the pin and the snooze server-side, so Undo
-      // has to put those back as well.
-      const pinOrderKey = resolved?.thread.pinnedAt != null ? resolved.thread.pinOrderKey : null;
-      const wasPinned = resolved?.thread.pinnedAt != null;
-      const snoozedUntil = resolved?.thread.snoozedUntil ?? null;
-      // An older unpin/snooze Undo would re-pin or re-snooze, and the server
-      // treats either as a promotion that un-settles; settling supersedes them.
-      ThreadUndo.invalidate("pin", scopedThreadKey(target));
-      ThreadUndo.invalidate("snooze", scopedThreadKey(target));
-      const action = ThreadUndo.begin("settle", scopedThreadKey(target));
-      const result = await settleThreadMutation({
-        environmentId: target.environmentId,
-        input: { threadId: target.threadId },
-      });
-      if (result._tag !== "Success") {
-        action.finish();
-        return result;
-      }
-      if (wokeAt !== null) {
-        markThreadVisited(scopedThreadKey(target), wokeAt);
-      }
+    }
+    // Undo re-pins with the same scope, so a worktree unpin brings the
+    // whole card back and a single-thread unpin only that thread.
+    if (action.isCurrent()) {
       showThreadUndoNotice({
-        action: "Settled",
+        action: "Unpinned",
         claim: action,
-        undo: async () => {
-          const unsettled = await unsettleThread(target);
-          if (unsettled._tag !== "Success") return unsettled;
-          if (wasPinned) {
-            const pinned = await pinThread(
-              target,
-              pinOrderKey == null ? {} : { orderKey: pinOrderKey },
-            );
-            if (pinned._tag !== "Success") return pinned;
-          }
-          if (snoozedUntil !== null) {
-            return snoozeThreadMutation({
-              environmentId: target.environmentId,
-              input: { threadId: target.threadId, snoozedUntil },
-            });
-          }
-          return unsettled;
-        },
-        failureTitle: "Failed to undo settle",
+        undo: () => pinThread(target, { ...(orderKey === undefined ? {} : { orderKey }), scope }),
+        failureTitle: "Failed to undo unpin",
       });
-      return result;
-    },
-    [
-      markThreadVisited,
-      pinThread,
-      resolveThreadTarget,
-      settleThreadMutation,
-      snoozeThreadMutation,
-      unsettleThread,
-    ],
-  );
+    } else {
+      action.finish();
+    }
+    return result;
+  };
 
-  const confirmAndUnpinThread = useCallback(
-    async (target: ScopedThreadRef) => {
-      const permissionFailure = threadOperationFailure(target);
-      if (permissionFailure) return permissionFailure;
-      const localApi = readLocalApi();
-      const resolved = resolveThreadTarget(target);
-      const confirmationResult = await requestThreadUnpinConfirmation({
-        enabled: confirmThreadUnpin,
-        title: resolved?.thread.title ?? "this thread",
-        siblingCount: readWorktreeSiblings(target).filter((sibling) => sibling.pinnedAt != null)
-          .length,
-        confirm: localApi ? (message) => localApi.dialogs.confirm(message) : null,
-      });
+  const settleThread = async (target: ScopedThreadRef) => {
+    if (!readEnvironmentSupportsSettlement(target.environmentId)) {
+      return AsyncResult.failure(
+        Cause.fail(
+          new ThreadSettlementUnsupportedError({
+            environmentId: target.environmentId,
+            threadId: target.threadId,
+          }),
+        ),
+      );
+    }
+    const resolved = resolveThreadTarget(target);
+    const wokeAt = resolved
+      ? threadWokeAt(resolved.thread, { now: new Date().toISOString() })
+      : null;
+    // Settling also drops the pin and the snooze server-side, so Undo
+    // has to put those back as well.
+    const pinOrderKey = resolved?.thread.pinnedAt != null ? resolved.thread.pinOrderKey : null;
+    const wasPinned = resolved?.thread.pinnedAt != null;
+    const snoozedUntil = resolved?.thread.snoozedUntil ?? null;
+    // An older unpin/snooze Undo would re-pin or re-snooze, and the server
+    // treats either as a promotion that un-settles; settling supersedes them.
+    ThreadUndo.invalidate("pin", scopedThreadKey(target));
+    ThreadUndo.invalidate("snooze", scopedThreadKey(target));
+    const action = ThreadUndo.begin("settle", scopedThreadKey(target));
+    const result = await settleThreadMutation({
+      environmentId: target.environmentId,
+      input: { threadId: target.threadId },
+    });
+    if (result._tag !== "Success") {
+      action.finish();
+      return result;
+    }
+    if (wokeAt !== null) {
+      markThreadVisited(scopedThreadKey(target), wokeAt);
+    }
+    showThreadUndoNotice({
+      action: "Settled",
+      claim: action,
+      undo: async () => {
+        const unsettled = await unsettleThread(target);
+        if (unsettled._tag !== "Success") return unsettled;
+        if (wasPinned) {
+          const pinned = await pinThread(
+            target,
+            pinOrderKey == null ? {} : { orderKey: pinOrderKey },
+          );
+          if (pinned._tag !== "Success") return pinned;
+        }
+        if (snoozedUntil !== null) {
+          return snoozeThreadMutation({
+            environmentId: target.environmentId,
+            input: { threadId: target.threadId, snoozedUntil },
+          });
+        }
+        return unsettled;
+      },
+      failureTitle: "Failed to undo settle",
+    });
+    return result;
+  };
+
+  const confirmAndUnpinThread = async (target: ScopedThreadRef) => {
+    const permissionFailure = threadOperationFailure(target);
+    if (permissionFailure) return permissionFailure;
+    const localApi = readLocalApi();
+    const resolved = resolveThreadTarget(target);
+    const confirmationResult = await requestThreadUnpinConfirmation({
+      enabled: confirmThreadUnpin,
+      title: resolved?.thread.title ?? "this thread",
+      siblingCount: readWorktreeSiblings(target).filter((sibling) => sibling.pinnedAt != null)
+        .length,
+      confirm: localApi ? (message) => localApi.dialogs.confirm(message) : null,
+    });
+    if (confirmationResult._tag === "Failure") {
+      return confirmationResult;
+    }
+    if (!confirmationResult.value) {
+      return AsyncResult.success(undefined);
+    }
+    return unpinThread(target);
+  };
+
+  const reorderPinnedThread = async (target: ScopedThreadRef, orderKey: string) => {
+    if (!readEnvironmentSupportsPinReorder(target.environmentId)) {
+      return AsyncResult.failure(
+        Cause.fail(
+          new ThreadPinReorderUnsupportedError({
+            environmentId: target.environmentId,
+            threadId: target.threadId,
+          }),
+        ),
+      );
+    }
+    ThreadUndo.invalidate("pin", scopedThreadKey(target));
+    return reorderPinnedThreadMutation({
+      environmentId: target.environmentId,
+      input: { threadId: target.threadId, orderKey },
+    });
+  };
+
+  const reorderActiveThread = async (target: ScopedThreadRef, orderKey: string) => {
+    if (!readEnvironmentSupportsActiveReorder(target.environmentId)) {
+      return AsyncResult.failure(
+        Cause.fail(
+          new ThreadActiveReorderUnsupportedError({
+            environmentId: target.environmentId,
+            threadId: target.threadId,
+          }),
+        ),
+      );
+    }
+    return reorderActiveThreadMutation({
+      environmentId: target.environmentId,
+      input: { threadId: target.threadId, orderKey },
+    });
+  };
+
+  const unsnoozeThread = async (target: ScopedThreadRef) => {
+    if (!readEnvironmentSupportsSnooze(target.environmentId)) {
+      return AsyncResult.failure(
+        Cause.fail(
+          new ThreadSnoozeUnsupportedError({
+            environmentId: target.environmentId,
+            threadId: target.threadId,
+          }),
+        ),
+      );
+    }
+    ThreadUndo.invalidate("snooze", scopedThreadKey(target));
+    return unsnoozeThreadMutation({
+      environmentId: target.environmentId,
+      input: { threadId: target.threadId, reason: "user" },
+    });
+  };
+
+  const snoozeThread = async (target: ScopedThreadRef, snoozedUntil: string) => {
+    if (!readEnvironmentSupportsSnooze(target.environmentId)) {
+      return AsyncResult.failure(
+        Cause.fail(
+          new ThreadSnoozeUnsupportedError({
+            environmentId: target.environmentId,
+            threadId: target.threadId,
+          }),
+        ),
+      );
+    }
+    const resolved = resolveThreadTarget(target);
+    if (resolved && !canSnooze(resolved.thread, { now: new Date().toISOString() })) {
+      return AsyncResult.failure(
+        Cause.fail(
+          new ThreadSnoozeBlockedError({
+            environmentId: resolved.threadRef.environmentId,
+            threadId: resolved.threadRef.threadId,
+          }),
+        ),
+      );
+    }
+    const action = ThreadUndo.begin("snooze", scopedThreadKey(target));
+    const result = await snoozeThreadMutation({
+      environmentId: target.environmentId,
+      input: { threadId: target.threadId, snoozedUntil },
+    });
+    if (result._tag !== "Success") {
+      action.finish();
+      return result;
+    }
+    showThreadUndoNotice({
+      action: "Snoozed",
+      claim: action,
+      undo: () => unsnoozeThread(target),
+      failureTitle: "Failed to wake thread",
+    });
+    return result;
+  };
+
+  const confirmAndDeleteThread = async (target: ScopedThreadRef) => {
+    const permissionFailure = threadOperationFailure(target);
+    if (permissionFailure) return permissionFailure;
+    const localApi = readLocalApi();
+    const resolved = resolveThreadTarget(target);
+
+    if (confirmThreadDelete && localApi) {
+      const title = resolved?.thread.title ?? "this thread";
+      const confirmationResult = await settlePromise(() =>
+        localApi.dialogs.confirm(
+          [
+            `Delete thread "${title}"?`,
+            "This permanently clears conversation history for this thread.",
+          ].join("\n"),
+          { variant: "destructive" },
+        ),
+      );
       if (confirmationResult._tag === "Failure") {
         return confirmationResult;
       }
       if (!confirmationResult.value) {
         return AsyncResult.success(undefined);
       }
-      return unpinThread(target);
-    },
-    [confirmThreadUnpin, readWorktreeSiblings, resolveThreadTarget, unpinThread],
-  );
+    }
 
-  const reorderPinnedThread = useCallback(
-    async (target: ScopedThreadRef, orderKey: string) => {
-      if (!readEnvironmentSupportsPinReorder(target.environmentId)) {
-        return AsyncResult.failure(
-          Cause.fail(
-            new ThreadPinReorderUnsupportedError({
-              environmentId: target.environmentId,
-              threadId: target.threadId,
-            }),
-          ),
-        );
-      }
-      ThreadUndo.invalidate("pin", scopedThreadKey(target));
-      return reorderPinnedThreadMutation({
-        environmentId: target.environmentId,
-        input: { threadId: target.threadId, orderKey },
-      });
-    },
-    [reorderPinnedThreadMutation],
-  );
+    return deleteThread(target);
+  };
 
-  const reorderActiveThread = useCallback(
-    async (target: ScopedThreadRef, orderKey: string) => {
-      if (!readEnvironmentSupportsActiveReorder(target.environmentId)) {
-        return AsyncResult.failure(
-          Cause.fail(
-            new ThreadActiveReorderUnsupportedError({
-              environmentId: target.environmentId,
-              threadId: target.threadId,
-            }),
-          ),
-        );
-      }
-      return reorderActiveThreadMutation({
-        environmentId: target.environmentId,
-        input: { threadId: target.threadId, orderKey },
-      });
-    },
-    [reorderActiveThreadMutation],
-  );
-
-  const unsnoozeThread = useCallback(
-    async (target: ScopedThreadRef) => {
-      if (!readEnvironmentSupportsSnooze(target.environmentId)) {
-        return AsyncResult.failure(
-          Cause.fail(
-            new ThreadSnoozeUnsupportedError({
-              environmentId: target.environmentId,
-              threadId: target.threadId,
-            }),
-          ),
-        );
-      }
-      ThreadUndo.invalidate("snooze", scopedThreadKey(target));
-      return unsnoozeThreadMutation({
-        environmentId: target.environmentId,
-        input: { threadId: target.threadId, reason: "user" },
-      });
-    },
-    [unsnoozeThreadMutation],
-  );
-
-  const snoozeThread = useCallback(
-    async (target: ScopedThreadRef, snoozedUntil: string) => {
-      if (!readEnvironmentSupportsSnooze(target.environmentId)) {
-        return AsyncResult.failure(
-          Cause.fail(
-            new ThreadSnoozeUnsupportedError({
-              environmentId: target.environmentId,
-              threadId: target.threadId,
-            }),
-          ),
-        );
-      }
-      const resolved = resolveThreadTarget(target);
-      if (resolved && !canSnooze(resolved.thread, { now: new Date().toISOString() })) {
-        return AsyncResult.failure(
-          Cause.fail(
-            new ThreadSnoozeBlockedError({
-              environmentId: resolved.threadRef.environmentId,
-              threadId: resolved.threadRef.threadId,
-            }),
-          ),
-        );
-      }
-      const action = ThreadUndo.begin("snooze", scopedThreadKey(target));
-      const result = await snoozeThreadMutation({
-        environmentId: target.environmentId,
-        input: { threadId: target.threadId, snoozedUntil },
-      });
-      if (result._tag !== "Success") {
-        action.finish();
-        return result;
-      }
-      showThreadUndoNotice({
-        action: "Snoozed",
-        claim: action,
-        undo: () => unsnoozeThread(target),
-        failureTitle: "Failed to wake thread",
-      });
-      return result;
-    },
-    [resolveThreadTarget, snoozeThreadMutation, unsnoozeThread],
-  );
-
-  const confirmAndDeleteThread = useCallback(
-    async (target: ScopedThreadRef) => {
-      const permissionFailure = threadOperationFailure(target);
-      if (permissionFailure) return permissionFailure;
-      const localApi = readLocalApi();
-      const resolved = resolveThreadTarget(target);
-
-      if (confirmThreadDelete && localApi) {
-        const title = resolved?.thread.title ?? "this thread";
-        const confirmationResult = await settlePromise(() =>
-          localApi.dialogs.confirm(
-            [
-              `Delete thread "${title}"?`,
-              "This permanently clears conversation history for this thread.",
-            ].join("\n"),
-            { variant: "destructive" },
-          ),
-        );
-        if (confirmationResult._tag === "Failure") {
-          return confirmationResult;
-        }
-        if (!confirmationResult.value) {
-          return AsyncResult.success(undefined);
-        }
-      }
-
-      return deleteThread(target);
-    },
-    [confirmThreadDelete, deleteThread, resolveThreadTarget],
-  );
-
-  return useMemo(
-    () => ({
-      archiveThread,
-      unarchiveThread,
-      deleteThread,
-      confirmAndDeleteThread,
-      settleThread,
-      unsettleThread,
-      snoozeThread,
-      unsnoozeThread,
-      pinThread,
-      unpinThread,
-      confirmAndUnpinThread,
-      isWorktreeCardPinned,
-      reorderPinnedThread,
-      reorderActiveThread,
-      markThreadUnread,
-      setThreadAutoSettle,
-    }),
-    [
-      archiveThread,
-      confirmAndDeleteThread,
-      confirmAndUnpinThread,
-      isWorktreeCardPinned,
-      deleteThread,
-      markThreadUnread,
-      pinThread,
-      reorderPinnedThread,
-      reorderActiveThread,
-      setThreadAutoSettle,
-      settleThread,
-      snoozeThread,
-      unarchiveThread,
-      unpinThread,
-      unsettleThread,
-      unsnoozeThread,
-    ],
-  );
+  return {
+    archiveThread,
+    unarchiveThread,
+    deleteThread,
+    confirmAndDeleteThread,
+    settleThread,
+    unsettleThread,
+    snoozeThread,
+    unsnoozeThread,
+    pinThread,
+    unpinThread,
+    confirmAndUnpinThread,
+    isWorktreeCardPinned,
+    reorderPinnedThread,
+    reorderActiveThread,
+    markThreadUnread,
+    setThreadAutoSettle,
+  };
 }

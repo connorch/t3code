@@ -1,6 +1,6 @@
 import type { EnvironmentId, ScopedThreadRef } from "@t3tools/contracts";
 import { Globe, History, RadioTower } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useState } from "react";
 
 import type { BrowserHistoryEntry } from "~/browserHistoryStore";
 import { Empty, EmptyDescription, EmptyMedia, EmptyTitle } from "~/components/ui/empty";
@@ -38,15 +38,9 @@ export function PreviewEmptyState({
   });
   const activeThread = useThreadShell(threadRef);
   const activeProjectId = activeThread?.projectId ?? null;
-  const projectRefs = useMemo(
-    () => (activeProjectId ? [{ environmentId, projectId: activeProjectId }] : []),
-    [activeProjectId, environmentId],
-  );
+  const projectRefs = activeProjectId ? [{ environmentId, projectId: activeProjectId }] : [];
   const projectThreads = useThreadShellsForProjectRefs(projectRefs);
-  const worktreeServers = useMemo(
-    () => selectWorktreeServers({ servers, activeThread, projectThreads }),
-    [servers, activeThread, projectThreads],
-  );
+  const worktreeServers = selectWorktreeServers({ servers, activeThread, projectThreads });
   const [scope, setScope] = useState<ServerScope>("worktree");
   // The toggle only appears when it filters something out.
   const canScope = worktreeServers.length > 0 && worktreeServers.length < servers.length;

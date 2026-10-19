@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
 
 import type { SidebarProjectSnapshot } from "../../sidebarProjectGrouping";
 import { ProjectFavicon } from "../ProjectFavicon";
@@ -64,19 +64,16 @@ export function LinkProjectDialog({
   const [query, setQuery] = useState("");
   const [name, setName] = useState(currentGroup.displayName);
 
-  const target = useMemo(
-    () => candidates.find((group) => group.projectKey === targetKey) ?? null,
-    [candidates, targetKey],
-  );
-  const filtered = useMemo(() => {
-    const needle = query.trim().toLowerCase();
-    if (needle.length === 0) return candidates;
-    return candidates.filter(
-      (group) =>
-        group.displayName.toLowerCase().includes(needle) ||
-        describeGroupLocation(group).toLowerCase().includes(needle),
-    );
-  }, [candidates, query]);
+  const target = candidates.find((group) => group.projectKey === targetKey) ?? null;
+  const needle = query.trim().toLowerCase();
+  const filtered =
+    needle.length === 0
+      ? candidates
+      : candidates.filter(
+          (group) =>
+            group.displayName.toLowerCase().includes(needle) ||
+            describeGroupLocation(group).toLowerCase().includes(needle),
+        );
   const filteredKeys = filtered.map((group) => group.projectKey);
 
   const submit = () => {
