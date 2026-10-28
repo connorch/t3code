@@ -1,9 +1,6 @@
 /**
- * Matches URLs against the "open matching links in the integrated
- * browser" setting (`openLinksInPreviewPattern`). The pattern is a
- * user-supplied RegExp source; an empty or invalid pattern matches nothing.
- * The compiled RegExp is cached per pattern since every link click consults
- * this.
+ * Matches URLs against the user's `openLinksInPreviewPattern` RegExp source; an empty or invalid
+ * pattern matches nothing. Cached per pattern because every link click consults it.
  */
 let compiled: { readonly pattern: string; readonly regex: RegExp | null } | null = null;
 

@@ -98,11 +98,10 @@ export async function startNewThreadFromContext(
   return true;
 }
 
-// The explicit counterpart to the above: `chat.newInWorkspace` carries the
-// viewed thread's workspace on purpose — its worktree when it has one,
-// otherwise the current checkout (branch null = whatever the checkout is on).
-// A viewed draft is itself a workspace selection, so it carries verbatim —
-// handleNewThread reuses the open draft, and this keeps that a no-op.
+// `chat.newInWorkspace` carries the viewed thread's workspace on purpose: its
+// worktree, else the current checkout (branch null = whatever it is on). A
+// viewed draft is already a workspace selection, so it carries verbatim and
+// handleNewThread's reuse of the open draft stays a no-op.
 export async function startNewThreadInCurrentWorkspace(
   context: ChatThreadActionContext,
 ): Promise<boolean> {

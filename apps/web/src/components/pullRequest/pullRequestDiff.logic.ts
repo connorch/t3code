@@ -1,12 +1,7 @@
 import type { FileDiffMetadata } from "@pierre/diffs";
 import type { DiffFilesCollapsed, PullRequestDiffSide } from "@t3tools/contracts";
 
-/**
- * A thread naming a file is not the same as a thread the diff can show: its line may have moved
- * out of the change, or sit in a hunk the host withheld. Pinning it anyway would put the remark
- * against whatever code now occupies that line number, and silently dropping it would lose the
- * conversation, so the answer decides which of the two lists it belongs in.
- */
+/** Only rendered hunks can anchor comments; list others off-diff. */
 export function isLineInFileDiff(
   file: FileDiffMetadata,
   side: PullRequestDiffSide,
@@ -24,10 +19,8 @@ export type DiffFoldOverride = "all" | "none" | null;
 const NO_TOGGLES: ReadonlySet<string> = new Set();
 
 /**
- * A diff arrives a slice at a time, so the reader's own choices are kept as the difference from
- * the default rather than as the set of folded files: a file that has not loaded yet cannot be in
- * a set, and would otherwise land expanded moments after the reader folded everything. Under
- * `viewed` the default is the file's own tick.
+ * Keep fold choices relative to the default so later pages inherit Fold all. Under `viewed` the
+ * default is the file's own tick.
  */
 export function isFileDiffCollapsed(
   fileKey: string,

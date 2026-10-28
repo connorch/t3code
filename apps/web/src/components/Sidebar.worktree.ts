@@ -5,14 +5,10 @@ import {
 import type { SidebarThreadSummary } from "../types";
 import type { SidebarDropTarget } from "./Sidebar.logic";
 
-// ── Worktree cards ────────────────────────────────────────────────────
-// The default sidebar keeps a flat, server-ordered thread list. A worktree
-// card is a read-time view over that list: the pinned and active members of
-// one worktree are gathered to the slot of their highest-ranking member and
-// painted as one card. Nothing is stored for the card itself. Writes happen
-// only behind user gestures (a card drag fans key writes out to every
-// member), so another client splitting the flat order can never leave a
-// half card here, and a partial write still renders one whole card.
+// Worktree cards are a read-time view over the flat, server-ordered thread list: a worktree's
+// pinned and active members gather at their highest-ranking member's slot and paint as one card.
+// Nothing is stored for the card; only user gestures write (a card drag fans keys out to every
+// member), so other clients or a partial write still render one whole card.
 
 export type WorktreeCardThread = {
   readonly environmentId: string;
@@ -79,8 +75,8 @@ export function resolveWorktreeCardPositions<T extends WorktreeCardThread>(
   while (start < list.length) {
     const key = worktreeCardKey(list[start]!);
     let end = start;
-    while (key !== null && end + 1 < list.length && worktreeCardKey(list[end + 1]!) === key) {
-      end += 1;
+    if (key !== null) {
+      while (end + 1 < list.length && worktreeCardKey(list[end + 1]!) === key) end += 1;
     }
     if (end > start) {
       for (let index = start; index <= end; index += 1) {
@@ -218,12 +214,9 @@ export function worktreeCardSiblings<T extends WorktreeSiblingShell>(
   );
 }
 
-// ── Card accent ───────────────────────────────────────────────────────
-// A card draws a hairline in its own color so two stacked cards read as
-// separate worktrees without a label. The color is derived from the card
-// key, so nothing is stored and every client paints a worktree the same
-// way. Lightness and chroma are fixed, so no worktree shouts louder than
-// another, and only the hue tells them apart.
+// A card's hairline color, derived from its key, tells stacked worktrees apart without a label
+// and paints the same on every client. Fixed lightness and chroma keep any worktree from
+// shouting louder than another; only the hue differs.
 
 const WORKTREE_CARD_HUE_COUNT = 36;
 // Walking the wheel with a stride coprime to the hue count still visits

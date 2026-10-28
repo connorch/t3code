@@ -1,14 +1,19 @@
-/** Overlays that must win over the launcher's letter shortcuts. */
+/**
+ * Overlays that must win over the launcher's letter shortcuts. Closed keepMounted popups stop
+ * blocking once their exit transition ends.
+ */
 export const LAUNCHER_SHORTCUT_BLOCKING_LAYERS = [
-  '[data-slot="dialog-popup"]',
-  '[data-slot="alert-dialog-popup"]',
-  '[data-slot="command-dialog-popup"]',
-  '[data-slot="menu-popup"]',
-  '[data-slot="select-popup"]',
-  '[data-slot="popover-popup"]',
-  '[data-slot="combobox-popup"]',
-  '[data-slot="autocomplete-popup"]',
-].join(",");
+  "dialog-popup",
+  "alert-dialog-popup",
+  "command-dialog-popup",
+  "menu-popup",
+  "select-popup",
+  "popover-popup",
+  "combobox-popup",
+  "autocomplete-popup",
+]
+  .map((slot) => `[data-slot="${slot}"]:is([data-open],[data-ending-style])`)
+  .join(",");
 
 export function emptyGhostTooltip(action: {
   available: boolean;
@@ -21,12 +26,9 @@ export function emptyGhostTooltip(action: {
 }
 
 /**
- * A focused editable is a typing context whether or not it has text yet: an
- * empty chat composer at rest is still where the user's next keystrokes are
- * meant to land, and claiming launcher letters from it would redirect prompts
- * into whatever surface opens. The `:not` clause lets `closest` see past
- * non-editable islands (`contenteditable="false"`) to an editable host around
- * them, matching ComposerPendingUserInputPanel's typing guard.
+ * A focused editable is a typing context even while empty, or launcher letters would steal
+ * prompts from a resting composer. Skip contenteditable=false islands to find their editable
+ * host, matching the composer typing guard.
  */
 export function surfaceShortcutTargetsTypingContext(
   target: { closest(selectors: string): unknown } | null,
@@ -35,28 +37,6 @@ export function surfaceShortcutTargetsTypingContext(
     target?.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"])') !=
     null
   );
-}
-
-const visibleLaunchers = new Set<(key: string) => boolean>();
-
-/** Registers a visible launcher's letter claim; returns its unregister. */
-export function registerSurfaceLauncher(claimsKey: (key: string) => boolean): () => void {
-  visibleLaunchers.add(claimsKey);
-  return () => {
-    visibleLaunchers.delete(claimsKey);
-  };
-}
-
-/**
- * Chat type-to-focus attaches its window capture listener at mount, before any
- * launcher opens, so it would take every letter first. It asks here and leaves
- * the letters a visible launcher opens a surface for.
- */
-export function surfaceLauncherClaimsKey(key: string): boolean {
-  for (const claimsKey of visibleLaunchers) {
-    if (claimsKey(key)) return true;
-  }
-  return false;
 }
 
 /**

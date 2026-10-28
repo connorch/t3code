@@ -1,19 +1,18 @@
 import {
   emptyGhostTooltip,
   LAUNCHER_SHORTCUT_BLOCKING_LAYERS,
-  registerSurfaceLauncher,
   shouldClaimSurfaceLauncherKey,
 } from "./RightPanelTabs.logic";
 
 // Re-exported for RightPanelTabs.test.tsx, which imports the helper from here.
 export { surfaceShortcutTargetsTypingContext } from "./RightPanelTabs.logic";
-import { pullRequestHostOf, type SourceControlProviderKind } from "@t3tools/contracts";
+import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
 import { useProjects, useServerConfigs, useThreadShells } from "~/state/entities";
 import {
   threadPullRequestKeysEqual,
   visibleThreadPullRequests,
-} from "@t3tools/shared/threadPullRequests";
+} from "@t3tools/client-runtime/thread-pull-requests";
 import type {
   ClientSettings,
   ContextMenuItem,
@@ -61,7 +60,7 @@ import {
   type MouseEvent as ReactMouseEvent,
   type ReactElement,
   type ReactNode,
-  type RefObject,
+  type Ref,
   useEffect,
   useEffectEvent,
   useRef,
@@ -93,7 +92,7 @@ import {
 import { useBrowserDefaults } from "~/browser/browserDefaults";
 import { ScrollArea } from "~/components/ui/scroll-area";
 import { PanelTabCloseButton } from "~/components/ui/panel-tab-close-button";
-import { faviconUrlForOrigin } from "~/lib/favicon";
+import { faviconUrlForOrigin } from "@t3tools/shared/favicon";
 import { useClientSettings } from "~/hooks/useSettings";
 import { useTheme } from "~/hooks/useTheme";
 import { useDeviceState } from "~/state/device";
@@ -114,7 +113,7 @@ import { resolvePullRequestState } from "./pullRequest/pullRequestPresentation";
 import { PullRequestGlyph } from "~/components/pullRequest/pullRequestIcons";
 import { observeResize } from "~/lib/observeResize";
 
-interface RightPanelTabsProps {
+export interface RightPanelTabsProps {
   mode: PreviewPanelMode;
   maximized?: boolean;
   open?: boolean;
@@ -130,11 +129,7 @@ interface RightPanelTabsProps {
   pendingSurfaceIds: ReadonlySet<string>;
   previewSessions: Readonly<Record<string, PreviewSessionSnapshot>>;
   desktopByTabId: Readonly<Record<string, DesktopPreviewOverlay>>;
-  /**
-   * Maps a server session tab id to the desktop runtime tab id the Electron
-   * preview manager is keyed by. Session ids are only unique within one server
-   * process, so desktop operations must not be addressed with them.
-   */
+  /** Maps server-local session ids to desktop runtime ids; session ids cannot address desktop operations. */
   previewRuntimeTabId?: ((tabId: string) => string) | undefined;
   terminalLabelsById: ReadonlyMap<string, string>;
   onActivate: (surface: RightPanelSurface) => void;
@@ -146,11 +141,7 @@ interface RightPanelTabsProps {
   onMoveSurface?: (surfaceId: string, toIndex: number) => void;
   onCopyFilePath: (relativePath: string) => void;
   onAddBrowser: () => void;
-  /**
-   * Separate from `onAddBrowser` on purpose: that one is passed directly as a
-   * DOM click handler, and a `(profileId?: string)` signature would silently
-   * accept the MouseEvent as a profile id.
-   */
+  /** Keep separate from the DOM click handler so a MouseEvent cannot become a profile id. */
   onAddBrowserInProfile: (profileId: string) => void;
   onAddTerminal: () => void;
   onAddDiff: () => void;
@@ -179,9 +170,7 @@ export interface PullRequestTabStatus {
 
 export type PullRequestTabStatusSeed = Pick<PullRequestTabStatus, "state" | "isDraft">;
 
-export function shouldOpenDefaultBrowserProfileFromMenuClick(
-  pointerType: string | undefined,
-): boolean {
+function shouldOpenDefaultBrowserProfileFromMenuClick(pointerType: string | undefined): boolean {
   return pointerType !== "touch";
 }
 
@@ -226,7 +215,7 @@ function previewTabIdOf(
  * resolve while the preview manager's createTab is still in flight, and muting
  * then fails with a PreviewTabNotFoundError nothing surfaces to the user.
  */
-export function tabMuteMenuItem(input: {
+function tabMuteMenuItem(input: {
   overlay: DesktopPreviewOverlay | null;
   canResolveRuntimeTabId: boolean;
 }): { label: string; disabled: boolean } {
@@ -315,7 +304,13 @@ function GhostSurfaceTab({ action }: { action: SurfaceAction }) {
             type="button"
             onClick={action.available ? action.onClick : undefined}
             aria-disabled={!action.available}
-            {...(action.available ? { "aria-keyshortcuts": action.shortcut.toLowerCase() } : {})}
+            {...(action.available
+              ? {
+                  "aria-keyshortcuts": action.shortcut.toLowerCase(),
+                  // F6 into an empty panel lands on the first launchable surface.
+                  "data-workspace-focus-default": "",
+                }
+              : {})}
             className={cn(
               "flex h-6 shrink-0 items-center gap-1.5 rounded-md border border-border/70 px-2.5 text-xs text-muted-foreground",
               action.available
@@ -511,7 +506,7 @@ function PullRequestSurfaceIcon({
   const host =
     surface.host ??
     (identity?.provider
-      ? pullRequestHostOf(identity, identity.provider as SourceControlProviderKind)
+      ? sourceControlClients.changeRequestHost(identity, identity.provider)
       : null);
   const configs = useServerConfigs();
   const capabilities =
@@ -519,21 +514,22 @@ function PullRequestSurfaceIcon({
       ? undefined
       : configs.get(resolvedEnvironmentId)?.environment.capabilities;
   const linkedSnapshot =
-    capabilities?.threadPullRequests === true
+    capabilities !== undefined
       ? (resolvePullRequestTabLink(threads, resolvedEnvironmentId, host, surface)?.snapshot ?? null)
       : null;
   const detail = useEnvironmentQuery(
-    resolvedEnvironmentId === null || capabilities?.pullRequests !== true || linkedSnapshot !== null
+    resolvedEnvironmentId === null || capabilities === undefined || linkedSnapshot !== null
       ? null
       : pullRequestEnvironment.detail({
           environmentId: resolvedEnvironmentId,
           input: {
             projectId: surface.projectId as ProjectId,
-            ...(capabilities?.threadPullRequests === true && surface.host !== undefined
+            ...(capabilities !== undefined && surface.host !== undefined
               ? { host: surface.host }
               : {}),
             repository: surface.repository,
             number: surface.number,
+            allowStale: false,
           },
         }),
   ).data;
@@ -542,7 +538,7 @@ function PullRequestSurfaceIcon({
     repository: surface.repository,
     number: surface.number,
   };
-  const sharedSummary = useSharedPullRequestSummary(resolvedEnvironmentId, reference, null);
+  const sharedSummary = useSharedPullRequestSummary(resolvedEnvironmentId, reference);
   const status = linkedSnapshot ?? newestPullRequestSummary(detail, sharedSummary) ?? seed ?? null;
   if (status === null) {
     return <PullRequestGlyph.pullRequest className="size-3 shrink-0 text-muted-foreground" />;
@@ -599,7 +595,7 @@ function TabListFrame({
   children,
 }: {
   wrap: boolean;
-  scrollRef: RefObject<HTMLDivElement | null>;
+  scrollRef: Ref<HTMLDivElement>;
   children: ReactNode;
 }) {
   if (wrap) {
@@ -636,14 +632,13 @@ interface RightPanelTabHandlers {
   onFinishRename: (surfaceId: string, title: string) => void;
 }
 
-function handleTabMouseDown(event: ReactMouseEvent) {
+// Chromium on Linux only suppresses primary-selection paste when mouseup is cancelled.
+function preventTabMiddleButtonDefault(event: ReactMouseEvent) {
   if (event.button !== 1) return;
   event.preventDefault();
 }
 
-// One tab owns its sortable state and receives only its own values, so the
-// compiled subtree is reused unless this tab's surface, title or state changed.
-// The handlers must be stable: the tab list re-renders on every parent render.
+// Stable handlers and per-tab values let the compiler reuse tabs across parent renders.
 function RightPanelTab(
   props: RightPanelTabHandlers & {
     surface: RightPanelSurface;
@@ -772,7 +767,8 @@ function RightPanelTab(
   return (
     <div
       data-active-tab={props.active}
-      onMouseDown={handleTabMouseDown}
+      onMouseDown={preventTabMiddleButtonDefault}
+      onMouseUp={preventTabMiddleButtonDefault}
       onAuxClick={(event) => onAuxClick(event, surface)}
       onContextMenu={(event) => onContextMenu(event, surface)}
       {...listeners}
@@ -793,6 +789,7 @@ function RightPanelTab(
 }
 
 export function RightPanelTabs(props: RightPanelTabsProps) {
+  const focusedSurface = props.surfaces.find((surface) => surface.id === props.activeSurfaceId);
   const ownsDesktopTitleBar = isElectron && props.mode === "inline";
   const browserProfiles = useBrowserDefaults().profiles;
   const { resolvedTheme } = useTheme();
@@ -825,16 +822,14 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
       setAddSurfaceMenuOpen(true);
     }
   });
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- subscribes a document keydown listener for the new surface shortcut while the panel is open
   useEffect(() => {
     if (props.open === false) return;
     document.addEventListener("keydown", onNewSurfaceKeyDown, true);
     return () => document.removeEventListener("keydown", onNewSurfaceKeyDown, true);
   }, [props.open]);
 
-  const updateTabScrollState = () => {
-    const viewport = tabScrollViewport(tabListRef.current);
-    if (!viewport) return;
-
+  const updateTabScrollState = (viewport: HTMLDivElement) => {
     const hasOverflow = viewport.scrollWidth - viewport.clientWidth > TAB_SCROLL_EDGE_TOLERANCE;
     const canScrollLeft = hasOverflow && viewport.scrollLeft > TAB_SCROLL_EDGE_TOLERANCE;
     const canScrollRight =
@@ -940,19 +935,11 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
     event.stopPropagation();
     action.onClick();
   });
-  const launcherClaimsKey = useEffectEvent((key: string) =>
-    addSurfaceActions.some(
-      (action) => action.available && action.shortcut.toLowerCase() === key.toLowerCase(),
-    ),
-  );
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- subscribes a capture-phase window keydown listener for launcher letters while the empty launcher shows
   useEffect(() => {
     if (!isLauncherVisible) return;
     window.addEventListener("keydown", onLauncherKeyDown, true);
-    const unregister = registerSurfaceLauncher(launcherClaimsKey);
-    return () => {
-      window.removeEventListener("keydown", onLauncherKeyDown, true);
-      unregister();
-    };
+    return () => window.removeEventListener("keydown", onLauncherKeyDown, true);
   }, [isLauncherVisible]);
 
   const handleAddSurfaceMenuKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
@@ -1053,8 +1040,6 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
     event.stopPropagation();
     props.onCloseSurface(surface);
   };
-  // Every tab receives these. Parents pass fresh closures on each render, so
-  // stable forwarders keep a tab's props equal unless its own surface changed.
   const onActivateTab = useStableCallback(props.onActivate);
   const onCloseTab = useStableCallback(props.onCloseSurface);
   const onTabAuxClick = useStableCallback(handleTabAuxClick);
@@ -1069,37 +1054,20 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
     setRenamingDevice(null);
   });
 
+  // A newly active tab, or tabs that start overflowing, can sit outside the scrolled strip.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- scrolls the active tab DOM node into view after it changes or the tab strip starts overflowing
   useEffect(() => {
     if (wrapTabs || !props.activeSurfaceId || !tabScrollState.hasOverflow) return;
     const activeTab = tabListRef.current?.querySelector<HTMLElement>("[data-active-tab='true']");
     activeTab?.scrollIntoView({ block: "nearest", inline: "nearest" });
   }, [props.activeSurfaceId, tabScrollState.hasOverflow, wrapTabs]);
 
-  // Wrapped tabs have no scroller; it remounts when the setting flips back.
-  useEffect(() => {
-    if (wrapTabs) return;
-    const viewport = tabScrollViewport(tabListRef.current);
+  const attachTabList = (root: HTMLDivElement | null) => {
+    tabListRef.current = root;
+    const viewport = tabScrollViewport(root);
     if (!viewport) return;
 
-    const content = viewport.firstElementChild;
-    const stopObserving = observeResize(
-      content ? [viewport, content] : viewport,
-      updateTabScrollState,
-    );
-    viewport.addEventListener("scroll", updateTabScrollState, { passive: true });
-    updateTabScrollState();
-
-    return () => {
-      stopObserving();
-      viewport.removeEventListener("scroll", updateTabScrollState);
-    };
-  }, [updateTabScrollState, wrapTabs]);
-
-  useEffect(() => {
-    if (wrapTabs) return;
-    const viewport = tabScrollViewport(tabListRef.current);
-    if (!viewport) return;
-
+    const update = () => updateTabScrollState(viewport);
     const handleWheel = (event: WheelEvent) => {
       if (event.ctrlKey) return;
       let delta = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY;
@@ -1111,15 +1079,32 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
       viewport.scrollLeft += delta;
       if (viewport.scrollLeft === previousScrollLeft) return;
       event.preventDefault();
-      updateTabScrollState();
+      update();
     };
 
+    const content = viewport.firstElementChild;
+    const stopObserving = observeResize(content ? [viewport, content] : viewport, update);
+    viewport.addEventListener("scroll", update, { passive: true });
     viewport.addEventListener("wheel", handleWheel, { passive: false });
-    return () => viewport.removeEventListener("wheel", handleWheel);
-  }, [updateTabScrollState, wrapTabs]);
+    update();
+
+    return () => {
+      tabListRef.current = null;
+      stopObserving();
+      viewport.removeEventListener("scroll", update);
+      viewport.removeEventListener("wheel", handleWheel);
+    };
+  };
 
   return (
     <PreviewPanelShell
+      workspaceArea
+      workspaceFocusKey={`panel:${props.environmentId}:${props.activeSurfaceId ?? "empty"}`}
+      workspaceLabel={
+        focusedSurface
+          ? `Workspace panel: ${surfaceTitle(focusedSurface, props.previewSessions, props.terminalLabelsById)}`
+          : "Workspace panel"
+      }
       mode={props.mode}
       {...(props.maximized !== undefined ? { maximized: props.maximized } : {})}
       {...(props.open !== undefined ? { open: props.open } : {})}
@@ -1137,8 +1122,17 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
           props.mode === "inline" && props.maximized && COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS,
         )}
         data-right-panel-tabbar
+        {...(isLauncherVisible
+          ? {
+              // Chat type-to-focus leaves these letters to the launcher.
+              "data-surface-launcher-keys": addSurfaceActions
+                .filter((action) => action.available)
+                .map((action) => action.shortcut)
+                .join(""),
+            }
+          : {})}
       >
-        <TabListFrame wrap={wrapTabs} scrollRef={tabListRef}>
+        <TabListFrame wrap={wrapTabs} scrollRef={attachTabList}>
           {isLauncherVisible
             ? addSurfaceActions.map((action) => (
                 <GhostSurfaceTab key={action.label} action={action} />

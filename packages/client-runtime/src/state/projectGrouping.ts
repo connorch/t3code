@@ -105,7 +105,7 @@ export function deriveLinkedProjectKey(
   return linkId ? `link:${linkId}` : null;
 }
 
-export function resolveProjectGroupingMode(
+function resolveProjectGroupingMode(
   project: Pick<EnvironmentProject, "environmentId" | "workspaceRoot">,
   settings: ProjectGroupingSettings,
 ): SidebarProjectGroupingMode {
@@ -141,7 +141,7 @@ function deriveRepositoryScopedKey(
     : `${canonicalKey}::${relativeProjectPath}`;
 }
 
-export function deriveLogicalProjectKey(
+function deriveLogicalProjectKey(
   project: Pick<
     EnvironmentProject,
     "environmentId" | "id" | "workspaceRoot" | "repositoryIdentity" | "isScratch"
