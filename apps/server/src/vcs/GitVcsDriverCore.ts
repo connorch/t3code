@@ -4308,16 +4308,21 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     },
   );
 
-  // Gives new worktrees a `.context/` scratch dir, ignored via the shared common dir's
-  // `info/exclude` so the tracked .gitignore stays untouched and one entry covers every checkout.
-  // The entry lands before the placeholder so it is born ignored; an untracked file would dirty
-  // status and block non-forced worktree removal.
+  // Gives new worktrees a `.context/` scratch dir, ignored via the shared `info/exclude` (Git maps
+  // it to the common dir) so the tracked .gitignore stays untouched and one entry covers every
+  // checkout. The entry lands before the placeholder so it is born ignored; an untracked file
+  // would dirty status and block non-forced worktree removal.
   const provisionContextDirectory = Effect.fn("provisionContextDirectory")(function* (
-    cwd: string,
     worktreePath: string,
   ) {
-    const gitCommonDir = yield* resolveGitCommonDir(cwd);
-    const excludePath = path.join(gitCommonDir, "info", "exclude");
+    const excludePath = path.resolve(
+      worktreePath,
+      (yield* runGitStdout("GitVcsDriver.createWorktree.excludePath", worktreePath, [
+        "rev-parse",
+        "--git-path",
+        "info/exclude",
+      ])).trim(),
+    );
     const excludeEntry = `${WORKTREE_CONTEXT_DIRECTORY_NAME}/`;
     const existingExcludes = yield* fileSystem
       .readFileString(excludePath)
@@ -4620,7 +4625,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
 
     // Best-effort: a missing scratch directory should not fail worktree
     // creation.
-    yield* provisionContextDirectory(input.cwd, worktreePath).pipe(
+    yield* provisionContextDirectory(worktreePath).pipe(
       Effect.catch((error) =>
         Effect.logWarning("GitVcsDriver.createWorktree: failed to provision .context", {
           worktreePath,
