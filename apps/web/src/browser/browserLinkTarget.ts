@@ -1,7 +1,12 @@
-import type { BrowserLinkTarget, ScopedThreadRef } from "@t3tools/contracts";
+import {
+  AuthPreviewOperateScope,
+  type BrowserLinkTarget,
+  type ScopedThreadRef,
+} from "@t3tools/contracts";
 
 import { ensureClientSettingsHydrated, getClientSettings } from "~/hooks/useSettings";
 import { urlMatchesPreviewLinkPattern } from "./previewLinkPattern";
+import { readEnvironmentScope } from "~/state/session";
 import { isPreviewAvailableFor } from "./previewRuntime";
 
 export interface ResolveLinkTargetInput {
@@ -47,5 +52,9 @@ export async function resolveBrowserLinkTargetPreference(url?: string): Promise<
 }
 
 export function canOpenLinksInApp(threadRef: ScopedThreadRef | null | undefined): boolean {
-  return threadRef != null && isPreviewAvailableFor(threadRef.environmentId);
+  return (
+    threadRef != null &&
+    readEnvironmentScope(threadRef.environmentId, AuthPreviewOperateScope) &&
+    isPreviewAvailableFor(threadRef.environmentId)
+  );
 }
